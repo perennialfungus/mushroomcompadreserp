@@ -1,3 +1,10 @@
+import {
+  buildBomProductionPlan,
+  type BomMaterialIssueMethod,
+  type BomOperationDefinition,
+  type BomProductionPlan,
+  type BomRuntimeBasis
+} from "./bom.js";
 import { DomainConflictError, DomainValidationError } from "./errors.js";
 
 export const productFamilies = [
@@ -78,8 +85,71 @@ export type ProductConfigurationInput = {
   channel: ProductChannel;
   labelData?: Record<string, string | null | undefined>;
   shopifyFields?: Record<string, string | null | undefined>;
+  previewLayout?: Partial<ProductPreviewLayoutConfig>;
   skuOverride?: string | null;
   adminOverrideReason?: string | null;
+};
+
+export type ProductBomLayout = "operation_tree" | "materials_first";
+export type ProductPreviewDensity = "compact" | "standard" | "expanded";
+
+export type ProductPreviewLayoutConfig = {
+  bomLayout: ProductBomLayout;
+  density: ProductPreviewDensity;
+  showOperationRuntimes: boolean;
+  showMaterialIssue: boolean;
+  showEquipment: boolean;
+};
+
+export type GeneratedBomDraft = {
+  bom: {
+    id: string;
+    versionCode: string;
+    status: "draft";
+    yieldQuantity: number;
+    yieldUom: string;
+    formulaRevisionCode: string;
+  };
+  operations: GeneratedBomOperation[];
+  productionPlan: BomProductionPlan;
+};
+
+export type GeneratedBomOperation = {
+  id: string;
+  sequence: number;
+  operationId: string;
+  name: string;
+  runtimeBasis: BomRuntimeBasis;
+  controlPoint: boolean;
+  steps: GeneratedBomStep[];
+  materials: GeneratedBomMaterial[];
+  equipment: GeneratedBomEquipment[];
+  runtime: BomProductionPlan["operationRuntimes"][number];
+};
+
+export type GeneratedBomStep = {
+  id: string;
+  sequence: number;
+  name: string;
+  kind: "setup" | "process" | "qc" | "packout";
+  required: boolean;
+};
+
+export type GeneratedBomMaterial = ProductTemplateFormulaLine & {
+  id: string;
+  operationId: string;
+  issueMethod: BomMaterialIssueMethod;
+  quantityWithWaste: number;
+};
+
+export type GeneratedBomEquipment = {
+  id: string;
+  operationId: string;
+  name: string;
+  isPrimary: boolean;
+  required: boolean;
+  setupTimeMinutes: number;
+  cleaningTimeMinutes: number;
 };
 
 export type GeneratedProductPackage = {
@@ -111,6 +181,8 @@ export type GeneratedProductPackage = {
     status: "draft";
     lines: ProductTemplateFormulaLine[];
   };
+  bomDraft: GeneratedBomDraft;
+  previewLayout: ProductPreviewLayoutConfig;
   qcSpecification: {
     specCode: string;
     status: "draft";
@@ -119,6 +191,14 @@ export type GeneratedProductPackage = {
   labelChecklist: LabelRequirement[];
   shopifyMappingPlaceholders: string[];
   readinessGaps: ProductReadinessGap[];
+};
+
+export const defaultPreviewLayoutConfig: ProductPreviewLayoutConfig = {
+  bomLayout: "operation_tree",
+  density: "standard",
+  showOperationRuntimes: true,
+  showMaterialIssue: true,
+  showEquipment: true
 };
 
 export type LabelRequirement = {
@@ -440,6 +520,9 @@ export function generateProductPackage(
   const sku = overrideSku ?? generatedSku;
   const skuEdited = Boolean(overrideSku && overrideSku !== generatedSku);
   const labelChecklist = labelRequirementsFor(input, template);
+  const formulaRevisionCode = `${sku}-F-DRAFT`;
+  const previewLayout = resolvePreviewLayout(input.previewLayout);
+  const bomDraft = buildProductBomDraft({ input, sku, formulaRevisionCode, template });
   const readinessGaps = validateProductPackageReadiness({
     sku,
     generatedSku,
@@ -484,10 +567,12 @@ export function generateProductPackage(
       shopifyInventoryItemGid: normalizeOptional(input.shopifyFields?.shopifyInventoryItemGid)
     },
     formulaRevision: {
-      revisionCode: `${sku}-F-DRAFT`,
+      revisionCode: formulaRevisionCode,
       status: "draft",
       lines: template.defaultFormulaLines
     },
+    bomDraft,
+    previewLayout,
     qcSpecification: {
       specCode: `${sku}-QC-DRAFT`,
       status: "draft",
@@ -563,6 +648,254 @@ export function validateProductPackageReadiness(input: {
   }
 
   return gaps;
+}
+
+function resolvePreviewLayout(input: Partial<ProductPreviewLayoutConfig> | null | undefined): ProductPreviewLayoutConfig {
+  return {
+    bomLayout: input?.bomLayout === "materials_first" ? "materials_first" : defaultPreviewLayoutConfig.bomLayout,
+    density: input?.density === "compact" || input?.density === "expanded" ? input.density : defaultPreviewLayoutConfig.density,
+    showOperationRuntimes: input?.showOperationRuntimes ?? defaultPreviewLayoutConfig.showOperationRuntimes,
+    showMaterialIssue: input?.showMaterialIssue ?? defaultPreviewLayoutConfig.showMaterialIssue,
+    showEquipment: input?.showEquipment ?? defaultPreviewLayoutConfig.showEquipment
+  };
+}
+
+function buildProductBomDraft(input: {
+  input: ProductConfigurationInput;
+  sku: string;
+  formulaRevisionCode: string;
+  template: ProductTemplate;
+}): GeneratedBomDraft {
+  const operations = operationDraftsForTemplate(input.input, input.template);
+  const bomId = `bom-${input.sku.toLowerCase()}`;
+  const yieldQuantity = Math.max(input.input.packCount, 1);
+  const yieldUom = input.template.defaultSellableUom;
+  const materials = input.template.defaultFormulaLines.map((line, index) =>
+    bomMaterialForLine(line, index, operationIdForLine(line, operations))
+  );
+  const equipment = operations.flatMap((operation) => operation.equipment);
+  const operationDefinitions = operations.map((operation) => operation.definition);
+  const productionPlan = buildBomProductionPlan({
+    bom: {
+      id: bomId,
+      status: "draft",
+      yieldQuantity,
+      yieldUom
+    },
+    operations: operationDefinitions,
+    materials: materials.map((material) => ({
+      id: material.id,
+      bomOperationId: material.operationId,
+      quantity: material.quantityWithWaste,
+      uom: material.uom,
+      wastePercent: material.wastePercent ?? 0,
+      issueMethod: material.issueMethod
+    })),
+    equipment: equipment.map((item) => ({
+      id: item.id,
+      bomOperationId: item.operationId,
+      equipmentId: item.id,
+      isPrimary: item.isPrimary,
+      required: item.required,
+      setupTimeMinutes: item.setupTimeMinutes,
+      runUnits: yieldQuantity,
+      runTimeMinutes: item.required ? 12 : null,
+      cleaningTimeMinutes: item.cleaningTimeMinutes
+    }))
+  });
+  const runtimes = new Map(productionPlan.operationRuntimes.map((runtime) => [runtime.bomOperationId, runtime]));
+
+  return {
+    bom: {
+      id: bomId,
+      versionCode: `${input.sku}-BOM-DRAFT`,
+      status: "draft",
+      yieldQuantity,
+      yieldUom,
+      formulaRevisionCode: input.formulaRevisionCode
+    },
+    operations: operations.map((operation) => {
+      const runtime = runtimes.get(operation.definition.id);
+      if (!runtime) {
+        throw new DomainValidationError("BOM operation runtime was not generated", {
+          bomId,
+          bomOperationId: operation.definition.id
+        });
+      }
+      return {
+        id: operation.definition.id,
+        sequence: operation.definition.sequence,
+        operationId: operation.definition.operationId,
+        name: operation.name,
+        runtimeBasis: operation.definition.runtimeBasis,
+        controlPoint: operation.definition.controlPoint,
+        steps: operation.steps,
+        materials: materials.filter((material) => material.operationId === operation.definition.id),
+        equipment: equipment.filter((item) => item.operationId === operation.definition.id),
+        runtime
+      };
+    }),
+    productionPlan
+  };
+}
+
+function operationDraftsForTemplate(input: ProductConfigurationInput, template: ProductTemplate): Array<{
+  name: string;
+  definition: BomOperationDefinition;
+  steps: GeneratedBomStep[];
+  equipment: GeneratedBomEquipment[];
+}> {
+  const packOperationName = template.family === "merch" ? "Kit and release" : "Pack and label";
+  const processOperationName = operationNameForFamily(template.family);
+  const baseId = input.templateId.replace(/^template-/, "");
+  const processRuntimeBasis: BomRuntimeBasis =
+    template.family === "tincture" || template.family === "capsules" || template.family === "chocolate_bar" ? "mixed" : "manual";
+  const operations = [
+    {
+      name: "Preparation",
+      definition: bomOperation(`${baseId}-prep`, 10, "prep", "manual", false, 12, 30),
+      steps: [
+        bomStep(`${baseId}-prep-clearance`, 10, "Line clearance", "setup"),
+        bomStep(`${baseId}-prep-materials`, 20, "Stage released components", "process")
+      ],
+      equipment: []
+    },
+    {
+      name: processOperationName,
+      definition: bomOperation(`${baseId}-process`, 20, "process", processRuntimeBasis, false, 18, 45),
+      steps: [
+        bomStep(`${baseId}-process-make`, 10, processOperationName, "process"),
+        bomStep(`${baseId}-process-qc`, 20, "In-process check", "qc")
+      ],
+      equipment: equipmentForFamily(template.family, `${baseId}-process`)
+    },
+    {
+      name: packOperationName,
+      definition: bomOperation(`${baseId}-pack`, 30, "packout", "mixed", true, 10, 24),
+      steps: [
+        bomStep(`${baseId}-pack-fill`, 10, packOperationName, "packout"),
+        bomStep(`${baseId}-pack-release`, 20, "Label verification", "qc")
+      ],
+      equipment: [
+        {
+          id: `${baseId}-labeler`,
+          operationId: `${baseId}-pack`,
+          name: "Label printer",
+          isPrimary: false,
+          required: true,
+          setupTimeMinutes: 4,
+          cleaningTimeMinutes: 2
+        }
+      ]
+    }
+  ];
+
+  if (template.defaultFormulaLines.length === 0) {
+    return operations.filter((operation) => operation.definition.sequence === 30);
+  }
+
+  return operations;
+}
+
+function bomOperation(
+  id: string,
+  sequence: number,
+  operationId: string,
+  runtimeBasis: BomRuntimeBasis,
+  controlPoint: boolean,
+  setupTimeMinutes: number,
+  runTimeMinutes: number
+): BomOperationDefinition {
+  return {
+    id,
+    sequence,
+    operationId,
+    setupTimeMinutes,
+    runUnits: 1,
+    runTimeMinutes,
+    machineUnits: runtimeBasis === "manual" ? null : 1,
+    machineTimeMinutes: runtimeBasis === "manual" ? null : Math.max(12, runTimeMinutes - 10),
+    queueTimeMinutes: sequence === 20 ? 15 : 0,
+    moveTimeMinutes: sequence === 30 ? 5 : 2,
+    finishTimeMinutes: controlPoint ? 8 : 3,
+    runtimeBasis,
+    controlPoint
+  };
+}
+
+function bomStep(id: string, sequence: number, name: string, kind: GeneratedBomStep["kind"]): GeneratedBomStep {
+  return { id, sequence, name, kind, required: true };
+}
+
+function equipmentForFamily(family: ProductFamily, operationId: string): GeneratedBomEquipment[] {
+  const equipmentName: Partial<Record<ProductFamily, string>> = {
+    tincture: "Peristaltic filler",
+    capsules: "Capsule counter",
+    chocolate_bar: "Chocolate tempering station",
+    coffee_cacao: "Ribbon blender",
+    powder: "Powder scale"
+  };
+  const name = equipmentName[family];
+  if (!name) {
+    return [];
+  }
+  return [
+    {
+      id: `${operationId}-equipment`,
+      operationId,
+      name,
+      isPrimary: true,
+      required: true,
+      setupTimeMinutes: 10,
+      cleaningTimeMinutes: family === "chocolate_bar" ? 18 : 8
+    }
+  ];
+}
+
+function operationNameForFamily(family: ProductFamily): string {
+  const names: Record<ProductFamily, string> = {
+    tincture: "Blend extract",
+    capsules: "Encapsulate",
+    powder: "Blend powder",
+    coffee_cacao: "Blend drink mix",
+    chocolate_bar: "Temper and mold",
+    bundle: "Pick bundle components",
+    merch: "Inspect merchandise"
+  };
+  return names[family];
+}
+
+function bomMaterialForLine(
+  line: ProductTemplateFormulaLine,
+  index: number,
+  operationId: string
+): GeneratedBomMaterial {
+  const wastePercent = line.wastePercent ?? 0;
+  return {
+    ...line,
+    id: `bom-material-${index + 1}`,
+    operationId,
+    issueMethod: line.lineType === "packaging" ? "backflush" : "manual",
+    quantityWithWaste: roundQuantity(line.quantity * (1 + wastePercent / 100))
+  };
+}
+
+function operationIdForLine(
+  line: ProductTemplateFormulaLine,
+  operations: Array<{ definition: BomOperationDefinition }>
+): string {
+  const byOperation = new Map(operations.map((operation) => [operation.definition.operationId, operation.definition.id]));
+  if (line.lineType === "packaging") {
+    return byOperation.get("packout") ?? operations.at(-1)?.definition.id ?? "";
+  }
+  if (line.lineType === "instruction") {
+    return byOperation.get("prep") ?? operations[0]?.definition.id ?? "";
+  }
+  return byOperation.get("process") ?? operations[0]?.definition.id ?? "";
+}
+
+function roundQuantity(value: number): number {
+  return Math.round((value + Number.EPSILON) * 1000) / 1000;
 }
 
 function segmentCode(segment: SkuSegment, input: ProductConfigurationInput, rule: SkuRule): string {

@@ -768,6 +768,69 @@ a {
   font-weight: 750;
 }
 
+.bom-preview {
+  display: grid;
+  gap: 12px;
+}
+
+.bom-summary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.bom-operation-list,
+.bom-material-list {
+  display: grid;
+  gap: 10px;
+}
+
+.bom-operation,
+.bom-material-row {
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface-2);
+  padding: 10px;
+}
+
+.bom-operation {
+  display: grid;
+  gap: 8px;
+}
+
+.bom-operation-heading,
+.bom-material-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto auto;
+  gap: 10px;
+  align-items: center;
+}
+
+.bom-operation-heading strong,
+.bom-operation-heading small,
+.bom-material-row strong,
+.bom-material-row small {
+  display: block;
+}
+
+.bom-operation-heading small,
+.bom-material-row small,
+.bom-equipment-row {
+  color: var(--muted);
+  margin-top: 2px;
+}
+
+.bom-step-row,
+.bom-equipment-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+
+.bom-equipment-row span {
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 3px 8px;
+}
+
 .variant-card {
   display: grid;
   grid-template-columns: minmax(180px, 1fr) auto auto auto auto;

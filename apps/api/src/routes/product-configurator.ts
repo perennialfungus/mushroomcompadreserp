@@ -22,6 +22,14 @@ const optionalText = z
 
 const stringRecord = z.record(z.string(), z.string().nullable().optional()).default({});
 
+const previewLayoutSchema = z.object({
+  bomLayout: z.enum(["operation_tree", "materials_first"]).optional(),
+  density: z.enum(["compact", "standard", "expanded"]).optional(),
+  showOperationRuntimes: z.boolean().optional(),
+  showMaterialIssue: z.boolean().optional(),
+  showEquipment: z.boolean().optional()
+}).optional();
+
 const configurationInputSchema = z.object({
   templateId: z.string().trim().min(1),
   productName: z.string().trim().min(1).max(180),
@@ -36,6 +44,7 @@ const configurationInputSchema = z.object({
   channel: z.enum(["dtc", "wholesale", "shopify", "marketplace"]),
   labelData: stringRecord.optional(),
   shopifyFields: stringRecord.optional(),
+  previewLayout: previewLayoutSchema,
   skuOverride: optionalText,
   adminOverrideReason: optionalText
 });
@@ -147,6 +156,7 @@ function normalizedConfigurationInput(input: z.infer<typeof configurationInputSc
     ...input,
     labelData: input.labelData ?? {},
     shopifyFields: input.shopifyFields ?? {},
+    previewLayout: input.previewLayout ?? {},
     skuOverride: input.skuOverride ?? null,
     adminOverrideReason: input.adminOverrideReason ?? null
   };

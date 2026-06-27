@@ -40,8 +40,31 @@ const defaultShopifyFields = {
   seoDescription: ""
 };
 
+const defaultPreviewLayout = {
+  bomLayout: "operation_tree",
+  density: "standard",
+  showOperationRuntimes: true,
+  showMaterialIssue: true,
+  showEquipment: true
+} satisfies GeneratedProductPackage["previewLayout"];
+
 function formText(form: FormData, name: string): string {
   return String(form.get(name) ?? "").trim();
+}
+
+function formChecked(form: FormData, name: string): boolean {
+  return form.get(name) === "on";
+}
+
+function previewBomLayout(value: string): GeneratedProductPackage["previewLayout"]["bomLayout"] {
+  return value === "materials_first" ? "materials_first" : "operation_tree";
+}
+
+function previewDensity(value: string): GeneratedProductPackage["previewLayout"]["density"] {
+  if (value === "compact" || value === "expanded") {
+    return value;
+  }
+  return "standard";
 }
 
 function optionalText(form: FormData, name: string): string | null {
@@ -97,6 +120,13 @@ export function ProductConfiguratorScreen() {
       market: formText(form, "market") as ProductConfigurationInput["market"],
       language: formText(form, "language") as ProductConfigurationInput["language"],
       channel: formText(form, "channel") as ProductConfigurationInput["channel"],
+      previewLayout: {
+        bomLayout: previewBomLayout(formText(form, "previewLayout_bomLayout")),
+        density: previewDensity(formText(form, "previewLayout_density")),
+        showOperationRuntimes: formChecked(form, "previewLayout_showOperationRuntimes"),
+        showMaterialIssue: formChecked(form, "previewLayout_showMaterialIssue"),
+        showEquipment: formChecked(form, "previewLayout_showEquipment")
+      },
       skuOverride: optionalText(form, "skuOverride"),
       adminOverrideReason: optionalText(form, "adminOverrideReason"),
       labelData,
@@ -277,6 +307,47 @@ function ConfiguratorForm(props: {
         <Input label="Admin override reason" name="adminOverrideReason" />
       </div>
 
+      <h4>Preview layout</h4>
+      <div className="form-grid">
+        <label className="select-field">
+          <span>BOM layout</span>
+          <select name="previewLayout_bomLayout" defaultValue={defaultPreviewLayout.bomLayout}>
+            <option value="operation_tree">Operation tree</option>
+            <option value="materials_first">Materials first</option>
+          </select>
+        </label>
+        <label className="select-field">
+          <span>Density</span>
+          <select name="previewLayout_density" defaultValue={defaultPreviewLayout.density}>
+            <option value="compact">Compact</option>
+            <option value="standard">Standard</option>
+            <option value="expanded">Expanded</option>
+          </select>
+        </label>
+      </div>
+      <div className="checkbox-grid">
+        <label>
+          <input
+            type="checkbox"
+            name="previewLayout_showOperationRuntimes"
+            defaultChecked={defaultPreviewLayout.showOperationRuntimes}
+          />
+          Runtime
+        </label>
+        <label>
+          <input
+            type="checkbox"
+            name="previewLayout_showMaterialIssue"
+            defaultChecked={defaultPreviewLayout.showMaterialIssue}
+          />
+          Issue method
+        </label>
+        <label>
+          <input type="checkbox" name="previewLayout_showEquipment" defaultChecked={defaultPreviewLayout.showEquipment} />
+          Equipment
+        </label>
+      </div>
+
       <h4>Label data</h4>
       <div className="form-grid">
         {Object.entries(defaultLabelData).map(([key, value]) => (
@@ -316,6 +387,7 @@ function PackageReview({ productPackage, generated }: { productPackage: Generate
   if (!productPackage) {
     return <EmptyState title="No generated preview" description="Complete the wizard to review SKU, formula, QC, and label gaps." />;
   }
+  const bomDraft = resolvedBomDraft(productPackage);
   const blockers = productPackage.readinessGaps.filter((gap) => gap.severity === "blocker").length;
   const warnings = productPackage.readinessGaps.filter((gap) => gap.severity === "warning").length;
   return (
@@ -329,10 +401,11 @@ function PackageReview({ productPackage, generated }: { productPackage: Generate
       <dl className="compact-definition">
         <div><dt>SKU</dt><dd>{productPackage.sku}</dd></div>
         <div><dt>Variant</dt><dd>{productPackage.variantDraft.localizedNames.en}</dd></div>
-        <div><dt>Formula lines</dt><dd>{productPackage.formulaRevision.lines.length}</dd></div>
+        <div><dt>BOM ops</dt><dd>{bomDraft.operations.length}</dd></div>
         <div><dt>QC tests</dt><dd>{productPackage.qcSpecification.tests.length}</dd></div>
         <div><dt>Package state</dt><dd>{generated ? "Generated draft" : "Preview"}</dd></div>
       </dl>
+      <BomPreview productPackage={productPackage} />
       <div className="variant-section">
         <h4>Readiness gaps</h4>
         {productPackage.readinessGaps.length === 0 ? (
@@ -351,6 +424,179 @@ function PackageReview({ productPackage, generated }: { productPackage: Generate
         )}
       </div>
     </aside>
+  );
+}
+
+function BomPreview({ productPackage }: { productPackage: GeneratedProductPackage }) {
+  const bomDraft = resolvedBomDraft(productPackage);
+  const previewLayout = productPackage.previewLayout ?? defaultPreviewLayout;
+  const operations = previewLayout.density === "compact" ? bomDraft.operations.slice(0, 2) : bomDraft.operations;
+  const materialRows = bomDraft.operations.flatMap((operation) =>
+    operation.materials.map((material) => ({
+      ...material,
+      operationName: operation.name
+    }))
+  );
+  const materials = previewLayout.density === "compact" ? materialRows.slice(0, 4) : materialRows;
+  return (
+    <div className="bom-preview">
+      <div className="panel-header">
+        <h4>BOM draft</h4>
+        <Badge tone="info">{bomDraft.bom.versionCode}</Badge>
+      </div>
+      <dl className="compact-definition bom-summary">
+        <div><dt>Yield</dt><dd>{bomDraft.bom.yieldQuantity} {bomDraft.bom.yieldUom}</dd></div>
+        <div><dt>Materials</dt><dd>{materialRows.length}</dd></div>
+        <div><dt>Elapsed</dt><dd>{Math.round(bomDraft.productionPlan.totalElapsedMinutes)} min</dd></div>
+      </dl>
+      {previewLayout.bomLayout === "materials_first" ? (
+        <>
+          <BomMaterialList materials={materials} showIssueMethod={previewLayout.showMaterialIssue ?? true} />
+          <BomOperationList operations={operations} previewLayout={previewLayout} />
+        </>
+      ) : (
+        <>
+          <BomOperationList operations={operations} previewLayout={previewLayout} />
+          <BomMaterialList materials={materials} showIssueMethod={previewLayout.showMaterialIssue ?? true} />
+        </>
+      )}
+    </div>
+  );
+}
+
+function resolvedBomDraft(productPackage: GeneratedProductPackage): GeneratedProductPackage["bomDraft"] {
+  if (productPackage.bomDraft) {
+    return productPackage.bomDraft;
+  }
+  const materials = productPackage.formulaRevision.lines.map((line, index) => ({
+    ...line,
+    id: `legacy-bom-material-${index + 1}`,
+    operationId: "legacy-packout",
+    issueMethod: line.lineType === "packaging" ? "backflush" as const : "manual" as const,
+    quantityWithWaste: line.quantity * (1 + (line.wastePercent ?? 0) / 100)
+  }));
+  const elapsedMinutes = Math.max(15, materials.length * 8);
+  const runtime = {
+    bomOperationId: "legacy-packout",
+    operationId: "packout",
+    targetQuantity: Math.max(productPackage.configuration.packCount, 1),
+    targetUom: productPackage.variantDraft.sellableUom,
+    setupMinutes: 5,
+    manualRunMinutes: elapsedMinutes,
+    machineRunMinutes: 0,
+    queueMinutes: 0,
+    moveMinutes: 0,
+    finishMinutes: 5,
+    equipmentSetupMinutes: 0,
+    equipmentCleaningMinutes: 0,
+    totalManualMinutes: elapsedMinutes + 10,
+    totalMachineMinutes: 0,
+    totalElapsedMinutes: elapsedMinutes + 10
+  };
+  return {
+    bom: {
+      id: `bom-${productPackage.sku.toLowerCase()}`,
+      versionCode: `${productPackage.sku}-BOM-DRAFT`,
+      status: "draft",
+      yieldQuantity: Math.max(productPackage.configuration.packCount, 1),
+      yieldUom: productPackage.variantDraft.sellableUom,
+      formulaRevisionCode: productPackage.formulaRevision.revisionCode
+    },
+    operations: [
+      {
+        id: "legacy-packout",
+        sequence: 10,
+        operationId: "packout",
+        name: "Pack and label",
+        runtimeBasis: "manual",
+        controlPoint: true,
+        steps: [
+          { id: "legacy-packout-stage", sequence: 10, name: "Stage components", kind: "setup", required: true },
+          { id: "legacy-packout-release", sequence: 20, name: "Label verification", kind: "qc", required: true }
+        ],
+        materials,
+        equipment: [],
+        runtime
+      }
+    ],
+    productionPlan: {
+      bomId: `bom-${productPackage.sku.toLowerCase()}`,
+      targetQuantity: Math.max(productPackage.configuration.packCount, 1),
+      targetUom: productPackage.variantDraft.sellableUom,
+      operationRuntimes: [runtime],
+      totalManualMinutes: runtime.totalManualMinutes,
+      totalMachineMinutes: runtime.totalMachineMinutes,
+      totalElapsedMinutes: runtime.totalElapsedMinutes,
+      backflushedMaterialCount: materials.filter((material) => material.issueMethod === "backflush").length,
+      manualIssueMaterialCount: materials.filter((material) => material.issueMethod === "manual").length
+    }
+  };
+}
+
+function BomOperationList({
+  operations,
+  previewLayout
+}: {
+  operations: GeneratedProductPackage["bomDraft"]["operations"];
+  previewLayout: GeneratedProductPackage["previewLayout"];
+}) {
+  const showSteps = previewLayout.density !== "compact";
+  return (
+    <div className="bom-operation-list">
+      {operations.map((operation) => (
+        <article className="bom-operation" key={operation.id}>
+          <div className="bom-operation-heading">
+            <span>
+              <strong>{operation.sequence}. {operation.name}</strong>
+              <small>{operation.operationId} / {operation.runtimeBasis}{operation.controlPoint ? " / control point" : ""}</small>
+            </span>
+            {previewLayout.showOperationRuntimes ? (
+              <Badge tone="info">{Math.round(operation.runtime.totalElapsedMinutes)} min</Badge>
+            ) : null}
+          </div>
+          {showSteps ? (
+            <div className="bom-step-row">
+              {operation.steps.map((step) => (
+                <Badge key={step.id} tone={step.kind === "qc" ? "warning" : "success"}>{step.name}</Badge>
+              ))}
+            </div>
+          ) : null}
+          {previewLayout.showEquipment && operation.equipment.length > 0 ? (
+            <div className="bom-equipment-row">
+              {operation.equipment.map((item) => (
+                <span key={item.id}>{item.name}</span>
+              ))}
+            </div>
+          ) : null}
+        </article>
+      ))}
+    </div>
+  );
+}
+
+function BomMaterialList({
+  materials,
+  showIssueMethod
+}: {
+  materials: Array<GeneratedProductPackage["bomDraft"]["operations"][number]["materials"][number] & { operationName: string }>;
+  showIssueMethod: boolean;
+}) {
+  if (materials.length === 0) {
+    return <p className="muted">No BOM materials in this draft.</p>;
+  }
+  return (
+    <div className="bom-material-list">
+      {materials.map((material) => (
+        <div className="bom-material-row" key={material.id}>
+          <span>
+            <strong>{material.componentName}</strong>
+            <small>{material.operationName}</small>
+          </span>
+          <span>{material.quantityWithWaste} {material.uom}</span>
+          {showIssueMethod ? <Badge tone={material.issueMethod === "backflush" ? "success" : "info"}>{material.issueMethod}</Badge> : null}
+        </div>
+      ))}
+    </div>
   );
 }
 

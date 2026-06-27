@@ -68,6 +68,17 @@ describe("product configurator", () => {
       netQuantity: 50
     });
     expect(productPackage.formulaRevision.lines.length).toBeGreaterThan(0);
+    expect(productPackage.bomDraft.operations.map((operation) => operation.operationId)).toEqual([
+      "prep",
+      "process",
+      "packout"
+    ]);
+    expect(productPackage.bomDraft.operations[1]?.materials[0]?.componentName).toBe("Mushroom dual extract");
+    expect(productPackage.previewLayout).toMatchObject({
+      bomLayout: "operation_tree",
+      density: "standard",
+      showEquipment: true
+    });
     expect(productPackage.qcSpecification.tests).toContain("label_check");
     expect(productPackage.labelChecklist.some((item) => item.field === "eu_contact_address")).toBe(true);
     expect(productPackage.readinessGaps).toEqual([]);
