@@ -1,0 +1,2 @@
+name,sku,barcode,uom,track_lots,name_en,name_pt,description_en,description_pt
+Sample bottle,PKG-SAMPLE-BOTTLE,,each,true,Sample bottle,,Replace with packaging facts,

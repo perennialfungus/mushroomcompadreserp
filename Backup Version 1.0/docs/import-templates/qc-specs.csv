@@ -1,0 +1,2 @@
+spec_code,version_code,name,scope,sku,status,test_method_id,test_name,required,expected_min,expected_max,unit,pass_fail_rule,evidence_requirement,sort_order
+QC-SAMPLE,v1,Sample finished good release,product_variant,SAMPLE-SKU-001,draft,,Identity check,true,,,pass,pass_fail,result_value,1

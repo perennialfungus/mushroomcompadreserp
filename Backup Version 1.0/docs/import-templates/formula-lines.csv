@@ -1,0 +1,2 @@
+formula_code,revision_code,line_type,component_type,component_sku,component_name,quantity,uom,waste_percent,sort_order,instruction_text,allergen_flags,dietary_flags,requires_approval
+FORM-SAMPLE,v1,ingredient,material,MAT-SAMPLE,Sample input,1,g,0,1,,,true

@@ -1,0 +1,42 @@
+{
+  "name": "mushroom-compadres-erp",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Offline-first ERP monorepo for Mushroom Compadres.",
+  "packageManager": "pnpm@11.7.0",
+  "scripts": {
+    "build": "pnpm -r --workspace-concurrency=1 build",
+    "dev": "pnpm -r --parallel dev",
+    "lint": "pnpm -r --workspace-concurrency=1 lint",
+    "test": "pnpm -r --workspace-concurrency=1 build && pnpm -r --workspace-concurrency=1 test",
+    "test:e2e": "node node_modules/@playwright/test/cli.js test",
+    "turbo:build": "turbo run build",
+    "turbo:lint": "turbo run lint",
+    "turbo:test": "turbo run test",
+    "turbo:typecheck": "turbo run typecheck",
+    "typecheck": "pnpm -r --workspace-concurrency=1 typecheck",
+    "db:generate": "pnpm --filter @mushroom-compadres/db db:generate",
+    "db:migrate": "pnpm --filter @mushroom-compadres/db db:migrate",
+    "db:seed": "pnpm --filter @mushroom-compadres/db db:seed",
+    "format": "node node_modules/prettier/bin/prettier.cjs --write .",
+    "format:check": "node node_modules/prettier/bin/prettier.cjs --check ."
+  },
+  "devDependencies": {
+    "@eslint/js": "^9.18.0",
+    "@playwright/test": "^1.49.1",
+    "@types/node": "^22.10.5",
+    "@types/react": "^19.0.7",
+    "@types/react-dom": "^19.0.3",
+    "@vitejs/plugin-react": "^4.3.4",
+    "eslint": "^9.18.0",
+    "globals": "^15.14.0",
+    "prettier": "^3.4.2",
+    "tsx": "^4.19.2",
+    "turbo": "^2.3.3",
+    "typescript": "^5.7.3",
+    "typescript-eslint": "^8.20.0",
+    "vite": "^6.0.7",
+    "vitest": "^2.1.8"
+  }
+}

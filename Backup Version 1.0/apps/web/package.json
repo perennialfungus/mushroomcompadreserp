@@ -1,0 +1,33 @@
+{
+  "name": "@mushroom-compadres/web",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "tsc -p tsconfig.json --noEmit && vite build",
+    "dev": "vite --host 127.0.0.1",
+    "lint": "eslint .",
+    "preview": "vite preview --host 127.0.0.1 --port 4173",
+    "test": "vitest run",
+    "test:e2e": "playwright test --config ../../playwright.config.ts",
+    "typecheck": "tsc -p tsconfig.json --noEmit --pretty false"
+  },
+  "dependencies": {
+    "@mushroom-compadres/domain": "workspace:*",
+    "@mushroom-compadres/i18n": "workspace:*",
+    "@mushroom-compadres/ui": "workspace:*",
+    "@supabase/supabase-js": "^2.49.1",
+    "@tanstack/react-router": "^1.121.21",
+    "@zxing/browser": "^0.2.0",
+    "bwip-js": "^4.11.1",
+    "lucide-react": "^0.468.0",
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0"
+  },
+  "devDependencies": {
+    "@testing-library/jest-dom": "^6.6.3",
+    "@testing-library/react": "^16.1.0",
+    "@testing-library/user-event": "^14.5.2",
+    "jsdom": "^25.0.1"
+  }
+}

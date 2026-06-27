@@ -1,0 +1,37 @@
+{
+  "mobile": {
+    "deviceProfile": "Mid-range Android, 4G, 4x CPU slowdown",
+    "routes": {
+      "/": {
+        "largestContentfulPaintMs": 2500,
+        "interactionToNextPaintMs": 200,
+        "totalBlockingTimeMs": 200,
+        "initialJsKbGzip": 260
+      },
+      "/scan": {
+        "largestContentfulPaintMs": 2200,
+        "interactionToNextPaintMs": 180,
+        "totalBlockingTimeMs": 180,
+        "initialJsKbGzip": 280
+      },
+      "/stock-counts": {
+        "largestContentfulPaintMs": 2300,
+        "interactionToNextPaintMs": 180,
+        "totalBlockingTimeMs": 180,
+        "initialJsKbGzip": 300
+      },
+      "/admin/shopify": {
+        "largestContentfulPaintMs": 2600,
+        "interactionToNextPaintMs": 220,
+        "totalBlockingTimeMs": 220,
+        "initialJsKbGzip": 320
+      }
+    }
+  },
+  "operationalRules": [
+    "Primary mobile forms must keep tap targets at least 44px high.",
+    "Scanner fallback manual entry must work without camera permissions.",
+    "Tables must remain horizontally scrollable instead of compressing text below 320px.",
+    "Loading states must render within 500ms of route navigation."
+  ]
+}

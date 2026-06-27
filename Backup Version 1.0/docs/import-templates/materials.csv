@@ -1,0 +1,2 @@
+name,category,sku,barcode,uom,supplier_part_number,track_lots,track_expiry,name_en,name_pt,description_en,description_pt
+Sample raw input,ingredient,MAT-SAMPLE,,g,,true,true,Sample raw input,,Replace with supplier-provided input facts,

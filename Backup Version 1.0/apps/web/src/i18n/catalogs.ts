@@ -1,0 +1,152 @@
+export const locales = ["en", "pt"] as const;
+
+export type Locale = (typeof locales)[number];
+
+export const localeLabels: Record<Locale, string> = {
+  en: "English",
+  pt: "Portugues"
+};
+
+export const localeCurrencies: Record<Locale, string> = {
+  en: "EUR",
+  pt: "EUR"
+};
+
+export const catalogs: Record<Locale, Record<string, string>> = {
+  en: {
+    "admin.accessDenied.description": "Your current role cannot manage users or roles.",
+    "admin.accessDenied.title": "Admin access required",
+    "admin.assignments": "Role assignments",
+    "admin.globalScope": "All locations",
+    "admin.locations": "Locations",
+    "admin.roles.description": "Application roles available for staff assignment.",
+    "admin.roles.title": "Roles",
+    "admin.save": "Save changes",
+    "admin.userDetail.title": "Edit user",
+    "admin.users.description": "Manage staff accounts, role assignments, and location scopes.",
+    "admin.users.title": "Users",
+    "auth.signOut": "Sign out",
+    "dashboard.emptyDescription":
+      "Production, inventory, and Shopify signals will appear here as modules come online.",
+    "dashboard.emptyTitle": "No operational cards yet",
+    "dashboard.eyebrow": "Dashboard",
+    "dashboard.nextQc": "Next QC review",
+    "dashboard.openBatches": "Open batches",
+    "dashboard.stockValue": "Released stock value",
+    "dashboard.subtitle":
+      "A placeholder command surface for traceable, offline-first operations.",
+    "dashboard.syncDescription":
+      "Pending uploads, conflicts, and reconciliation health will live in this view.",
+    "dashboard.syncTitle": "Sync queue placeholder",
+    "dashboard.tabs.sync": "Sync",
+    "dashboard.tabs.today": "Today",
+    "dashboard.title": "Operations overview",
+    "layout.appTitle": "Mushroom Compadres ERP",
+    "layout.primaryNav": "Primary navigation",
+    "layout.workspace": "Rogil operations",
+    "login.email": "Email",
+    "login.error": "Sign in failed. Check your credentials and try again.",
+    "login.eyebrow": "Staff access",
+    "login.formLabel": "Staff sign in",
+    "login.password": "Password",
+    "login.submit": "Sign in",
+    "login.subtitle": "Use your staff account to access operational screens.",
+    "login.title": "Sign in to Mushroom Compadres",
+    "nav.dashboard": "Dashboard",
+    "nav.health": "Health",
+    "nav.inventory": "Inventory",
+    "nav.login": "Login",
+    "nav.roles": "Roles",
+    "nav.settings": "Settings",
+    "nav.users": "Users",
+    "notFound.description": "Check the route and try again.",
+    "notFound.title": "Page not found",
+    "offline.description":
+      "This route is available when the app is installed or cached and the network is down.",
+    "offline.retry": "Try again",
+    "offline.title": "Offline fallback",
+    "settings.currencyPreview": "Currency preview",
+    "settings.datePreview": "Date preview",
+    "settings.eyebrow": "Settings",
+    "settings.locale": "Language",
+    "settings.numberPreview": "Number preview",
+    "settings.subtitle":
+      "Switch language and formatting for dates, numbers, and currency.",
+    "settings.title": "Locale and display",
+    "status.lastSync": "Last sync: {{value}}",
+    "status.offline": "Offline",
+    "status.online": "Online",
+    "toast.dismiss": "Dismiss",
+    "update.description": "A refreshed app shell is ready.",
+    "update.reload": "Reload",
+    "update.title": "Update available"
+  },
+  pt: {
+    "admin.accessDenied.description": "A sua funcao atual nao permite gerir utilizadores ou funcoes.",
+    "admin.accessDenied.title": "Acesso de administracao necessario",
+    "admin.assignments": "Atribuicoes de funcoes",
+    "admin.globalScope": "Todas as localizacoes",
+    "admin.locations": "Localizacoes",
+    "admin.roles.description": "Funcoes da aplicacao disponiveis para atribuicao.",
+    "admin.roles.title": "Funcoes",
+    "admin.save": "Guardar alteracoes",
+    "admin.userDetail.title": "Editar utilizador",
+    "admin.users.description": "Gerir contas da equipa, funcoes e ambitos por localizacao.",
+    "admin.users.title": "Utilizadores",
+    "auth.signOut": "Sair",
+    "dashboard.emptyDescription":
+      "Sinais de producao, inventario e Shopify aparecerao aqui quando os modulos estiverem ativos.",
+    "dashboard.emptyTitle": "Ainda nao ha cartoes operacionais",
+    "dashboard.eyebrow": "Painel",
+    "dashboard.nextQc": "Proxima revisao de CQ",
+    "dashboard.openBatches": "Lotes abertos",
+    "dashboard.stockValue": "Valor de stock libertado",
+    "dashboard.subtitle":
+      "Uma superficie inicial para operacoes rastreaveis e offline-first.",
+    "dashboard.syncDescription":
+      "Carregamentos pendentes, conflitos e reconciliacao ficarao nesta vista.",
+    "dashboard.syncTitle": "Fila de sincronizacao",
+    "dashboard.tabs.sync": "Sincronizacao",
+    "dashboard.tabs.today": "Hoje",
+    "dashboard.title": "Visao geral das operacoes",
+    "layout.appTitle": "Mushroom Compadres ERP",
+    "layout.primaryNav": "Navegacao principal",
+    "layout.workspace": "Operacoes em Rogil",
+    "login.email": "Email",
+    "login.error": "A entrada falhou. Confirme os dados e tente novamente.",
+    "login.eyebrow": "Acesso da equipa",
+    "login.formLabel": "Entrada da equipa",
+    "login.password": "Palavra-passe",
+    "login.submit": "Entrar",
+    "login.subtitle": "Use a sua conta da equipa para aceder aos ecras operacionais.",
+    "login.title": "Entrar no Mushroom Compadres",
+    "nav.dashboard": "Painel",
+    "nav.health": "Saude",
+    "nav.inventory": "Inventario",
+    "nav.login": "Entrada",
+    "nav.roles": "Funcoes",
+    "nav.settings": "Definicoes",
+    "nav.users": "Utilizadores",
+    "notFound.description": "Confirme a rota e tente novamente.",
+    "notFound.title": "Pagina nao encontrada",
+    "offline.description":
+      "Esta rota esta disponivel quando a app esta instalada ou em cache e a rede falha.",
+    "offline.retry": "Tentar novamente",
+    "offline.title": "Pagina offline",
+    "settings.currencyPreview": "Pre-visualizacao de moeda",
+    "settings.datePreview": "Pre-visualizacao de data",
+    "settings.eyebrow": "Definicoes",
+    "settings.locale": "Idioma",
+    "settings.numberPreview": "Pre-visualizacao de numero",
+    "settings.subtitle":
+      "Altere o idioma e a formatacao de datas, numeros e moeda.",
+    "settings.title": "Idioma e apresentacao",
+    "status.lastSync": "Ultima sincronizacao: {{value}}",
+    "status.offline": "Sem rede",
+    "status.online": "Online",
+    "toast.dismiss": "Fechar",
+    "update.description": "Uma nova versao da aplicacao esta pronta.",
+    "update.reload": "Recarregar",
+    "update.title": "Atualizacao disponivel"
+  }
+};

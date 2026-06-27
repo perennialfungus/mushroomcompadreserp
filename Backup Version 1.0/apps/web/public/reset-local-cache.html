@@ -1,0 +1,28 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Reset Local Cache</title>
+  </head>
+  <body>
+    <p id="status">Resetting local development cache...</p>
+    <script>
+      (async () => {
+        try {
+          const registrations = "serviceWorker" in navigator
+            ? await navigator.serviceWorker.getRegistrations()
+            : [];
+          await Promise.all(registrations.map((registration) => registration.unregister()));
+          const keys = "caches" in window ? await caches.keys() : [];
+          await Promise.all(keys.map((key) => caches.delete(key)));
+          document.getElementById("status").textContent =
+            `Reset complete. Removed ${registrations.length} service worker(s) and ${keys.length} cache(s).`;
+        } catch (error) {
+          document.getElementById("status").textContent =
+            `Reset failed: ${error instanceof Error ? error.message : String(error)}`;
+        }
+      })();
+    </script>
+  </body>
+</html>

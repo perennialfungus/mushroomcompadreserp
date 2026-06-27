@@ -1,0 +1,2 @@
+product_name,sku,variant_name,variant_name_pt,form,inventory_uom,sellable_uom,barcode,net_quantity,status,track_lots,track_expiry,shopify_variant_gid,shopify_inventory_item_gid
+Sample Product,SAMPLE-SKU-001,Sample Product 50 ml,,tincture,bottle,bottle,,50,draft,true,true,,

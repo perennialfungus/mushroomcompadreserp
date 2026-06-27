@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["vitest"],
+    "paths": {
+      "@mushroom-compadres/domain": ["../domain/src/index.ts"]
+    }
+  },
+  "include": ["src"]
+}

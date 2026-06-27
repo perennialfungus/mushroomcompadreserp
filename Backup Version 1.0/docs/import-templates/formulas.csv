@@ -1,0 +1,2 @@
+formula_code,revision_code,sku,formula_name,status,target_output_quantity,target_output_uom,expected_yield_percent,effective_from,notes
+FORM-SAMPLE,v1,SAMPLE-SKU-001,Sample formula,draft,100,bottle,100,,Replace with approved formula facts
