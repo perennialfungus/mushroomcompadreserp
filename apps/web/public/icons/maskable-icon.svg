@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" role="img" aria-label="Mushroom Compadres">
+  <rect width="512" height="512" fill="#244734"/>
+  <circle cx="256" cy="256" r="220" fill="#f7f2e8"/>
+  <path d="M105 241c0-81 67-143 151-143s151 62 151 143c0 21-17 38-38 38H143c-21 0-38-17-38-38Z" fill="#d97941"/>
+  <path d="M178 264h156l-23 151c-3 20-20 35-41 35h-29c-21 0-38-15-41-35l-22-151Z" fill="#fffaf0"/>
+  <circle cx="190" cy="190" r="19" fill="#fffaf0"/>
+  <circle cx="254" cy="158" r="15" fill="#fffaf0"/>
+  <circle cx="320" cy="200" r="18" fill="#fffaf0"/>
+  <path d="M178 325c36 20 121 20 157 0" fill="none" stroke="#8b6f47" stroke-width="23" stroke-linecap="round"/>
+</svg>

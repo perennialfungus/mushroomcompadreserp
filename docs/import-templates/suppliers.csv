@@ -1,0 +1,2 @@
+supplier_name,status,default_currency,contact_name,email,phone,address_line1,address_line2,city,region,postal_code,country_code,notes
+Sample Supplier,active,EUR,,,,,,,,PT,Replace with approved supplier facts

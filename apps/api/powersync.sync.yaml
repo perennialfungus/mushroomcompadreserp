@@ -1,0 +1,137 @@
+# Initial PowerSync Sync Streams for Mushroom Compadres operational offline data.
+# Deploy this with the PowerSync Cloud dashboard or CLI after substituting the
+# auth claim expressions for the chosen Supabase/PowerSync JWT configuration.
+streams:
+  organization_core:
+    description: Organization, current user, roles, and role assignments.
+    parameters:
+      - name: organization_id
+        query: |
+          SELECT organization_id
+          FROM users
+          WHERE auth_user_id = request.user_id()
+            AND status = 'active'
+            AND deleted_at IS NULL
+    data:
+      - table: organizations
+        query: |
+          SELECT id, name, default_currency, default_locale, timezone, settings_json, updated_at, version
+          FROM organizations
+          WHERE id = bucket.organization_id
+      - table: users
+        query: |
+          SELECT id, auth_user_id, organization_id, email, display_name, status, locale, last_seen_at, updated_at, version
+          FROM users
+          WHERE organization_id = bucket.organization_id
+            AND deleted_at IS NULL
+      - table: roles
+        query: |
+          SELECT id, organization_id, code, name, description, updated_at, version
+          FROM roles
+          WHERE organization_id = bucket.organization_id
+            AND deleted_at IS NULL
+      - table: user_roles
+        query: |
+          SELECT ur.id, ur.user_id, ur.role_id, ur.location_id, ur.updated_at, ur.version
+          FROM user_roles ur
+          JOIN users u ON u.id = ur.user_id
+          WHERE u.organization_id = bucket.organization_id
+            AND ur.deleted_at IS NULL
+  location_scope:
+    description: Active locations available to the signed-in staff member.
+    parameters:
+      - name: organization_id
+        query: |
+          SELECT organization_id
+          FROM users
+          WHERE auth_user_id = request.user_id()
+            AND status = 'active'
+            AND deleted_at IS NULL
+      - name: location_id
+        query: |
+          SELECT COALESCE(ur.location_id, l.id) AS location_id
+          FROM users u
+          JOIN user_roles ur ON ur.user_id = u.id
+          JOIN locations l ON l.organization_id = u.organization_id
+          WHERE u.auth_user_id = request.user_id()
+            AND u.status = 'active'
+            AND l.is_active = true
+            AND (ur.location_id IS NULL OR ur.location_id = l.id)
+    data:
+      - table: locations
+        query: |
+          SELECT id, organization_id, code, name, type, country_code, shopify_location_gid, is_active, updated_at, version
+          FROM locations
+          WHERE organization_id = bucket.organization_id
+            AND id = bucket.location_id
+            AND deleted_at IS NULL
+  operational_inventory:
+    description: Products, variants, lots, stock movement ledger, and derived balances for permitted locations.
+    parameters:
+      - name: organization_id
+        query: |
+          SELECT organization_id
+          FROM users
+          WHERE auth_user_id = request.user_id()
+            AND status = 'active'
+            AND deleted_at IS NULL
+      - name: location_id
+        query: |
+          SELECT COALESCE(ur.location_id, l.id) AS location_id
+          FROM users u
+          JOIN user_roles ur ON ur.user_id = u.id
+          JOIN locations l ON l.organization_id = u.organization_id
+          WHERE u.auth_user_id = request.user_id()
+            AND u.status = 'active'
+            AND l.is_active = true
+            AND (ur.location_id IS NULL OR ur.location_id = l.id)
+    data:
+      - table: products
+        query: |
+          SELECT id, organization_id, name, category, description_i18n, status, brand, default_uom, updated_at, version
+          FROM products
+          WHERE organization_id = bucket.organization_id
+            AND deleted_at IS NULL
+      - table: product_variants
+        query: |
+          SELECT id, product_id, sku, barcode, name_i18n, form, track_lots, track_expiry,
+                 inventory_uom, sellable_uom, net_quantity, status, shopify_variant_gid,
+                 shopify_inventory_item_gid, updated_at, version
+          FROM product_variants
+          WHERE product_id IN (
+            SELECT id FROM products WHERE organization_id = bucket.organization_id AND deleted_at IS NULL
+          )
+            AND deleted_at IS NULL
+      - table: lots
+        query: |
+          SELECT id, organization_id, lot_code, item_type, item_id, source_type, source_id,
+                 manufactured_at, received_at, expires_at, qc_status, status, parent_lot_id,
+                 metadata_json, created_at, updated_at, version
+          FROM lots
+          WHERE organization_id = bucket.organization_id
+            AND deleted_at IS NULL
+      - table: stock_movements
+        query: |
+          SELECT id, organization_id, client_transaction_id, movement_number, movement_type,
+                 item_type, item_id, lot_id, from_location_id, to_location_id, quantity, uom,
+                 occurred_at, recorded_by, source_type, source_id, reason_code, notes, metadata_json
+          FROM stock_movements
+          WHERE organization_id = bucket.organization_id
+            AND (
+              from_location_id = bucket.location_id
+              OR to_location_id = bucket.location_id
+            )
+      - table: inventory_balances
+        query: |
+          SELECT id, organization_id, item_type, item_id, lot_id, location_id,
+                 available_quantity, reserved_quantity, held_quantity, uom
+          FROM inventory_balances
+          WHERE organization_id = bucket.organization_id
+            AND location_id = bucket.location_id
+      - table: sync_conflicts
+        query: |
+          SELECT id, organization_id, client_transaction_id, table_name, status, code,
+                 message, details_json, created_at, resolved_at
+          FROM sync_conflicts
+          WHERE organization_id = bucket.organization_id
+            AND resolved_at IS NULL

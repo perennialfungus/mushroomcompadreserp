@@ -1,0 +1,2 @@
+label_code,revision_code,sku,status,market,language,net_quantity,ingredients,directions,warnings,storage,effective_from
+LBL-SAMPLE,v1,SAMPLE-SKU-001,draft,EU,en,50 ml,Replace with label-approved ingredients,Use as directed,Replace with approved warning text,Store cool and dry,

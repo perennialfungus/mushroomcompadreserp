@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "types": ["node", "vitest"],
+    "paths": {
+      "@mushroom-compadres/shopify": ["../../packages/shopify/src/index.ts"]
+    }
+  },
+  "include": ["src"]
+}

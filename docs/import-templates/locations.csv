@@ -1,0 +1,2 @@
+location_code,name,type,address_line1,address_line2,city,region,postal_code,country_code,shopify_location_gid,is_active
+SAMPLE,Sample Location,warehouse,,,,,,PT,,true
