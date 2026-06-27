@@ -1,4 +1,4 @@
-import { Calculator, CheckCircle2, ClipboardList, Factory, FileText, FlaskConical, GitCompare, History, LockKeyhole, PackagePlus, Save, ShieldCheck, Smartphone } from "lucide-react";
+import { Calculator, CheckCircle2, ClipboardList, Factory, FileText, FlaskConical, GitCompare, History, LockKeyhole, PackagePlus, Save, ShieldCheck, Smartphone, Timer, Wrench } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Badge, Button, Dialog, Input, Tabs, useToast } from "./components/ui";
 import {
@@ -6,7 +6,10 @@ import {
   approveFormulaRevision,
   compareFormulaRevisions,
   createBillOfMaterials,
-  createBomLine,
+  createBomOperation,
+  createBomOperationEquipment,
+  createBomOperationMaterial,
+  createBomOperationStep,
   createProcessingBatch,
   createProductionOrder,
   completeEbrExecution,
@@ -20,6 +23,7 @@ import {
   listLots,
   listProcessingBatches,
   listProductionOrders,
+  listRoutingMasterData,
   scaleFormulaRevision
 } from "./lib/api";
 import { useAuth } from "./auth";
@@ -35,7 +39,8 @@ import type {
   LotDetail,
   MasterDataSnapshot,
   ProcessingBatchDetail,
-  ProductionOrderDetail
+  ProductionOrderDetail,
+  RoutingMasterData
 } from "./types";
 
 function statusTone(status: string): "neutral" | "success" | "warning" | "info" {
@@ -59,6 +64,13 @@ const emptyMasterData: MasterDataSnapshot = {
   locations: []
 };
 
+const emptyRoutingMasterData: RoutingMasterData = {
+  workCenters: [],
+  equipment: [],
+  laborRoles: [],
+  operationCodes: []
+};
+
 function formText(form: FormData, name: string): string {
   return String(form.get(name) ?? "").trim();
 }
@@ -77,6 +89,7 @@ export function ProductionScreen() {
   const [formulas, setFormulas] = useState<FormulaRevisionDetail[]>([]);
   const [batches, setBatches] = useState<ProcessingBatchDetail[]>([]);
   const [masterData, setMasterData] = useState<MasterDataSnapshot>(emptyMasterData);
+  const [routingMasterData, setRoutingMasterData] = useState<RoutingMasterData>(emptyRoutingMasterData);
   const [ebrTemplates, setEbrTemplates] = useState<EbrTemplateDetail[]>([]);
   const [ebrExecutions, setEbrExecutions] = useState<EbrExecutionDetail[]>([]);
   const [ebrPacket, setEbrPacket] = useState<EbrPacket | null>(null);
@@ -154,7 +167,8 @@ export function ProductionScreen() {
         lotResponse,
         ebrTemplateResponse,
         ebrExecutionResponse,
-        masterDataResponse
+        masterDataResponse,
+        routingMasterDataResponse
       ] = await Promise.all([
         listProductionOrders(auth.session.accessToken),
         listBillOfMaterials(auth.session.accessToken),
@@ -163,13 +177,15 @@ export function ProductionScreen() {
         listLots(auth.session.accessToken),
         listEbrTemplates(auth.session.accessToken),
         listEbrExecutions(auth.session.accessToken),
-        listMasterData(auth.session.accessToken)
+        listMasterData(auth.session.accessToken),
+        listRoutingMasterData(auth.session.accessToken)
       ]);
       setOrders(orderResponse.orders);
       setBoms(bomResponse.boms);
       setFormulas(formulaResponse.formulas);
       setBatches(batchResponse.batches);
       setMasterData(masterDataResponse);
+      setRoutingMasterData(routingMasterDataResponse);
       setLots(lotResponse.lots);
       setEbrTemplates(ebrTemplateResponse.templates);
       setEbrExecutions(ebrExecutionResponse.executions);
@@ -443,7 +459,6 @@ export function ProductionScreen() {
     }
     const form = new FormData(event.currentTarget);
     const yieldQuantity = Number(formText(form, "yieldQuantity"));
-    const lineQuantity = Number(formText(form, "lineQuantity"));
     try {
       const response = await createBillOfMaterials(auth.session.accessToken, {
         productVariantId: formText(form, "productVariantId"),
@@ -454,15 +469,6 @@ export function ProductionScreen() {
         yieldUom: formText(form, "yieldUom"),
         effectiveFrom: new Date(`${formText(form, "effectiveFrom")}T00:00:00.000Z`).toISOString(),
         effectiveTo: null
-      });
-      await createBomLine(auth.session.accessToken, response.bom.id, {
-        lineType: formText(form, "lineType") as BillOfMaterialsDetail["lines"][number]["lineType"],
-        componentType: formText(form, "componentType") as BillOfMaterialsDetail["lines"][number]["componentType"],
-        componentId: formText(form, "componentId"),
-        quantity: Number.isFinite(lineQuantity) && lineQuantity > 0 ? lineQuantity : 1,
-        uom: formText(form, "lineUom"),
-        wastePercent: Number(formText(form, "wastePercent")) || 0,
-        isCritical: form.get("isCritical") === "on"
       });
       showToast({ title: "BOM created", description: response.bom.versionCode });
       setSelectedBomId(response.bom.id);
@@ -577,54 +583,21 @@ export function ProductionScreen() {
             id: "boms",
             label: "BOMs",
             content: (
-              <div className="table-panel">
-                <div className="panel-heading">
-                  <h3>BOM editor</h3>
-                  <Badge tone="info"><ClipboardList aria-hidden="true" size={16} /> Versioned</Badge>
-                </div>
-                <label className="select-field">
-                  <span>Selected BOM</span>
-                  <select value={selectedBom?.bom.id ?? ""} onChange={(event) => setSelectedBomId(event.target.value)}>
-                    {boms.map((detail) => (
-                      <option key={detail.bom.id} value={detail.bom.id}>
-                        {detail.bom.versionCode} / {detail.bom.status} / {detail.bom.yieldQuantity} {detail.bom.yieldUom}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                <BomProcessOverview
-                  bom={selectedBom}
-                  batches={batches}
-                  ebrTemplates={ebrTemplates}
-                  formulas={formulas}
-                  formatNumber={formatNumber}
-                />
-                {boms.map((detail) => (
-                  <div className="stack" key={detail.bom.id}>
-                    <h4>{detail.bom.versionCode} / {detail.bom.yieldQuantity} {detail.bom.yieldUom}</h4>
-                    <table className="list-table">
-                      <thead>
-                        <tr>
-                          <th>Component</th>
-                          <th>Quantity</th>
-                          <th>Waste</th>
-                          <th>Critical</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {detail.lines.map((line) => (
-                          <tr key={line.id}>
-                            <td>{line.componentType.replaceAll("_", " ")} / {line.componentId}</td>
-                            <td>{formatNumber(line.quantity)} {line.uom}</td>
-                            <td>{formatNumber(line.wastePercent)}%</td>
-                            <td>{line.isCritical ? "Yes" : "No"}</td>
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                ))}
-              </div>
+              <BomEditor
+                authToken={auth.session?.accessToken ?? ""}
+                batches={batches}
+                boms={boms}
+                ebrTemplates={ebrTemplates}
+                formulas={formulas}
+                formatNumber={formatNumber}
+                masterData={masterData}
+                onError={setError}
+                onReload={loadProduction}
+                onSelectBom={setSelectedBomId}
+                routingMasterData={routingMasterData}
+                selectedBom={selectedBom}
+                showToast={showToast}
+              />
             )
           },
           {
@@ -1293,46 +1266,510 @@ export function ProductionScreen() {
           <Input label="Yield quantity" name="yieldQuantity" required type="number" min="0.000001" step="0.000001" defaultValue="48" />
           <Input label="Yield UOM" name="yieldUom" required defaultValue="bottle" />
           <Input label="Effective from" name="effectiveFrom" required type="date" defaultValue={new Date().toISOString().slice(0, 10)} />
-          <label className="select-field">
-            <span>First line type</span>
-            <select name="lineType" defaultValue="ingredient">
-              <option value="ingredient">Ingredient</option>
-              <option value="extract">Extract</option>
-              <option value="packaging">Packaging</option>
-              <option value="wip">WIP</option>
-            </select>
-          </label>
-          <label className="select-field">
-            <span>Component type</span>
-            <select name="componentType" defaultValue="material">
-              <option value="material">Material</option>
-              <option value="packaging_component">Packaging component</option>
-              <option value="product_variant">Product variant</option>
-            </select>
-          </label>
-          <label className="select-field">
-            <span>Component</span>
-            <select name="componentId" defaultValue={masterData.materials[0]?.id ?? masterData.packagingComponents[0]?.id ?? ""}>
-              {[...masterData.materials, ...masterData.packagingComponents, ...masterData.productVariants].map((item) => {
-                const skuLabel = "sku" in item ? item.sku ?? "No SKU" : "No SKU";
-                const nameLabel = "name" in item ? item.name : item.localizedNames.en;
-                return <option key={item.id} value={item.id}>{skuLabel} / {nameLabel}</option>;
-              })}
-            </select>
-          </label>
-          <Input label="Line quantity" name="lineQuantity" required type="number" min="0.000001" step="0.000001" defaultValue="1" />
-          <Input label="Line UOM" name="lineUom" required defaultValue="each" />
-          <Input label="Waste %" name="wastePercent" type="number" min="0" max="100" step="0.01" defaultValue="0" />
-          <label className="checkbox-row full-span">
-            <input name="isCritical" type="checkbox" defaultChecked />
-            <span>Critical component</span>
-          </label>
           <div className="form-actions full-span">
             <Button type="submit"><Save aria-hidden="true" size={18} />Save BOM</Button>
           </div>
         </form>
       </Dialog>
     </section>
+  );
+}
+
+function BomEditor({
+  authToken,
+  batches,
+  boms,
+  ebrTemplates,
+  formulas,
+  formatNumber,
+  masterData,
+  onError,
+  onReload,
+  onSelectBom,
+  routingMasterData,
+  selectedBom,
+  showToast
+}: {
+  authToken: string;
+  batches: ProcessingBatchDetail[];
+  boms: BillOfMaterialsDetail[];
+  ebrTemplates: EbrTemplateDetail[];
+  formulas: FormulaRevisionDetail[];
+  formatNumber: (value: number) => string;
+  masterData: MasterDataSnapshot;
+  onError: (message: string | null) => void;
+  onReload: () => Promise<void>;
+  onSelectBom: (bomId: string) => void;
+  routingMasterData: RoutingMasterData;
+  selectedBom: BillOfMaterialsDetail | null;
+  showToast: (toast: { title: string; description?: string }) => void;
+}) {
+  const operations = useMemo(
+    () => [...(selectedBom?.operations ?? [])].sort((left, right) => left.operation.sequence - right.operation.sequence),
+    [selectedBom]
+  );
+  const [selectedOperationId, setSelectedOperationId] = useState("");
+  const selectedOperation =
+    operations.find((entry) => entry.operation.id === selectedOperationId) ?? operations[0] ?? null;
+  const runtime = selectedBom?.productionPlan?.operationRuntimes.find(
+    (entry) => entry.bomOperationId === selectedOperation?.operation.id
+  ) ?? null;
+  const componentOptions = useMemo(
+    () => [
+      ...masterData.materials.map((item) => ({
+        value: `material:${item.id}`,
+        label: `${item.sku ?? "MAT"} / ${item.name}`
+      })),
+      ...masterData.packagingComponents.map((item) => ({
+        value: `packaging_component:${item.id}`,
+        label: `${item.sku ?? "PKG"} / ${item.name}`
+      })),
+      ...masterData.productVariants.map((item) => ({
+        value: `product_variant:${item.id}`,
+        label: `${item.sku} / ${item.localizedNames.en}`
+      }))
+    ],
+    [masterData.materials, masterData.packagingComponents, masterData.productVariants]
+  );
+
+  useEffect(() => {
+    if (!operations.some((entry) => entry.operation.id === selectedOperationId)) {
+      setSelectedOperationId(operations[0]?.operation.id ?? "");
+    }
+  }, [operations, selectedOperationId]);
+
+  function componentLabel(componentType: string, componentId: string) {
+    if (componentType === "material") {
+      const material = masterData.materials.find((item) => item.id === componentId);
+      return material ? `${material.sku ?? "MAT"} / ${material.name}` : componentId;
+    }
+    if (componentType === "packaging_component") {
+      const component = masterData.packagingComponents.find((item) => item.id === componentId);
+      return component ? `${component.sku ?? "PKG"} / ${component.name}` : componentId;
+    }
+    const variant = masterData.productVariants.find((item) => item.id === componentId);
+    return variant ? `${variant.sku} / ${variant.localizedNames.en}` : componentId;
+  }
+
+  function equipmentLabel(equipmentId: string) {
+    const equipment = routingMasterData.equipment.find((item) => item.id === equipmentId);
+    return equipment ? `${equipment.code} / ${equipment.name}` : equipmentId;
+  }
+
+  async function submitOperation(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedBom || !authToken) {
+      return;
+    }
+    const form = new FormData(event.currentTarget);
+    try {
+      const machineUnits = formText(form, "machineUnits");
+      const machineTimeMinutes = formText(form, "machineTimeMinutes");
+      await createBomOperation(authToken, selectedBom.bom.id, {
+        sequence: Number(formText(form, "sequence")) || (operations.length + 1) * 10,
+        operationId: formText(form, "operationId"),
+        operationCodeId: formText(form, "operationCodeId"),
+        workCenterId: formText(form, "workCenterId"),
+        setupTimeMinutes: Number(formText(form, "setupTimeMinutes")) || 0,
+        runUnits: Number(formText(form, "runUnits")) || selectedBom.bom.yieldQuantity,
+        runTimeMinutes: Number(formText(form, "runTimeMinutes")) || 0,
+        machineUnits: machineUnits ? Number(machineUnits) : null,
+        machineTimeMinutes: machineTimeMinutes ? Number(machineTimeMinutes) : null,
+        queueTimeMinutes: Number(formText(form, "queueTimeMinutes")) || 0,
+        moveTimeMinutes: Number(formText(form, "moveTimeMinutes")) || 0,
+        finishTimeMinutes: Number(formText(form, "finishTimeMinutes")) || 0,
+        laborRoleId: nullableFormText(form, "laborRoleId"),
+        laborCrewSize: Number(formText(form, "laborCrewSize")) || 1,
+        runtimeBasis: formText(form, "runtimeBasis") as "manual" | "equipment" | "mixed",
+        backflushLabor: form.get("backflushLabor") === "on",
+        controlPoint: form.get("controlPoint") === "on",
+        scrapAction: formText(form, "scrapAction") as "write_off" | "quarantine" | "rework",
+        instructions: nullableFormText(form, "instructions")
+      });
+      showToast({ title: "Operation added", description: formText(form, "operationId") });
+      event.currentTarget.reset();
+      await onReload();
+    } catch (submitError) {
+      onError(submitError instanceof Error ? submitError.message : "BOM operation create failed.");
+    }
+  }
+
+  async function submitStep(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedOperation || !authToken) {
+      return;
+    }
+    const form = new FormData(event.currentTarget);
+    try {
+      await createBomOperationStep(authToken, selectedOperation.operation.id, {
+        sequence: Number(formText(form, "sequence")) || (selectedOperation.steps.length + 1) * 10,
+        title: formText(form, "title"),
+        instructions: formText(form, "instructions"),
+        isCritical: form.get("isCritical") === "on",
+        requiresSignature: form.get("requiresSignature") === "on",
+        requiresQcEntry: form.get("requiresQcEntry") === "on"
+      });
+      showToast({ title: "Step added", description: formText(form, "title") });
+      event.currentTarget.reset();
+      await onReload();
+    } catch (submitError) {
+      onError(submitError instanceof Error ? submitError.message : "BOM step create failed.");
+    }
+  }
+
+  async function submitMaterial(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedOperation || !authToken) {
+      return;
+    }
+    const form = new FormData(event.currentTarget);
+    const [componentType, componentId] = formText(form, "componentRef").split(":");
+    if (!componentType || !componentId) {
+      onError("Select a BOM component before assigning material.");
+      return;
+    }
+    try {
+      await createBomOperationMaterial(authToken, selectedOperation.operation.id, {
+        lineType: formText(form, "lineType") as BillOfMaterialsDetail["lines"][number]["lineType"],
+        componentType: componentType as BillOfMaterialsDetail["lines"][number]["componentType"],
+        componentId,
+        quantity: Number(formText(form, "quantity")) || 1,
+        uom: formText(form, "uom"),
+        wastePercent: Number(formText(form, "wastePercent")) || 0,
+        issueMethod: formText(form, "issueMethod") as "manual" | "backflush",
+        effectiveFrom: null,
+        effectiveTo: null,
+        isCritical: form.get("isCritical") === "on",
+        lotTraceRequired: form.get("lotTraceRequired") === "on"
+      });
+      showToast({ title: "Material assigned", description: componentLabel(componentType, componentId) });
+      event.currentTarget.reset();
+      await onReload();
+    } catch (submitError) {
+      onError(submitError instanceof Error ? submitError.message : "BOM material create failed.");
+    }
+  }
+
+  async function submitEquipment(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedOperation || !authToken) {
+      return;
+    }
+    const form = new FormData(event.currentTarget);
+    const runUnits = formText(form, "runUnits");
+    const runTimeMinutes = formText(form, "runTimeMinutes");
+    try {
+      await createBomOperationEquipment(authToken, selectedOperation.operation.id, {
+        equipmentId: formText(form, "equipmentId"),
+        isPrimary: form.get("isPrimary") === "on",
+        required: form.get("required") === "on",
+        setupTimeMinutes: Number(formText(form, "setupTimeMinutes")) || 0,
+        runUnits: runUnits ? Number(runUnits) : null,
+        runTimeMinutes: runTimeMinutes ? Number(runTimeMinutes) : null,
+        cleaningTimeMinutes: Number(formText(form, "cleaningTimeMinutes")) || 0,
+        notes: nullableFormText(form, "notes")
+      });
+      showToast({ title: "Equipment assigned", description: equipmentLabel(formText(form, "equipmentId")) });
+      event.currentTarget.reset();
+      await onReload();
+    } catch (submitError) {
+      onError(submitError instanceof Error ? submitError.message : "BOM equipment create failed.");
+    }
+  }
+
+  if (!selectedBom) {
+    return (
+      <div className="table-panel">
+        <div className="panel-heading">
+          <h3>BOM editor</h3>
+          <Badge tone="warning">No BOM</Badge>
+        </div>
+        <p>No BOM selected.</p>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bom-workspace">
+      <section className="table-panel bom-header-panel">
+        <div className="panel-heading">
+          <h3>BOM editor</h3>
+          <Badge tone="info"><ClipboardList aria-hidden="true" size={16} /> Versioned</Badge>
+        </div>
+        <div className="bom-header-grid">
+          <label className="select-field">
+            <span>Selected BOM</span>
+            <select value={selectedBom.bom.id} onChange={(event) => onSelectBom(event.target.value)}>
+              {boms.map((detail) => (
+                <option key={detail.bom.id} value={detail.bom.id}>
+                  {detail.bom.versionCode} / {detail.bom.status} / {detail.bom.yieldQuantity} {detail.bom.yieldUom}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="bom-status-strip">
+            <Badge tone={statusTone(selectedBom.bom.status)}>{selectedBom.bom.status}</Badge>
+            <span>{formatNumber(selectedBom.bom.yieldQuantity)} {selectedBom.bom.yieldUom}</span>
+            <span>{operations.length} operation(s)</span>
+            <span>{selectedBom.productionPlan ? `${formatNumber(selectedBom.productionPlan.totalElapsedMinutes)} min elapsed` : "No runtime"}</span>
+          </div>
+        </div>
+        <BomProcessOverview
+          bom={selectedBom}
+          batches={batches}
+          ebrTemplates={ebrTemplates}
+          formulas={formulas}
+          formatNumber={formatNumber}
+        />
+      </section>
+
+      <section className="bom-definition-layout">
+        <div className="table-panel">
+          <div className="panel-heading">
+            <h3>Operations</h3>
+            <Badge tone={operations.length > 0 ? "success" : "warning"}>{operations.length} rows</Badge>
+          </div>
+          <div className="bom-operation-stack">
+            {operations.map((entry) => {
+              const operationRuntime = selectedBom.productionPlan?.operationRuntimes.find(
+                (item) => item.bomOperationId === entry.operation.id
+              );
+              const workCenter = entry.workCenter ?? routingMasterData.workCenters.find((item) => item.id === entry.operation.workCenterId);
+              const operationCode = entry.operationCode ?? routingMasterData.operationCodes.find((item) => item.id === entry.operation.operationCodeId);
+              return (
+                <button
+                  className={`bom-operation-card${selectedOperation?.operation.id === entry.operation.id ? " selected" : ""}`}
+                  key={entry.operation.id}
+                  onClick={() => setSelectedOperationId(entry.operation.id)}
+                  type="button"
+                >
+                  <span>
+                    <strong>{entry.operation.operationId} / {operationCode?.code ?? entry.operation.operationCodeId}</strong>
+                    <small>{workCenter?.name ?? entry.operation.workCenterId}</small>
+                  </span>
+                  <span>
+                    <Badge tone={entry.operation.controlPoint ? "success" : "neutral"}>
+                      {entry.operation.controlPoint ? "Control point" : entry.operation.runtimeBasis}
+                    </Badge>
+                    <small>{operationRuntime ? `${formatNumber(operationRuntime.totalElapsedMinutes)} min` : "Runtime pending"}</small>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+
+        <form className="table-panel bom-form-grid" onSubmit={submitOperation}>
+          <div className="panel-heading">
+            <h3>Add operation</h3>
+            <Badge tone="info"><Timer aria-hidden="true" size={16} /> Runtime</Badge>
+          </div>
+          <Input label="Seq" name="sequence" type="number" min="1" step="1" defaultValue={String((operations.length + 1) * 10)} />
+          <Input label="Operation ID" name="operationId" required defaultValue={String((operations.length + 1) * 10).padStart(3, "0")} />
+          <label className="select-field">
+            <span>Operation code</span>
+            <select name="operationCodeId" defaultValue={routingMasterData.operationCodes[0]?.id ?? ""} required>
+              {routingMasterData.operationCodes.map((operationCode) => (
+                <option key={operationCode.id} value={operationCode.id}>{operationCode.code} / {operationCode.name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="select-field">
+            <span>Work center</span>
+            <select name="workCenterId" defaultValue={routingMasterData.workCenters[0]?.id ?? ""} required>
+              {routingMasterData.workCenters.map((workCenter) => (
+                <option key={workCenter.id} value={workCenter.id}>{workCenter.code} / {workCenter.name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="select-field">
+            <span>Labor role</span>
+            <select name="laborRoleId" defaultValue={routingMasterData.laborRoles[0]?.id ?? ""}>
+              <option value="">None</option>
+              {routingMasterData.laborRoles.map((role) => (
+                <option key={role.id} value={role.id}>{role.code} / {role.name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="select-field">
+            <span>Runtime basis</span>
+            <select name="runtimeBasis" defaultValue="mixed">
+              <option value="manual">Manual</option>
+              <option value="equipment">Equipment</option>
+              <option value="mixed">Mixed</option>
+            </select>
+          </label>
+          <Input label="Setup min" name="setupTimeMinutes" type="number" min="0" step="0.01" defaultValue="10" />
+          <Input label="Run units" name="runUnits" type="number" min="0.000001" step="0.000001" defaultValue={String(selectedBom.bom.yieldQuantity)} />
+          <Input label="Run min" name="runTimeMinutes" type="number" min="0" step="0.01" defaultValue="30" />
+          <Input label="Machine units" name="machineUnits" type="number" min="0.000001" step="0.000001" />
+          <Input label="Machine min" name="machineTimeMinutes" type="number" min="0" step="0.01" />
+          <Input label="Queue min" name="queueTimeMinutes" type="number" min="0" step="0.01" defaultValue="0" />
+          <Input label="Move min" name="moveTimeMinutes" type="number" min="0" step="0.01" defaultValue="0" />
+          <Input label="Finish min" name="finishTimeMinutes" type="number" min="0" step="0.01" defaultValue="0" />
+          <Input label="Crew" name="laborCrewSize" type="number" min="1" step="1" defaultValue="1" />
+          <label className="select-field">
+            <span>Scrap action</span>
+            <select name="scrapAction" defaultValue="write_off">
+              <option value="write_off">Write off</option>
+              <option value="quarantine">Quarantine</option>
+              <option value="rework">Rework</option>
+            </select>
+          </label>
+          <Input label="Instructions" name="instructions" className="full-span" />
+          <label className="checkbox-row">
+            <input name="backflushLabor" type="checkbox" />
+            <span>Backflush labor</span>
+          </label>
+          <label className="checkbox-row">
+            <input name="controlPoint" type="checkbox" />
+            <span>Control point</span>
+          </label>
+          <div className="form-actions full-span">
+            <Button type="submit"><Save aria-hidden="true" size={18} />Add operation</Button>
+          </div>
+        </form>
+      </section>
+
+      {selectedOperation ? (
+        <section className="bom-detail-grid">
+          <div className="table-panel">
+            <div className="panel-heading">
+              <h3>Operation {selectedOperation.operation.operationId}</h3>
+              <Badge tone={selectedOperation.operation.controlPoint ? "success" : "info"}>
+                {selectedOperation.operation.controlPoint ? "Final control" : selectedOperation.operation.runtimeBasis}
+              </Badge>
+            </div>
+            <div className="metric-grid bom-runtime-grid">
+              <article className="metric-panel">
+                <span>Elapsed</span>
+                <strong>{runtime ? formatNumber(runtime.totalElapsedMinutes) : "0"} min</strong>
+              </article>
+              <article className="metric-panel">
+                <span>Manual</span>
+                <strong>{runtime ? formatNumber(runtime.totalManualMinutes) : "0"} min</strong>
+              </article>
+              <article className="metric-panel">
+                <span>Machine</span>
+                <strong>{runtime ? formatNumber(runtime.totalMachineMinutes) : "0"} min</strong>
+              </article>
+            </div>
+            <div className="bom-subtables">
+              <section>
+                <h4>Steps</h4>
+                <table className="list-table">
+                  <thead><tr><th>Seq</th><th>Step</th><th>Controls</th></tr></thead>
+                  <tbody>
+                    {selectedOperation.steps.map((step) => (
+                      <tr key={step.id}>
+                        <td>{step.sequence}</td>
+                        <td>{step.title}<div className="muted-line">{step.instructions}</div></td>
+                        <td>{[step.isCritical ? "critical" : null, step.requiresSignature ? "signature" : null, step.requiresQcEntry ? "QC" : null].filter(Boolean).join(", ") || "standard"}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </section>
+              <section>
+                <h4>Materials</h4>
+                <table className="list-table">
+                  <thead><tr><th>Component</th><th>Qty</th><th>Issue</th></tr></thead>
+                  <tbody>
+                    {selectedOperation.materials.map((material) => (
+                      <tr key={material.id}>
+                        <td>{componentLabel(material.componentType, material.componentId)}</td>
+                        <td>{formatNumber(material.quantity)} {material.uom}<div className="muted-line">{formatNumber(material.wastePercent)}% waste</div></td>
+                        <td>{material.issueMethod}{material.lotTraceRequired ? " / lot trace" : ""}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </section>
+              <section>
+                <h4>Equipment</h4>
+                <table className="list-table">
+                  <thead><tr><th>Equipment</th><th>Timing</th><th>Role</th></tr></thead>
+                  <tbody>
+                    {selectedOperation.equipment.map(({ requirement, equipment }) => (
+                      <tr key={requirement.id}>
+                        <td>{equipment ? `${equipment.code} / ${equipment.name}` : equipmentLabel(requirement.equipmentId)}</td>
+                        <td>{formatNumber(requirement.setupTimeMinutes)} setup / {formatNumber(requirement.cleaningTimeMinutes)} clean</td>
+                        <td>{requirement.isPrimary ? "Primary" : "Alternate"}{requirement.required ? " / required" : ""}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </section>
+            </div>
+          </div>
+
+          <div className="bom-write-panel">
+            <form className="table-panel bom-form-grid" onSubmit={submitStep}>
+              <div className="panel-heading"><h3>Add step</h3><Badge tone="info">SOP</Badge></div>
+              <Input label="Seq" name="sequence" type="number" min="1" step="1" defaultValue={String((selectedOperation.steps.length + 1) * 10)} />
+              <Input label="Title" name="title" required />
+              <Input label="Instructions" name="instructions" required className="full-span" />
+              <label className="checkbox-row"><input name="isCritical" type="checkbox" /><span>Critical</span></label>
+              <label className="checkbox-row"><input name="requiresSignature" type="checkbox" /><span>Signature</span></label>
+              <label className="checkbox-row"><input name="requiresQcEntry" type="checkbox" /><span>QC entry</span></label>
+              <div className="form-actions full-span"><Button type="submit"><Save aria-hidden="true" size={18} />Add step</Button></div>
+            </form>
+
+            <form className="table-panel bom-form-grid" onSubmit={submitMaterial}>
+              <div className="panel-heading"><h3>Add material</h3><Badge tone="info">Per operation</Badge></div>
+              <label className="select-field full-span">
+                <span>Component</span>
+                <select name="componentRef" required defaultValue={componentOptions[0]?.value ?? ""}>
+                  {componentOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}
+                </select>
+              </label>
+              <label className="select-field">
+                <span>Line type</span>
+                <select name="lineType" defaultValue="ingredient">
+                  <option value="ingredient">Ingredient</option>
+                  <option value="extract">Extract</option>
+                  <option value="packaging">Packaging</option>
+                  <option value="wip">WIP</option>
+                </select>
+              </label>
+              <label className="select-field">
+                <span>Issue</span>
+                <select name="issueMethod" defaultValue="manual">
+                  <option value="manual">Manual</option>
+                  <option value="backflush">Backflush</option>
+                </select>
+              </label>
+              <Input label="Quantity" name="quantity" type="number" min="0.000001" step="0.000001" defaultValue="1" />
+              <Input label="UOM" name="uom" defaultValue="each" />
+              <Input label="Waste %" name="wastePercent" type="number" min="0" step="0.01" defaultValue="0" />
+              <label className="checkbox-row"><input name="isCritical" type="checkbox" defaultChecked /><span>Critical</span></label>
+              <label className="checkbox-row"><input name="lotTraceRequired" type="checkbox" defaultChecked /><span>Lot trace</span></label>
+              <div className="form-actions full-span"><Button type="submit"><Save aria-hidden="true" size={18} />Add material</Button></div>
+            </form>
+
+            <form className="table-panel bom-form-grid" onSubmit={submitEquipment}>
+              <div className="panel-heading"><h3>Add equipment</h3><Badge tone="info"><Wrench aria-hidden="true" size={16} /> Catalog</Badge></div>
+              <label className="select-field full-span">
+                <span>Equipment</span>
+                <select name="equipmentId" required defaultValue={routingMasterData.equipment[0]?.id ?? ""}>
+                  {routingMasterData.equipment.map((equipment) => (
+                    <option key={equipment.id} value={equipment.id}>{equipment.code} / {equipment.name} / {equipment.status}</option>
+                  ))}
+                </select>
+              </label>
+              <Input label="Setup min" name="setupTimeMinutes" type="number" min="0" step="0.01" defaultValue="0" />
+              <Input label="Run units" name="runUnits" type="number" min="0.000001" step="0.000001" />
+              <Input label="Run min" name="runTimeMinutes" type="number" min="0" step="0.01" />
+              <Input label="Clean min" name="cleaningTimeMinutes" type="number" min="0" step="0.01" defaultValue="0" />
+              <Input label="Notes" name="notes" className="full-span" />
+              <label className="checkbox-row"><input name="isPrimary" type="checkbox" defaultChecked /><span>Primary</span></label>
+              <label className="checkbox-row"><input name="required" type="checkbox" defaultChecked /><span>Required</span></label>
+              <div className="form-actions full-span"><Button type="submit"><Save aria-hidden="true" size={18} />Add equipment</Button></div>
+            </form>
+          </div>
+        </section>
+      ) : null}
+    </div>
   );
 }
 

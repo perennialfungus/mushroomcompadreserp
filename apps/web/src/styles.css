@@ -1358,6 +1358,114 @@ a {
   color: var(--muted);
 }
 
+.bom-workspace {
+  display: grid;
+  gap: 16px;
+}
+
+.bom-header-panel {
+  display: grid;
+  gap: 14px;
+}
+
+.bom-header-grid,
+.bom-status-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  align-items: center;
+}
+
+.bom-header-grid .select-field {
+  min-width: min(100%, 340px);
+}
+
+.bom-status-strip {
+  color: var(--ink-2);
+  font-size: 0.9rem;
+  font-weight: 750;
+}
+
+.bom-status-strip span {
+  display: inline-flex;
+  min-height: 32px;
+  align-items: center;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  padding: 5px 9px;
+  background: var(--surface-2);
+}
+
+.bom-definition-layout,
+.bom-detail-grid {
+  display: grid;
+  grid-template-columns: minmax(280px, 0.85fr) minmax(0, 1.45fr);
+  gap: 16px;
+  align-items: start;
+}
+
+.bom-operation-stack,
+.bom-write-panel,
+.bom-subtables {
+  display: grid;
+  gap: 12px;
+}
+
+.bom-operation-card {
+  width: 100%;
+  min-height: 74px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--surface);
+  color: var(--ink);
+  padding: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.bom-operation-card:hover,
+.bom-operation-card.selected {
+  border-color: var(--green);
+  background: var(--moss-100);
+}
+
+.bom-operation-card span,
+.bom-operation-card strong,
+.bom-operation-card small {
+  display: grid;
+  gap: 4px;
+}
+
+.bom-operation-card small {
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.bom-form-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.bom-form-grid .panel-heading,
+.bom-form-grid .full-span,
+.bom-form-grid .form-actions {
+  grid-column: 1 / -1;
+}
+
+.bom-runtime-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  margin-bottom: 14px;
+}
+
+.bom-subtables h4 {
+  margin: 0 0 8px;
+}
+
 .widget-picker {
   display: grid;
   gap: 10px;
@@ -2040,6 +2148,13 @@ a {
 
   .desktop-sidebar {
     display: none;
+  }
+
+  .bom-definition-layout,
+  .bom-detail-grid,
+  .bom-form-grid,
+  .bom-runtime-grid {
+    grid-template-columns: 1fr;
   }
 
   .top-status {

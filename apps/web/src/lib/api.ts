@@ -5,6 +5,7 @@ import {
   buildTraceabilityGraph as buildDemoTraceabilityGraph,
   calculateBatchActualCost,
   calculateBacklogPriority,
+  buildBomProductionPlan,
   calculateCostVarianceReport,
   calculateFormulaCostRollup,
   calculateProductionOrderEstimatedCost,
@@ -99,6 +100,13 @@ import type {
   BillOfMaterials,
   BillOfMaterialsDetail,
   BomLine,
+  BomMaterialIssueMethod,
+  BomOperation,
+  BomOperationEquipment,
+  BomOperationMaterial,
+  BomOperationStep,
+  BomRuntimeBasis,
+  BomScrapAction,
   ChangeRequestDetail,
   ChangeRequestInput,
   ChangeReviewerCategory,
@@ -2263,7 +2271,208 @@ let demoBoms: BillOfMaterialsDetail[] = [
         updatedAt: "2026-01-01T00:00:00.000Z",
         version: 1
       }
-    ]
+    ],
+    operations: [
+      {
+        operation: {
+          id: "bom-op-lm-010",
+          bomId: "bom-lm-tincture-v1",
+          sequence: 10,
+          operationId: "010",
+          operationCodeId: "op-stage",
+          workCenterId: "wc-prep",
+          setupTimeMinutes: 12,
+          runUnits: 48,
+          runTimeMinutes: 30,
+          machineUnits: null,
+          machineTimeMinutes: null,
+          queueTimeMinutes: 10,
+          moveTimeMinutes: 5,
+          finishTimeMinutes: 0,
+          laborRoleId: "labor-lead",
+          laborCrewSize: 1,
+          runtimeBasis: "manual",
+          backflushLabor: false,
+          controlPoint: false,
+          scrapAction: "quarantine",
+          instructions: "Stage released lots, confirm label revision, and clear the line before filling.",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          version: 1
+        },
+        operationCode: null,
+        workCenter: null,
+        laborRole: null,
+        steps: [
+          {
+            id: "bom-step-line-clearance",
+            bomOperationId: "bom-op-lm-010",
+            sequence: 10,
+            title: "Line clearance",
+            instructions: "Remove unrelated components and verify the released alcohol lot.",
+            isCritical: true,
+            requiresSignature: true,
+            requiresQcEntry: false,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+            version: 1
+          }
+        ],
+        materials: [
+          {
+            id: "bom-op-mat-alcohol",
+            bomOperationId: "bom-op-lm-010",
+            lineType: "ingredient",
+            componentType: "material",
+            componentId: "mat-alcohol",
+            quantity: 2,
+            uom: "l",
+            wastePercent: 2,
+            issueMethod: "manual",
+            effectiveFrom: "2026-01-01T00:00:00.000Z",
+            effectiveTo: null,
+            isCritical: true,
+            lotTraceRequired: true,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+            version: 1
+          }
+        ],
+        equipment: []
+      },
+      {
+        operation: {
+          id: "bom-op-lm-020",
+          bomId: "bom-lm-tincture-v1",
+          sequence: 20,
+          operationId: "020",
+          operationCodeId: "op-fill",
+          workCenterId: "wc-bottling",
+          setupTimeMinutes: 10,
+          runUnits: 48,
+          runTimeMinutes: 40,
+          machineUnits: 48,
+          machineTimeMinutes: 45,
+          queueTimeMinutes: 0,
+          moveTimeMinutes: 0,
+          finishTimeMinutes: 5,
+          laborRoleId: "labor-operator",
+          laborCrewSize: 2,
+          runtimeBasis: "mixed",
+          backflushLabor: true,
+          controlPoint: true,
+          scrapAction: "write_off",
+          instructions: "Fill bottles, cap, inspect fill volume, and reconcile rejects.",
+          createdAt: "2026-01-01T00:00:00.000Z",
+          updatedAt: "2026-01-01T00:00:00.000Z",
+          version: 1
+        },
+        operationCode: null,
+        workCenter: null,
+        laborRole: null,
+        steps: [
+          {
+            id: "bom-step-fill-volume",
+            bomOperationId: "bom-op-lm-020",
+            sequence: 10,
+            title: "Fill volume check",
+            instructions: "Record first-off fill volume and supervisor release.",
+            isCritical: true,
+            requiresSignature: true,
+            requiresQcEntry: true,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+            version: 1
+          }
+        ],
+        materials: [
+          {
+            id: "bom-op-mat-bottle",
+            bomOperationId: "bom-op-lm-020",
+            lineType: "packaging",
+            componentType: "packaging_component",
+            componentId: "pkg-amber-50",
+            quantity: 48,
+            uom: "each",
+            wastePercent: 1,
+            issueMethod: "backflush",
+            effectiveFrom: "2026-01-01T00:00:00.000Z",
+            effectiveTo: null,
+            isCritical: true,
+            lotTraceRequired: true,
+            createdAt: "2026-01-01T00:00:00.000Z",
+            updatedAt: "2026-01-01T00:00:00.000Z",
+            version: 1
+          }
+        ],
+        equipment: [
+          {
+            requirement: {
+              id: "bom-equip-filler",
+              bomOperationId: "bom-op-lm-020",
+              equipmentId: "equip-filler-01",
+              isPrimary: true,
+              required: true,
+              setupTimeMinutes: 5,
+              runUnits: 48,
+              runTimeMinutes: 45,
+              cleaningTimeMinutes: 8,
+              notes: "Use calibrated fill setting for 50 ml bottles.",
+              createdAt: "2026-01-01T00:00:00.000Z",
+              updatedAt: "2026-01-01T00:00:00.000Z",
+              version: 1
+            },
+            equipment: null
+          }
+        ]
+      }
+    ],
+    productionPlan: {
+      bomId: "bom-lm-tincture-v1",
+      targetQuantity: 48,
+      targetUom: "bottle",
+      operationRuntimes: [
+        {
+          bomOperationId: "bom-op-lm-010",
+          operationId: "010",
+          targetQuantity: 48,
+          targetUom: "bottle",
+          setupMinutes: 12,
+          manualRunMinutes: 30,
+          machineRunMinutes: 0,
+          queueMinutes: 10,
+          moveMinutes: 5,
+          finishMinutes: 0,
+          equipmentSetupMinutes: 0,
+          equipmentCleaningMinutes: 0,
+          totalManualMinutes: 42,
+          totalMachineMinutes: 0,
+          totalElapsedMinutes: 57
+        },
+        {
+          bomOperationId: "bom-op-lm-020",
+          operationId: "020",
+          targetQuantity: 48,
+          targetUom: "bottle",
+          setupMinutes: 10,
+          manualRunMinutes: 40,
+          machineRunMinutes: 45,
+          queueMinutes: 0,
+          moveMinutes: 0,
+          finishMinutes: 5,
+          equipmentSetupMinutes: 5,
+          equipmentCleaningMinutes: 8,
+          totalManualMinutes: 50,
+          totalMachineMinutes: 58,
+          totalElapsedMinutes: 73
+        }
+      ],
+      totalManualMinutes: 92,
+      totalMachineMinutes: 58,
+      totalElapsedMinutes: 130,
+      backflushedMaterialCount: 1,
+      manualIssueMaterialCount: 1
+    }
   }
 ];
 
@@ -8690,6 +8899,229 @@ export async function createBomLine(
         detail.bom.id === bomId ? { ...detail, lines: [...detail.lines, line] } : detail
       );
       return { line };
+    }
+
+    throw error;
+  }
+}
+
+function refreshDemoBomPlan(detail: BillOfMaterialsDetail): BillOfMaterialsDetail {
+  const operations = detail.operations ?? [];
+  try {
+    return {
+      ...detail,
+      productionPlan: buildBomProductionPlan({
+        bom: {
+          id: detail.bom.id,
+          status: detail.bom.status,
+          yieldQuantity: detail.bom.yieldQuantity,
+          yieldUom: detail.bom.yieldUom
+        },
+        operations: operations.map(({ operation }) => ({
+          id: operation.id,
+          sequence: operation.sequence,
+          operationId: operation.operationId,
+          setupTimeMinutes: operation.setupTimeMinutes,
+          runUnits: operation.runUnits,
+          runTimeMinutes: operation.runTimeMinutes,
+          machineUnits: operation.machineUnits,
+          machineTimeMinutes: operation.machineTimeMinutes,
+          queueTimeMinutes: operation.queueTimeMinutes,
+          moveTimeMinutes: operation.moveTimeMinutes,
+          finishTimeMinutes: operation.finishTimeMinutes,
+          runtimeBasis: operation.runtimeBasis,
+          controlPoint: operation.controlPoint
+        })),
+        materials: operations.flatMap((entry) =>
+          entry.materials.map((material) => ({
+            id: material.id,
+            bomOperationId: material.bomOperationId,
+            quantity: material.quantity,
+            uom: material.uom,
+            wastePercent: material.wastePercent,
+            issueMethod: material.issueMethod
+          }))
+        ),
+        equipment: operations.flatMap((entry) =>
+          entry.equipment.map(({ requirement }) => ({
+            id: requirement.id,
+            bomOperationId: requirement.bomOperationId,
+            equipmentId: requirement.equipmentId,
+            isPrimary: requirement.isPrimary,
+            required: requirement.required,
+            setupTimeMinutes: requirement.setupTimeMinutes,
+            runUnits: requirement.runUnits,
+            runTimeMinutes: requirement.runTimeMinutes,
+            cleaningTimeMinutes: requirement.cleaningTimeMinutes
+          }))
+        )
+      })
+    };
+  } catch {
+    return { ...detail, productionPlan: undefined };
+  }
+}
+
+export async function createBomOperation(
+  token: string,
+  bomId: string,
+  input: Omit<BomOperation, "id" | "bomId" | "createdAt" | "updatedAt" | "version">
+): Promise<{ operation: BomOperation }> {
+  try {
+    return await request(`/api/production/boms/${bomId}/operations`, token, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      assertDemoAdmin(token, error);
+      const now = new Date().toISOString();
+      const operation: BomOperation = {
+        ...input,
+        id: crypto.randomUUID(),
+        bomId,
+        createdAt: now,
+        updatedAt: now,
+        version: 1
+      };
+      demoBoms = demoBoms.map((detail) => {
+        if (detail.bom.id !== bomId) {
+          return detail;
+        }
+        const nextDetail: BillOfMaterialsDetail = {
+          ...detail,
+          operations: [
+            ...(detail.operations ?? []),
+            {
+              operation,
+              operationCode: demoRoutingMasterData.operationCodes.find((candidate) => candidate.id === operation.operationCodeId) ?? null,
+              workCenter: demoRoutingMasterData.workCenters.find((candidate) => candidate.id === operation.workCenterId) ?? null,
+              laborRole: demoRoutingMasterData.laborRoles.find((candidate) => candidate.id === operation.laborRoleId) ?? null,
+              steps: [],
+              materials: [],
+              equipment: []
+            }
+          ].sort((left, right) => left.operation.sequence - right.operation.sequence)
+        };
+        return refreshDemoBomPlan(nextDetail);
+      });
+      return { operation };
+    }
+
+    throw error;
+  }
+}
+
+export async function createBomOperationStep(
+  token: string,
+  operationId: string,
+  input: Omit<BomOperationStep, "id" | "bomOperationId" | "createdAt" | "updatedAt" | "version">
+): Promise<{ step: BomOperationStep }> {
+  try {
+    return await request(`/api/production/boms/operations/${operationId}/steps`, token, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      assertDemoAdmin(token, error);
+      const now = new Date().toISOString();
+      const step: BomOperationStep = {
+        ...input,
+        id: crypto.randomUUID(),
+        bomOperationId: operationId,
+        createdAt: now,
+        updatedAt: now,
+        version: 1
+      };
+      demoBoms = demoBoms.map((detail) => ({
+        ...detail,
+        operations: (detail.operations ?? []).map((entry) =>
+          entry.operation.id === operationId
+            ? { ...entry, steps: [...entry.steps, step].sort((left, right) => left.sequence - right.sequence) }
+            : entry
+        )
+      }));
+      return { step };
+    }
+
+    throw error;
+  }
+}
+
+export async function createBomOperationMaterial(
+  token: string,
+  operationId: string,
+  input: Omit<BomOperationMaterial, "id" | "bomOperationId" | "createdAt" | "updatedAt" | "version">
+): Promise<{ material: BomOperationMaterial }> {
+  try {
+    return await request(`/api/production/boms/operations/${operationId}/materials`, token, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      assertDemoAdmin(token, error);
+      const now = new Date().toISOString();
+      const material: BomOperationMaterial = {
+        ...input,
+        id: crypto.randomUUID(),
+        bomOperationId: operationId,
+        createdAt: now,
+        updatedAt: now,
+        version: 1
+      };
+      demoBoms = demoBoms.map((detail) => {
+        const nextDetail = {
+          ...detail,
+          operations: (detail.operations ?? []).map((entry) =>
+            entry.operation.id === operationId ? { ...entry, materials: [...entry.materials, material] } : entry
+          )
+        };
+        return refreshDemoBomPlan(nextDetail);
+      });
+      return { material };
+    }
+
+    throw error;
+  }
+}
+
+export async function createBomOperationEquipment(
+  token: string,
+  operationId: string,
+  input: Omit<BomOperationEquipment, "id" | "bomOperationId" | "createdAt" | "updatedAt" | "version">
+): Promise<{ equipment: BomOperationEquipment }> {
+  try {
+    return await request(`/api/production/boms/operations/${operationId}/equipment`, token, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      assertDemoAdmin(token, error);
+      const now = new Date().toISOString();
+      const requirement: BomOperationEquipment = {
+        ...input,
+        id: crypto.randomUUID(),
+        bomOperationId: operationId,
+        createdAt: now,
+        updatedAt: now,
+        version: 1
+      };
+      const equipment = demoRoutingMasterData.equipment.find((candidate) => candidate.id === requirement.equipmentId) ?? null;
+      demoBoms = demoBoms.map((detail) => {
+        const nextDetail = {
+          ...detail,
+          operations: (detail.operations ?? []).map((entry) =>
+            entry.operation.id === operationId
+              ? { ...entry, equipment: [...entry.equipment, { requirement, equipment }] }
+              : entry
+          )
+        };
+        return refreshDemoBomPlan(nextDetail);
+      });
+      return { equipment: requirement };
     }
 
     throw error;

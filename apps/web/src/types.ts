@@ -1968,9 +1968,134 @@ export type BomLine = {
   version: number;
 };
 
+export type BomRuntimeBasis = "manual" | "equipment" | "mixed";
+export type BomScrapAction = "write_off" | "quarantine" | "rework";
+export type BomMaterialIssueMethod = "manual" | "backflush";
+
+export type BomOperation = {
+  id: string;
+  bomId: string;
+  sequence: number;
+  operationId: string;
+  operationCodeId: string;
+  workCenterId: string;
+  setupTimeMinutes: number;
+  runUnits: number;
+  runTimeMinutes: number;
+  machineUnits: number | null;
+  machineTimeMinutes: number | null;
+  queueTimeMinutes: number;
+  moveTimeMinutes: number;
+  finishTimeMinutes: number;
+  laborRoleId: string | null;
+  laborCrewSize: number;
+  runtimeBasis: BomRuntimeBasis;
+  backflushLabor: boolean;
+  controlPoint: boolean;
+  scrapAction: BomScrapAction;
+  instructions: string | null;
+  createdAt: string;
+  updatedAt: string;
+  version: number;
+};
+
+export type BomOperationStep = {
+  id: string;
+  bomOperationId: string;
+  sequence: number;
+  title: string;
+  instructions: string;
+  isCritical: boolean;
+  requiresSignature: boolean;
+  requiresQcEntry: boolean;
+  createdAt: string;
+  updatedAt: string;
+  version: number;
+};
+
+export type BomOperationMaterial = {
+  id: string;
+  bomOperationId: string;
+  lineType: FormulaLineType;
+  componentType: "product_variant" | "material" | "packaging_component";
+  componentId: string;
+  quantity: number;
+  uom: string;
+  wastePercent: number;
+  issueMethod: BomMaterialIssueMethod;
+  effectiveFrom: string | null;
+  effectiveTo: string | null;
+  isCritical: boolean;
+  lotTraceRequired: boolean;
+  createdAt: string;
+  updatedAt: string;
+  version: number;
+};
+
+export type BomOperationEquipment = {
+  id: string;
+  bomOperationId: string;
+  equipmentId: string;
+  isPrimary: boolean;
+  required: boolean;
+  setupTimeMinutes: number;
+  runUnits: number | null;
+  runTimeMinutes: number | null;
+  cleaningTimeMinutes: number;
+  notes: string | null;
+  createdAt: string;
+  updatedAt: string;
+  version: number;
+};
+
+export type BomOperationRuntime = {
+  bomOperationId: string;
+  operationId: string;
+  targetQuantity: number;
+  targetUom: string;
+  setupMinutes: number;
+  manualRunMinutes: number;
+  machineRunMinutes: number;
+  queueMinutes: number;
+  moveMinutes: number;
+  finishMinutes: number;
+  equipmentSetupMinutes: number;
+  equipmentCleaningMinutes: number;
+  totalManualMinutes: number;
+  totalMachineMinutes: number;
+  totalElapsedMinutes: number;
+};
+
+export type BomProductionPlan = {
+  bomId: string;
+  targetQuantity: number;
+  targetUom: string;
+  operationRuntimes: BomOperationRuntime[];
+  totalManualMinutes: number;
+  totalMachineMinutes: number;
+  totalElapsedMinutes: number;
+  backflushedMaterialCount: number;
+  manualIssueMaterialCount: number;
+};
+
+export type BillOfMaterialsOperationDetail = {
+  operation: BomOperation;
+  operationCode: OperationCode | null;
+  workCenter: WorkCenter | null;
+  laborRole: LaborRole | null;
+  steps: BomOperationStep[];
+  materials: BomOperationMaterial[];
+  equipment: Array<{
+    requirement: BomOperationEquipment;
+    equipment: Equipment | null;
+  }>;
+};
+
 export type BillOfMaterialsDetail = {
   bom: BillOfMaterials;
   lines: BomLine[];
+  operations?: BillOfMaterialsOperationDetail[] | undefined;
+  productionPlan?: BomProductionPlan | undefined;
 };
 
 export type FormulaRevisionStatus = "draft" | "approved" | "obsolete" | "experimental";

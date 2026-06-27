@@ -323,39 +323,14 @@ function AppShell() {
   const navItems = auth.session
     ? [
         { to: "/", label: t("nav.dashboard"), icon: Home },
-        { to: "/farm", label: "Farm", icon: Sprout },
-        { to: "/production", label: "Production", icon: FlaskConical },
-        { to: "/change-control", label: "Changes", icon: GitPullRequest },
-        { to: "/routings", label: "Routings", icon: Factory },
-        { to: "/equipment", label: "Equipment", icon: Wrench },
-        { to: "/costing", label: "Costing", icon: Calculator },
-        { to: "/mrp", label: "MRP", icon: CalendarClock },
-        { to: "/purchasing", label: "Purchasing", icon: ShoppingCart },
+        { to: "/production", label: "Production", icon: Factory },
         { to: "/inventory", label: t("nav.inventory"), icon: Package },
-        { to: "/scan", label: "Scan", icon: Barcode },
-        { to: "/labels", label: "Labels", icon: Printer },
-        { to: "/stock-counts", label: "Counts", icon: ClipboardList },
-        { to: "/lots", label: "Lots", icon: FlaskConical },
-        { to: "/qc", label: "QC", icon: ShieldCheck },
-        { to: "/documents", label: "Documents", icon: FileText },
-        { to: "/quality", label: "Quality", icon: ShieldAlert },
-        { to: "/traceability", label: "Trace", icon: GitBranch },
-        { to: "/mock-recalls", label: "Mock recall", icon: AlertTriangle },
-        { to: "/reports", label: "Reports", icon: BarChart3 },
-        { to: "/crm", label: "CRM", icon: CalendarClock },
-        { to: "/wholesale", label: "Wholesale", icon: Store },
-        { to: "/release-notes", label: "Release notes", icon: FileText },
-        { to: "/sync", label: "Sync", icon: Wifi },
-        { to: "/master-data", label: "Master data", icon: PackageSearch },
-        { to: "/import-center", label: "Imports", icon: FileSpreadsheet },
-        { to: "/product-configurator", label: "Configurator", icon: Wand2 },
+        { to: "/quality", label: "Quality", icon: ShieldCheck },
+        { to: "/wholesale", label: "Commerce", icon: Store },
+        { to: "/master-data", label: "Foundation", icon: PackageSearch },
         ...(auth.isAdmin
           ? [
-              { to: "/admin/users", label: t("nav.users"), icon: Users },
-              { to: "/admin/roles", label: t("nav.roles"), icon: ShieldCheck },
-              { to: "/admin/feedback", label: "Feedback", icon: MessageSquarePlus },
-              { to: "/admin/health", label: t("nav.health"), icon: Activity },
-              { to: "/admin/shopify", label: "Shopify", icon: PackageCheck }
+              { to: "/admin/health", label: "Admin", icon: Activity }
             ]
           : []),
         { to: "/settings", label: t("nav.settings"), icon: Settings }
