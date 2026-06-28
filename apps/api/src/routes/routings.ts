@@ -25,7 +25,15 @@ const equipmentSchema = z.object({
   name: z.string().trim().min(1).max(120),
   workCenterId: z.string().trim().min(1),
   equipmentType: z.enum(["scale", "dehydrator", "extraction", "bottling", "packaging", "refrigerator", "freezer", "printer", "other"]),
-  status: z.enum(["available", "in_use", "maintenance", "offline", "unavailable"]).optional()
+  status: z.enum(["available", "in_use", "maintenance", "offline", "unavailable"]).optional(),
+  serialNumber: z.string().trim().max(120).nullable().optional(),
+  locationId: z.string().trim().min(1).nullable().optional(),
+  calibrationRequired: z.boolean().optional(),
+  calibrationIntervalDays: z.number().int().positive().nullable().optional(),
+  maintenanceIntervalDays: z.number().int().positive().nullable().optional(),
+  nextCalibrationDueAt: isoDate,
+  nextMaintenanceDueAt: isoDate,
+  metadataJson: z.record(z.string(), z.unknown()).optional()
 });
 
 const laborRoleSchema = z.object({
@@ -74,7 +82,46 @@ const transitionSchema = z.object({
   outputQuantity: z.number().finite().nonnegative().nullable().optional(),
   scrapQuantity: z.number().finite().nonnegative().nullable().optional(),
   reworkQuantity: z.number().finite().nonnegative().nullable().optional(),
-  notes: z.string().trim().max(2000).nullable().optional()
+  notes: z.string().trim().max(2000).nullable().optional(),
+  completeControlPointPurposes: z.array(z.enum(["reporting", "material_issue", "backflush", "qc_check", "final_completion"])).optional(),
+  allowNonsequentialReporting: z.boolean().optional(),
+  supervisorApprovalComment: z.string().trim().max(1000).nullable().optional()
+});
+
+const laborCaptureSchema = z.object({
+  operationRunId: z.string().trim().min(1),
+  startedAt: isoDate,
+  endedAt: isoDate,
+  laborRoleId: z.string().trim().min(1).nullable().optional(),
+  entryType: z.enum(["direct", "indirect"]).optional(),
+  crewName: z.string().trim().max(120).nullable().optional(),
+  crewSize: z.number().int().positive().max(50).optional(),
+  indirectCode: z.string().trim().max(80).nullable().optional(),
+  downtimeReasonCode: z.string().trim().max(80).nullable().optional(),
+  notes: z.string().trim().max(1000).nullable().optional(),
+  requiresSupervisorApproval: z.boolean().optional()
+});
+
+const dispositionSchema = z.object({
+  operationRunId: z.string().trim().min(1),
+  dispositionType: z.enum(["scrap", "waste", "rework", "return_to_stock", "return_to_vendor"]),
+  itemType: z.enum(["product_variant", "material", "packaging_component", "wip", "harvest"]),
+  itemId: z.string().trim().min(1),
+  lotId: z.string().trim().min(1).nullable().optional(),
+  locationId: z.string().trim().min(1).nullable().optional(),
+  quantity: z.number().finite().positive(),
+  uom: z.string().trim().min(1).max(24),
+  reasonCode: z.string().trim().min(1).max(80),
+  qualityEventId: z.string().trim().min(1).nullable().optional(),
+  notes: z.string().trim().max(1000).nullable().optional(),
+  occurredAt: isoDate
+});
+
+const supervisorApprovalSchema = z.object({
+  subjectType: z.enum(["operation_run", "labor_time_entry", "crew_time_entry", "downtime_event", "scrap_event", "rework_order"]),
+  subjectId: z.string().trim().min(1),
+  decision: z.enum(["approved", "rejected"]),
+  comment: z.string().trim().max(1000).nullable().optional()
 });
 
 export async function routingRoutes(app: FastifyInstance, options: RoutingRoutesOptions): Promise<void> {
@@ -200,6 +247,22 @@ export async function routingRoutes(app: FastifyInstance, options: RoutingRoutes
     }
   );
 
+  app.get(
+    "/api/routings/production-control",
+    { preHandler: [options.requireUserContext, canRead], schema: { tags: ["routings"], security: bearerSecurity } },
+    async (request) => {
+      const userContext = (request as AuthenticatedRequest).userContext;
+      const dashboard = await options.dataStore.getProductionControlDashboard(userContext.organizationId);
+      return {
+        dashboard: {
+          runs: dashboard.runs.map(serializeOperationRunDetail),
+          wipSummaries: dashboard.wipSummaries.map((summary) => ({ ...summary, generatedAt: serializeDate(summary.generatedAt) })),
+          supervisorQueue: dashboard.supervisorQueue.map((item) => ({ ...item, requestedAt: serializeDate(item.requestedAt) }))
+        }
+      };
+    }
+  );
+
   app.post(
     "/api/routings/operation-runs/:operationRunId/transition",
     { preHandler: [options.requireUserContext, canManage], schema: { tags: ["routings"], security: bearerSecurity } },
@@ -218,6 +281,78 @@ export async function routingRoutes(app: FastifyInstance, options: RoutingRoutes
           request.id
         );
         return { run: serializeOperationRunDetail(run) };
+      } catch (error) {
+        return routingError(reply, error);
+      }
+    }
+  );
+
+  app.post(
+    "/api/routings/operation-runs/labor",
+    { preHandler: [options.requireUserContext, canManage], schema: { tags: ["routings"], security: bearerSecurity } },
+    async (request, reply) => {
+      const parsed = laborCaptureSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: "bad_request", message: "Invalid labor capture" });
+      }
+      try {
+        const userContext = (request as AuthenticatedRequest).userContext;
+        const run = await options.dataStore.recordProductionLabor(
+          userContext,
+          stripUndefined(parseDateFields(parsed.data)) as Parameters<ApiDataStore["recordProductionLabor"]>[1],
+          request.id
+        );
+        return reply.code(201).send({ run: serializeOperationRunDetail(run) });
+      } catch (error) {
+        return routingError(reply, error);
+      }
+    }
+  );
+
+  app.post(
+    "/api/routings/operation-runs/dispositions",
+    { preHandler: [options.requireUserContext, canManage], schema: { tags: ["routings"], security: bearerSecurity } },
+    async (request, reply) => {
+      const parsed = dispositionSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: "bad_request", message: "Invalid production disposition" });
+      }
+      try {
+        const userContext = (request as AuthenticatedRequest).userContext;
+        const run = await options.dataStore.recordProductionDisposition(
+          userContext,
+          stripUndefined(parseDateFields(parsed.data)) as Parameters<ApiDataStore["recordProductionDisposition"]>[1],
+          request.id
+        );
+        return reply.code(201).send({ run: serializeOperationRunDetail(run) });
+      } catch (error) {
+        return routingError(reply, error);
+      }
+    }
+  );
+
+  app.post(
+    "/api/routings/operation-runs/supervisor-approvals",
+    { preHandler: [options.requireUserContext, canManage], schema: { tags: ["routings"], security: bearerSecurity } },
+    async (request, reply) => {
+      const parsed = supervisorApprovalSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: "bad_request", message: "Invalid supervisor approval" });
+      }
+      try {
+        const userContext = (request as AuthenticatedRequest).userContext;
+        const dashboard = await options.dataStore.approveProductionException(
+          userContext,
+          parsed.data as Parameters<ApiDataStore["approveProductionException"]>[1],
+          request.id
+        );
+        return {
+          dashboard: {
+            runs: dashboard.runs.map(serializeOperationRunDetail),
+            wipSummaries: dashboard.wipSummaries.map((summary) => ({ ...summary, generatedAt: serializeDate(summary.generatedAt) })),
+            supervisorQueue: dashboard.supervisorQueue.map((item) => ({ ...item, requestedAt: serializeDate(item.requestedAt) }))
+          }
+        };
       } catch (error) {
         return routingError(reply, error);
       }
@@ -246,7 +381,7 @@ async function createRecord<T extends z.ZodTypeAny>(
     return reply.code(400).send({ error: "bad_request", message: "Invalid routing record" });
   }
   try {
-    const response = await create(stripUndefined(parsed.data as Record<string, unknown>) as z.infer<T>);
+    const response = await create(stripUndefined(parseDateFields(parsed.data as Record<string, unknown>)) as z.infer<T>);
     return reply.code(201).send(response);
   } catch (error) {
     return routingError(reply, error);
@@ -314,16 +449,38 @@ function serializeOperationRunDetail(detail: Awaited<ReturnType<ApiDataStore["li
     workCenter: detail.workCenter ? serializeRecord(detail.workCenter) : null,
     equipment: detail.equipment ? serializeRecord(detail.equipment) : null,
     laborRole: detail.laborRole ? serializeRecord(detail.laborRole) : null,
+    controlPoints: detail.controlPoints.map((point) => serializeRecord(point)),
     laborTimeEntries: detail.laborTimeEntries.map((entry) => ({
-      ...entry,
+      ...serializeRecord(entry),
+      startedAt: serializeDate(entry.startedAt),
+      endedAt: serializeDate(entry.endedAt),
+      approvedAt: serializeDate(entry.approvedAt)
+    })),
+    machineTimeEntries: detail.machineTimeEntries.map((entry) => ({
+      ...serializeRecord(entry),
       startedAt: serializeDate(entry.startedAt),
       endedAt: serializeDate(entry.endedAt)
     })),
-    machineTimeEntries: detail.machineTimeEntries.map((entry) => ({
-      ...entry,
+    crewTimeEntries: detail.crewTimeEntries.map((entry) => ({
+      ...serializeRecord(entry),
       startedAt: serializeDate(entry.startedAt),
-      endedAt: serializeDate(entry.endedAt)
-    }))
+      endedAt: serializeDate(entry.endedAt),
+      approvedAt: serializeDate(entry.approvedAt)
+    })),
+    downtimeEvents: detail.downtimeEvents.map((entry) => ({
+      ...serializeRecord(entry),
+      startedAt: serializeDate(entry.startedAt),
+      endedAt: serializeDate(entry.endedAt),
+      approvedAt: serializeDate(entry.approvedAt)
+    })),
+    scrapEvents: detail.scrapEvents.map((entry) => ({
+      ...serializeRecord(entry),
+      occurredAt: serializeDate(entry.occurredAt),
+      approvedAt: serializeDate(entry.approvedAt)
+    })),
+    reworkOrders: detail.reworkOrders.map(serializeRecord),
+    generatedMovements: detail.generatedMovements.map(serializeRecord),
+    reportingWarnings: detail.reportingWarnings
   };
 }
 

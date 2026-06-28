@@ -140,6 +140,55 @@ describe("MRP API", () => {
       purchaseOrderLines: [expect.objectContaining({ quantity: purchaseSuggestion.quantity })]
     });
   });
+
+  it("regenerates and audits finite schedule runs without moving completed work silently", async () => {
+    const regenerated = await app.inject({
+      method: "POST",
+      url: "/api/mrp/schedule/regenerate",
+      headers: authHeaders("owner-token"),
+      payload: {
+        horizonEnd: "2026-07-31T23:59:59.000Z",
+        locationIds: ["loc-pack"],
+        bucket: "day"
+      }
+    });
+
+    expect(regenerated.statusCode).toBe(201);
+    expect(regenerated.json().plan).toMatchObject({
+      scheduleRun: expect.objectContaining({
+        operationCount: expect.any(Number),
+        materialConstraintCount: expect.any(Number)
+      }),
+      dispatchBoard: expect.arrayContaining([
+        expect.objectContaining({
+          operationCode: "FILL",
+          constraintSummary: expect.stringContaining("Material availability")
+        })
+      ]),
+      roughCutCapacity: expect.arrayContaining([
+        expect.objectContaining({ resourceType: "labor_role" })
+      ])
+    });
+  });
+
+  it("resequences dispatch operations and rejects completed work mutation", async () => {
+    const resequence = await app.inject({
+      method: "POST",
+      url: "/api/mrp/schedule/resequence",
+      headers: authHeaders("owner-token"),
+      payload: {
+        operationId: "run-po-001-fill",
+        afterOperationId: "run-po-001-stage",
+        reason: "Move behind staged materials",
+        horizonEnd: "2026-07-31T23:59:59.000Z"
+      }
+    });
+
+    expect(resequence.statusCode).toBe(200);
+    expect(resequence.json().plan.scheduleAudits).toEqual(
+      expect.arrayContaining([expect.objectContaining({ eventType: "schedule.regenerated" })])
+    );
+  });
 });
 
 function authHeaders(token: string) {

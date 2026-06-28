@@ -1,4 +1,4 @@
-import { Calculator, CheckCircle2, ClipboardList, Factory, FileText, FlaskConical, GitCompare, History, LockKeyhole, PackagePlus, Save, ShieldCheck, Smartphone, Timer, Wrench } from "lucide-react";
+import { Calculator, CheckCircle2, ClipboardList, Factory, FileText, FlaskConical, GitCompare, History, LockKeyhole, PackagePlus, Save, Scale, ShieldCheck, Smartphone, Timer, Wrench } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Badge, Button, Dialog, Input, Tabs, useToast } from "./components/ui";
 import {
@@ -14,7 +14,11 @@ import {
   createProductionOrder,
   completeEbrExecution,
   completeEbrStep,
+  completeWeighDispenseLine,
+  approveProductionException,
   exportEbrPacket,
+  getProductionControlDashboard,
+  listWeighDispenseSessions,
   listEbrExecutions,
   listEbrTemplates,
   listBillOfMaterials,
@@ -24,6 +28,9 @@ import {
   listProcessingBatches,
   listProductionOrders,
   listRoutingMasterData,
+  recordProductionDisposition,
+  recordProductionLabor,
+  transitionProductionOperationRun,
   scaleFormulaRevision
 } from "./lib/api";
 import { useAuth } from "./auth";
@@ -38,9 +45,12 @@ import type {
   FormulaScaleResult,
   LotDetail,
   MasterDataSnapshot,
+  OperationRunDetail,
   ProcessingBatchDetail,
+  ProductionControlDashboard,
   ProductionOrderDetail,
-  RoutingMasterData
+  RoutingMasterData,
+  WeighDispenseSessionDetail
 } from "./types";
 
 function statusTone(status: string): "neutral" | "success" | "warning" | "info" {
@@ -71,6 +81,12 @@ const emptyRoutingMasterData: RoutingMasterData = {
   operationCodes: []
 };
 
+const emptyProductionControl: ProductionControlDashboard = {
+  runs: [],
+  wipSummaries: [],
+  supervisorQueue: []
+};
+
 function formText(form: FormData, name: string): string {
   return String(form.get(name) ?? "").trim();
 }
@@ -93,6 +109,7 @@ export function ProductionScreen() {
   const [ebrTemplates, setEbrTemplates] = useState<EbrTemplateDetail[]>([]);
   const [ebrExecutions, setEbrExecutions] = useState<EbrExecutionDetail[]>([]);
   const [ebrPacket, setEbrPacket] = useState<EbrPacket | null>(null);
+  const [weighDispenseSessions, setWeighDispenseSessions] = useState<WeighDispenseSessionDetail[]>([]);
   const [lots, setLots] = useState<LotDetail[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -122,6 +139,24 @@ export function ProductionScreen() {
   const [comparison, setComparison] = useState<FormulaRevisionComparison | null>(null);
   const [createDialog, setCreateDialog] = useState<"order" | "batch" | "bom" | null>(null);
   const [selectedBomId, setSelectedBomId] = useState("bom-lm-tincture-v1");
+  const [selectedDispenseSessionId, setSelectedDispenseSessionId] = useState("wd-session-lm-bottle-001");
+  const [selectedDispenseLotId, setSelectedDispenseLotId] = useState("lot-alcohol-2026-06");
+  const [dispenseTare, setDispenseTare] = useState("0.2");
+  const [dispenseGross, setDispenseGross] = useState("2.24");
+  const [dispenseOverrideReason, setDispenseOverrideReason] = useState("");
+  const [dispenseVerifierUserId, setDispenseVerifierUserId] = useState("user-staff");
+  const [productionControl, setProductionControl] = useState<ProductionControlDashboard>(emptyProductionControl);
+  const [selectedOperationRunId, setSelectedOperationRunId] = useState("run-po-001-fill");
+  const [operationOutputQuantity, setOperationOutputQuantity] = useState("46");
+  const [operationScrapQuantity, setOperationScrapQuantity] = useState("0");
+  const [operationReworkQuantity, setOperationReworkQuantity] = useState("0");
+  const [laborCrewName, setLaborCrewName] = useState("Bottling crew A");
+  const [laborCrewSize, setLaborCrewSize] = useState("3");
+  const [laborMinutes, setLaborMinutes] = useState("30");
+  const [downtimeReasonCode, setDowntimeReasonCode] = useState("filler-adjustment");
+  const [dispositionType, setDispositionType] = useState<"scrap" | "waste" | "rework" | "return_to_stock" | "return_to_vendor">("scrap");
+  const [dispositionQuantity, setDispositionQuantity] = useState("2");
+  const [dispositionReasonCode, setDispositionReasonCode] = useState("cracked-bottle");
 
   const selectedBatch = batches.find((detail) => detail.batch.id === selectedBatchId) ?? batches[0] ?? null;
   const selectedOrder =
@@ -129,6 +164,19 @@ export function ProductionScreen() {
   const selectedExecution = ebrExecutions[0] ?? null;
   const selectedFormula = formulas.find((detail) => detail.revision.id === selectedFormulaId) ?? formulas[0] ?? null;
   const selectedBom = boms.find((detail) => detail.bom.id === selectedBomId) ?? boms[0] ?? null;
+  const selectedOperationRun =
+    productionControl.runs.find((detail) => detail.run.id === selectedOperationRunId) ??
+    productionControl.runs[0] ??
+    null;
+  const selectedWipSummary =
+    productionControl.wipSummaries.find((summary) => summary.productionOrderId === selectedOperationRun?.run.productionOrderId) ??
+    productionControl.wipSummaries[0] ??
+    null;
+  const selectedDispenseSession =
+    weighDispenseSessions.find((detail) => detail.session.id === selectedDispenseSessionId) ??
+    weighDispenseSessions[0] ??
+    null;
+  const currentDispenseLine = selectedDispenseSession?.lines.find((line) => line.status === "pending") ?? null;
   const approvedFormulaCount = formulas.filter((detail) => detail.revision.status === "approved").length;
   const currentEbrStep = selectedExecution?.steps.find(
     (step) => !selectedExecution.results.some((result) => result.templateStepId === step.id)
@@ -150,6 +198,28 @@ export function ProductionScreen() {
       ),
     [lots]
   );
+  const dispenseLots = useMemo(
+    () =>
+      currentDispenseLine
+        ? usableLots.filter(
+            (detail) =>
+              detail.lot.itemType === currentDispenseLine.componentType &&
+              detail.lot.itemId === currentDispenseLine.componentId
+          )
+        : [],
+    [currentDispenseLine, usableLots]
+  );
+  const selectedDispenseLot = usableLots.find((detail) => detail.lot.id === selectedDispenseLotId) ?? dispenseLots[0] ?? null;
+  const dispenseNet = Number(dispenseGross) - Number(dispenseTare);
+  const dispenseToleranceQuantity = currentDispenseLine
+    ? currentDispenseLine.toleranceQuantity ?? currentDispenseLine.targetQuantity * (currentDispenseLine.tolerancePercent / 100)
+    : 0;
+  const dispenseVariance = currentDispenseLine ? dispenseNet - currentDispenseLine.targetQuantity : 0;
+  const dispenseInTolerance = currentDispenseLine
+    ? Math.abs(dispenseVariance) <= dispenseToleranceQuantity &&
+      (currentDispenseLine.minQuantity === null || dispenseNet >= currentDispenseLine.minQuantity) &&
+      (currentDispenseLine.maxQuantity === null || dispenseNet <= currentDispenseLine.maxQuantity)
+    : true;
 
   async function loadProduction() {
     if (!auth.session) {
@@ -167,8 +237,10 @@ export function ProductionScreen() {
         lotResponse,
         ebrTemplateResponse,
         ebrExecutionResponse,
+        weighDispenseResponse,
         masterDataResponse,
-        routingMasterDataResponse
+        routingMasterDataResponse,
+        productionControlResponse
       ] = await Promise.all([
         listProductionOrders(auth.session.accessToken),
         listBillOfMaterials(auth.session.accessToken),
@@ -177,8 +249,10 @@ export function ProductionScreen() {
         listLots(auth.session.accessToken),
         listEbrTemplates(auth.session.accessToken),
         listEbrExecutions(auth.session.accessToken),
+        listWeighDispenseSessions(auth.session.accessToken),
         listMasterData(auth.session.accessToken),
-        listRoutingMasterData(auth.session.accessToken)
+        listRoutingMasterData(auth.session.accessToken),
+        getProductionControlDashboard(auth.session.accessToken)
       ]);
       setOrders(orderResponse.orders);
       setBoms(bomResponse.boms);
@@ -189,7 +263,19 @@ export function ProductionScreen() {
       setLots(lotResponse.lots);
       setEbrTemplates(ebrTemplateResponse.templates);
       setEbrExecutions(ebrExecutionResponse.executions);
+      setWeighDispenseSessions(weighDispenseResponse.sessions);
+      setProductionControl(productionControlResponse.dashboard);
+      setSelectedOperationRunId((current) =>
+        productionControlResponse.dashboard.runs.some((detail) => detail.run.id === current)
+          ? current
+          : productionControlResponse.dashboard.runs[0]?.run.id ?? ""
+      );
       setSelectedBatchId(batchResponse.batches[0]?.batch.id ?? "");
+      setSelectedDispenseSessionId((current) =>
+        weighDispenseResponse.sessions.some((detail) => detail.session.id === current)
+          ? current
+          : weighDispenseResponse.sessions[0]?.session.id ?? ""
+      );
       setSelectedBomId((current) =>
         bomResponse.boms.some((detail) => detail.bom.id === current)
           ? current
@@ -208,6 +294,122 @@ export function ProductionScreen() {
   useEffect(() => {
     void loadProduction();
   }, [auth.session]);
+
+  useEffect(() => {
+    if (
+      dispenseLots.length > 0 &&
+      (!selectedDispenseLotId || !usableLots.some((detail) => detail.lot.id === selectedDispenseLotId))
+    ) {
+      setSelectedDispenseLotId(dispenseLots[0]!.lot.id);
+    }
+  }, [dispenseLots, selectedDispenseLotId, usableLots]);
+
+  function replaceOperationRun(run: OperationRunDetail) {
+    setProductionControl((current) => ({
+      ...current,
+      runs: current.runs.map((detail) => (detail.run.id === run.run.id ? run : detail))
+    }));
+  }
+
+  async function reportSelectedOperation(action: "start" | "complete") {
+    if (!auth.session || !selectedOperationRun) {
+      return;
+    }
+    try {
+      const transitionInput: Parameters<typeof transitionProductionOperationRun>[2] = {
+        action,
+        occurredAt: new Date().toISOString(),
+        allowNonsequentialReporting: selectedOperationRun.run.allowNonsequentialReporting,
+        notes: action === "complete" ? "Reported from shop-floor control." : null
+      };
+      if (action === "complete") {
+        transitionInput.outputQuantity = Number(operationOutputQuantity);
+        transitionInput.scrapQuantity = Number(operationScrapQuantity);
+        transitionInput.reworkQuantity = Number(operationReworkQuantity);
+        transitionInput.completeControlPointPurposes = ["final_completion"];
+      }
+      const response = await transitionProductionOperationRun(auth.session.accessToken, selectedOperationRun.run.id, transitionInput);
+      replaceOperationRun(response.run);
+      showToast({ title: action === "start" ? "Operation started" : "Operation reported", description: response.run.operationCode?.name ?? response.run.run.id });
+      await loadProduction();
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Operation report failed.");
+    }
+  }
+
+  async function submitLaborCapture(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!auth.session || !selectedOperationRun) {
+      return;
+    }
+    const minutes = Number(laborMinutes);
+    const startedAt = new Date();
+    const endedAt = Number.isFinite(minutes) && minutes > 0 ? new Date(startedAt.getTime() + minutes * 60000) : null;
+    try {
+      const response = await recordProductionLabor(auth.session.accessToken, {
+        operationRunId: selectedOperationRun.run.id,
+        startedAt: startedAt.toISOString(),
+        endedAt: endedAt?.toISOString() ?? null,
+        laborRoleId: selectedOperationRun.run.laborRoleId,
+        entryType: "indirect",
+        crewName: laborCrewName,
+        crewSize: Number(laborCrewSize) || 1,
+        indirectCode: "shop-floor-capture",
+        downtimeReasonCode,
+        requiresSupervisorApproval: true
+      });
+      replaceOperationRun(response.run);
+      showToast({ title: "Labor recorded", description: `${minutes || 0} minutes` });
+      await loadProduction();
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Labor capture failed.");
+    }
+  }
+
+  async function submitDisposition(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!auth.session || !selectedOperationRun) {
+      return;
+    }
+    const quantity = Number(dispositionQuantity);
+    try {
+      const response = await recordProductionDisposition(auth.session.accessToken, {
+        operationRunId: selectedOperationRun.run.id,
+        dispositionType,
+        itemType: "packaging_component",
+        itemId: "pkg-amber-50",
+        lotId: inputBottleLotId,
+        locationId: "loc-pack",
+        quantity: Number.isFinite(quantity) && quantity > 0 ? quantity : 1,
+        uom: "each",
+        reasonCode: dispositionReasonCode,
+        notes: "Recorded from shop-floor disposition dialog."
+      });
+      replaceOperationRun(response.run);
+      showToast({ title: "Disposition recorded", description: dispositionReasonCode });
+      await loadProduction();
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Disposition capture failed.");
+    }
+  }
+
+  async function approveQueueItem(subjectType: ProductionControlDashboard["supervisorQueue"][number]["subjectType"], subjectId: string) {
+    if (!auth.session) {
+      return;
+    }
+    try {
+      const response = await approveProductionException(auth.session.accessToken, {
+        subjectType,
+        subjectId,
+        decision: "approved",
+        comment: "Approved from production control queue."
+      });
+      setProductionControl(response.dashboard);
+      showToast({ title: "Exception approved", description: subjectType.replaceAll("_", " ") });
+    } catch (submitError) {
+      setError(submitError instanceof Error ? submitError.message : "Supervisor approval failed.");
+    }
+  }
 
   async function submitCompletion(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -308,6 +510,55 @@ export function ProductionScreen() {
       showToast({ title: "EBR step recorded", description: currentEbrStep.title });
     } catch (stepError) {
       setError(stepError instanceof Error ? stepError.message : "EBR step could not be recorded.");
+    }
+  }
+
+  async function submitWeighDispense(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!auth.session || !selectedDispenseSession || !currentDispenseLine || !selectedDispenseLot) {
+      setError("Select an open dispense line and released lot before capture.");
+      return;
+    }
+    const tareQuantity = Number(dispenseTare);
+    const grossQuantity = Number(dispenseGross);
+    if (![tareQuantity, grossQuantity].every((value) => Number.isFinite(value) && value >= 0) || grossQuantity < tareQuantity) {
+      setError("Scale tare and gross must be valid, and gross must be at least tare.");
+      return;
+    }
+    try {
+      const response = await completeWeighDispenseLine(
+        auth.session.accessToken,
+        selectedDispenseSession.session.id,
+        currentDispenseLine.id,
+        {
+          lotId: selectedDispenseLot.lot.id,
+          locationId: selectedDispenseLot.balances[0]?.locationId ?? selectedDispenseSession.session.locationId,
+          scannedMaterialId: currentDispenseLine.componentId,
+          scannedLotId: selectedDispenseLot.lot.id,
+          scannedLocationId: selectedDispenseLot.balances[0]?.locationId ?? selectedDispenseSession.session.locationId,
+          equipmentId: currentDispenseLine.equipmentId,
+          scaleAdapterId: "manual",
+          tareQuantity,
+          grossQuantity,
+          uom: currentDispenseLine.targetUom,
+          overrideReason: dispenseOverrideReason.trim() || null,
+          verifierUserId: currentDispenseLine.isCritical || !dispenseInTolerance ? dispenseVerifierUserId : null,
+          verificationMeaning: currentDispenseLine.isCritical || !dispenseInTolerance ? "Weigh/dispense verification" : null,
+          ebrExecutionId: selectedDispenseSession.session.ebrExecutionId,
+          ebrStepId: currentEbrStep?.stepType === "weigh_material" ? currentEbrStep.id : null,
+          clientTransactionId: crypto.randomUUID()
+        }
+      );
+      setWeighDispenseSessions((current) =>
+        current.map((detail) => (detail.session.id === response.session.session.id ? response.session : detail))
+      );
+      setDispenseOverrideReason("");
+      setSelectedDispenseLotId("");
+      setError(null);
+      showToast({ title: "Dispense completed", description: currentDispenseLine.componentName });
+      await loadProduction();
+    } catch (dispenseError) {
+      setError(dispenseError instanceof Error ? dispenseError.message : "Dispense capture failed.");
     }
   }
 
@@ -488,7 +739,7 @@ export function ProductionScreen() {
       </div>
 
       <div className="action-row">
-        <Button type="button" onClick={() => setCreateDialog("order")}>
+        <Button type="button" onClick={() => setCreateDialog("order")} data-guide="production.new-order">
           <PackagePlus aria-hidden="true" size={18} />
           New order
         </Button>
@@ -496,7 +747,7 @@ export function ProductionScreen() {
           <Factory aria-hidden="true" size={18} />
           New batch
         </Button>
-        <Button type="button" variant="secondary" onClick={() => setCreateDialog("bom")}>
+        <Button type="button" variant="secondary" onClick={() => setCreateDialog("bom")} data-guide="production.new-bom">
           <ClipboardList aria-hidden="true" size={18} />
           New BOM
         </Button>
@@ -580,6 +831,202 @@ export function ProductionScreen() {
             )
           },
           {
+            id: "shop-floor",
+            label: "Shop floor control",
+            content: (
+              <div className="shop-floor-control">
+                <section className="table-panel">
+                  <div className="panel-heading">
+                    <h3>Operation reporting</h3>
+                    <Badge tone={selectedOperationRun?.run.supervisorApprovalStatus === "pending" ? "warning" : "info"}>
+                      {selectedOperationRun?.run.supervisorApprovalStatus ?? "No run"}
+                    </Badge>
+                  </div>
+                  <div className="compact-form-grid">
+                    <label className="select-field full-span">
+                      <span>Operation</span>
+                      <select value={selectedOperationRunId} onChange={(event) => setSelectedOperationRunId(event.target.value)}>
+                        {productionControl.runs.map((detail) => (
+                          <option key={detail.run.id} value={detail.run.id}>
+                            {detail.productionOrder.orderNumber} / {detail.run.sequence} / {detail.operationCode?.name ?? detail.run.operationCodeId} / {detail.run.status}
+                          </option>
+                        ))}
+                      </select>
+                    </label>
+                    <Input label="Output" type="number" min="0" step="0.000001" value={operationOutputQuantity} onChange={(event) => setOperationOutputQuantity(event.target.value)} />
+                    <Input label="Scrap" type="number" min="0" step="0.000001" value={operationScrapQuantity} onChange={(event) => setOperationScrapQuantity(event.target.value)} />
+                    <Input label="Rework" type="number" min="0" step="0.000001" value={operationReworkQuantity} onChange={(event) => setOperationReworkQuantity(event.target.value)} />
+                    <div className="form-actions full-span">
+                      <Button type="button" variant="secondary" disabled={!selectedOperationRun} onClick={() => void reportSelectedOperation("start")}>
+                        <Timer aria-hidden="true" size={18} />
+                        Start
+                      </Button>
+                      <Button type="button" disabled={!selectedOperationRun} onClick={() => void reportSelectedOperation("complete")}>
+                        <CheckCircle2 aria-hidden="true" size={18} />
+                        Report complete
+                      </Button>
+                    </div>
+                  </div>
+                  {selectedOperationRun?.reportingWarnings.length ? (
+                    <p className="form-error">{selectedOperationRun.reportingWarnings.join(" ")}</p>
+                  ) : null}
+                  <table className="list-table">
+                    <thead>
+                      <tr>
+                        <th>Control point</th>
+                        <th>Required</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedOperationRun?.controlPoints.map((point) => (
+                        <tr key={point.id}>
+                          <td>{point.purpose.replaceAll("_", " ")}</td>
+                          <td>{point.required ? "Required" : "Optional"}</td>
+                          <td>
+                            <Badge tone={point.completedAt ? "success" : "warning"}>
+                              {point.completedAt ? "Complete" : "Open"}
+                            </Badge>
+                          </td>
+                        </tr>
+                      )) ?? null}
+                    </tbody>
+                  </table>
+                </section>
+
+                <section className="table-panel">
+                  <div className="panel-heading">
+                    <h3>Labor and downtime</h3>
+                    <Badge tone="info">{selectedOperationRun?.laborTimeEntries.length ?? 0} entries</Badge>
+                  </div>
+                  <form className="compact-form-grid" onSubmit={submitLaborCapture}>
+                    <Input label="Crew" value={laborCrewName} onChange={(event) => setLaborCrewName(event.target.value)} />
+                    <Input label="Crew size" type="number" min="1" step="1" value={laborCrewSize} onChange={(event) => setLaborCrewSize(event.target.value)} />
+                    <Input label="Minutes" type="number" min="1" step="1" value={laborMinutes} onChange={(event) => setLaborMinutes(event.target.value)} />
+                    <Input label="Downtime reason" value={downtimeReasonCode} onChange={(event) => setDowntimeReasonCode(event.target.value)} />
+                    <div className="form-actions full-span">
+                      <Button type="submit" disabled={!selectedOperationRun}>
+                        <Save aria-hidden="true" size={18} />
+                        Record labor
+                      </Button>
+                    </div>
+                  </form>
+                  <table className="list-table">
+                    <thead>
+                      <tr>
+                        <th>Labor</th>
+                        <th>Minutes</th>
+                        <th>Approval</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedOperationRun?.laborTimeEntries.map((entry) => (
+                        <tr key={entry.id}>
+                          <td>{entry.crewName ?? selectedOperationRun.laborRole?.name ?? "Operator"}</td>
+                          <td>{formatNumber(entry.durationMinutes)}</td>
+                          <td><Badge tone={entry.approvalStatus === "pending" ? "warning" : "neutral"}>{entry.approvalStatus}</Badge></td>
+                        </tr>
+                      )) ?? null}
+                    </tbody>
+                  </table>
+                </section>
+
+                <section className="table-panel">
+                  <div className="panel-heading">
+                    <h3>Scrap, waste, and rework</h3>
+                    <Badge tone="warning">{formatNumber(selectedOperationRun?.run.scrapQuantity ?? 0)} scrap</Badge>
+                  </div>
+                  <form className="compact-form-grid" onSubmit={submitDisposition}>
+                    <label className="select-field">
+                      <span>Disposition</span>
+                      <select value={dispositionType} onChange={(event) => setDispositionType(event.target.value as typeof dispositionType)}>
+                        <option value="scrap">Scrap</option>
+                        <option value="waste">Waste</option>
+                        <option value="rework">Rework</option>
+                        <option value="return_to_stock">Return to stock</option>
+                        <option value="return_to_vendor">Return to vendor</option>
+                      </select>
+                    </label>
+                    <Input label="Quantity" type="number" min="0.000001" step="0.000001" value={dispositionQuantity} onChange={(event) => setDispositionQuantity(event.target.value)} />
+                    <Input label="Reason code" value={dispositionReasonCode} onChange={(event) => setDispositionReasonCode(event.target.value)} />
+                    <div className="form-actions">
+                      <Button type="submit" disabled={!selectedOperationRun}>
+                        <Save aria-hidden="true" size={18} />
+                        Record disposition
+                      </Button>
+                    </div>
+                  </form>
+                  <table className="list-table">
+                    <thead>
+                      <tr>
+                        <th>Disposition</th>
+                        <th>Qty</th>
+                        <th>Reason</th>
+                        <th>Trace</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {selectedOperationRun?.scrapEvents.map((event) => (
+                        <tr key={event.id}>
+                          <td><Badge tone={event.approvalStatus === "pending" ? "warning" : "neutral"}>{event.dispositionType.replaceAll("_", " ")}</Badge></td>
+                          <td>{formatNumber(event.quantity)} {event.uom}</td>
+                          <td>{event.reasonCode}</td>
+                          <td>{event.stockMovementId ? "Movement posted" : "Pending"}</td>
+                        </tr>
+                      )) ?? null}
+                    </tbody>
+                  </table>
+                </section>
+
+                <section className="table-panel">
+                  <div className="panel-heading">
+                    <h3>WIP and approvals</h3>
+                    <Badge tone={productionControl.supervisorQueue.length > 0 ? "warning" : "success"}>
+                      {productionControl.supervisorQueue.length} open
+                    </Badge>
+                  </div>
+                  <div className="metric-grid">
+                    <article className="metric-panel">
+                      <span>Actual labor</span>
+                      <strong>{formatNumber(selectedWipSummary?.actual.labor ?? 0)}</strong>
+                    </article>
+                    <article className="metric-panel">
+                      <span>Actual scrap</span>
+                      <strong>{formatNumber(selectedWipSummary?.actual.scrapQuantity ?? 0)}</strong>
+                    </article>
+                    <article className="metric-panel">
+                      <span>Yield</span>
+                      <strong>{selectedWipSummary?.yieldPercent === null || selectedWipSummary?.yieldPercent === undefined ? "Pending" : `${formatNumber(selectedWipSummary.yieldPercent)}%`}</strong>
+                    </article>
+                  </div>
+                  <table className="list-table">
+                    <thead>
+                      <tr>
+                        <th>Exception</th>
+                        <th>Reason</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {productionControl.supervisorQueue.map((item) => (
+                        <tr key={`${item.subjectType}-${item.subjectId}`}>
+                          <td>{item.label}</td>
+                          <td>{item.reason}</td>
+                          <td>
+                            <Button type="button" size="sm" variant="secondary" onClick={() => void approveQueueItem(item.subjectType, item.subjectId)}>
+                              <ShieldCheck aria-hidden="true" size={16} />
+                              Approve
+                            </Button>
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </section>
+              </div>
+            )
+          },
+          {
             id: "boms",
             label: "BOMs",
             content: (
@@ -589,6 +1036,7 @@ export function ProductionScreen() {
                 boms={boms}
                 ebrTemplates={ebrTemplates}
                 formulas={formulas}
+                formatDate={formatDate}
                 formatNumber={formatNumber}
                 masterData={masterData}
                 onError={setError}
@@ -896,7 +1344,7 @@ export function ProductionScreen() {
             id: "wizard",
             label: "Batch wizard",
             content: (
-              <form className="table-panel compact-form-grid" onSubmit={submitCompletion}>
+              <form className="table-panel compact-form-grid" onSubmit={submitCompletion} data-guide="production.complete-form">
                 <h3>Complete processing batch</h3>
                 <label className="select-field">
                   <span>Batch</span>
@@ -935,7 +1383,7 @@ export function ProductionScreen() {
                 <Input label="Fill volume ml" type="number" value={fillVolumeMl} onChange={(event) => setFillVolumeMl(event.target.value)} />
                 <Input label="Rejected bottles" type="number" value={bottlesRejected} onChange={(event) => setBottlesRejected(event.target.value)} />
                 <div className="form-actions">
-                  <Button type="submit" disabled={!selectedBatch || selectedBatch.batch.status === "completed"}>
+                  <Button type="submit" disabled={!selectedBatch || selectedBatch.batch.status === "completed"} data-guide="production.complete-batch">
                     <CheckCircle2 aria-hidden="true" size={18} />
                     Complete batch
                   </Button>
@@ -1062,6 +1510,123 @@ export function ProductionScreen() {
             )
           },
           {
+            id: "weigh-dispense",
+            label: "Weigh/dispense",
+            content: (
+              <div className="weigh-dispense-layout">
+                <form className="table-panel compact-form-grid" onSubmit={submitWeighDispense}>
+                  <div className="panel-heading">
+                    <h3>Weigh/dispense station</h3>
+                    <Badge tone={statusTone(selectedDispenseSession?.session.status ?? "planned")}>
+                      <Scale aria-hidden="true" size={16} />
+                      {selectedDispenseSession?.session.sessionCode ?? "No session"}
+                    </Badge>
+                  </div>
+                  <label className="select-field full-span">
+                    <span>Session</span>
+                    <select value={selectedDispenseSession?.session.id ?? ""} onChange={(event) => setSelectedDispenseSessionId(event.target.value)}>
+                      {weighDispenseSessions.map((detail) => (
+                        <option key={detail.session.id} value={detail.session.id}>
+                          {detail.session.sessionCode} / {detail.session.status}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  {currentDispenseLine ? (
+                    <>
+                      <div className="stack full-span">
+                        <p className="eyebrow">Current material</p>
+                        <h4>{currentDispenseLine.sequence}. {currentDispenseLine.componentName}</h4>
+                        <p>
+                          {currentDispenseLine.componentType.replaceAll("_", " ")} / {currentDispenseLine.isCritical ? "critical" : "standard"} / {currentDispenseLine.sourceType.replaceAll("_", " ")}
+                        </p>
+                      </div>
+                      <dl className="sync-metrics full-span">
+                        <div><dt>Target</dt><dd>{formatNumber(currentDispenseLine.potencyAdjustedTargetQuantity ?? currentDispenseLine.targetQuantity)} {currentDispenseLine.targetUom}</dd></div>
+                        <div><dt>Tolerance</dt><dd>{formatNumber(dispenseToleranceQuantity)} {currentDispenseLine.targetUom}</dd></div>
+                        <div><dt>Net</dt><dd>{Number.isFinite(dispenseNet) ? formatNumber(dispenseNet) : "-"} {currentDispenseLine.targetUom}</dd></div>
+                        <div><dt>Variance</dt><dd>{Number.isFinite(dispenseVariance) ? formatNumber(dispenseVariance) : "-"} {currentDispenseLine.targetUom}</dd></div>
+                      </dl>
+                      <label className="select-field full-span">
+                        <span>Lot scan</span>
+                        <select value={selectedDispenseLot?.lot.id ?? ""} onChange={(event) => setSelectedDispenseLotId(event.target.value)}>
+                          {usableLots.map((detail) => (
+                            <option key={detail.lot.id} value={detail.lot.id}>
+                              {detail.lot.lotCode} / {detail.allocation.available} {detail.balances[0]?.uom} / {detail.lot.qcStatus}
+                            </option>
+                          ))}
+                        </select>
+                      </label>
+                      <Input label="Scale tare" type="number" step="0.000001" value={dispenseTare} onChange={(event) => setDispenseTare(event.target.value)} />
+                      <Input label="Scale gross" type="number" step="0.000001" value={dispenseGross} onChange={(event) => setDispenseGross(event.target.value)} />
+                      <Input label="Manual net" value={Number.isFinite(dispenseNet) ? String(Number(dispenseNet.toFixed(6))) : ""} readOnly />
+                      <Input label="Scale source" value="manual" readOnly />
+                      {!dispenseInTolerance ? (
+                        <div className="exception-panel full-span" role="alertdialog" aria-label="Tolerance exception">
+                          <strong>Tolerance exception</strong>
+                          <p>Out-of-tolerance weights require an authorized reason and dual verification before inventory is posted.</p>
+                          <Input label="Override reason" value={dispenseOverrideReason} onChange={(event) => setDispenseOverrideReason(event.target.value)} />
+                        </div>
+                      ) : null}
+                      {currentDispenseLine.isCritical || !dispenseInTolerance ? (
+                        <div className="exception-panel full-span" aria-label="Dual verification">
+                          <strong>Dual verification</strong>
+                          <label className="select-field">
+                            <span>Verifier</span>
+                            <select value={dispenseVerifierUserId} onChange={(event) => setDispenseVerifierUserId(event.target.value)}>
+                              <option value="user-staff">Production staff</option>
+                              <option value="user-owner">Owner admin</option>
+                            </select>
+                          </label>
+                        </div>
+                      ) : null}
+                      <div className="form-actions full-span">
+                        <Button type="submit" disabled={!selectedDispenseLot}>
+                          <ShieldCheck aria-hidden="true" size={18} />
+                          Complete dispense
+                        </Button>
+                      </div>
+                    </>
+                  ) : (
+                    <div className="stack full-span">
+                      <h4>All dispense lines are complete</h4>
+                      <p>Completed lines have posted inventory consumption and are ready for batch continuation.</p>
+                    </div>
+                  )}
+                </form>
+                <section className="table-panel">
+                  <div className="panel-heading">
+                    <h3>Dispense history</h3>
+                    <Badge tone="info">{selectedDispenseSession?.history.length ?? 0} complete</Badge>
+                  </div>
+                  <table className="list-table">
+                    <thead>
+                      <tr>
+                        <th>Material</th>
+                        <th>Lot</th>
+                        <th>Net</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {(selectedDispenseSession?.lines ?? []).map((line) => (
+                        <tr key={line.id}>
+                          <td>{line.componentName}<div className="muted-line">{line.equipmentId ?? "manual"}</div></td>
+                          <td>{line.lotId ?? "Pending"}</td>
+                          <td>{line.netQuantity === null ? "-" : `${formatNumber(line.netQuantity)} ${line.targetUom}`}</td>
+                          <td>
+                            <Badge tone={line.status === "complete" ? "success" : "warning"}>{line.status}</Badge>
+                            {line.overrideReason ? <Badge tone="warning">Override</Badge> : null}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </section>
+              </div>
+            )
+          },
+          {
             id: "packet",
             label: "EBR packet",
             content: (
@@ -1144,7 +1709,7 @@ export function ProductionScreen() {
       />
 
       <Dialog title="Create production order" open={createDialog === "order"} onClose={() => setCreateDialog(null)}>
-        <form className="form-grid" onSubmit={submitProductionOrder}>
+        <form className="form-grid" onSubmit={submitProductionOrder} data-guide="production.order-form">
           <Input label="Order number" name="orderNumber" required defaultValue={`PO-${new Date().toISOString().slice(0, 10).replaceAll("-", "")}-${orders.length + 1}`} />
           <label className="select-field">
             <span>Type</span>
@@ -1189,7 +1754,7 @@ export function ProductionScreen() {
           <Input label="Due date" name="dueAt" required type="date" defaultValue={new Date(Date.now() + 86400000).toISOString().slice(0, 10)} />
           <Input label="Notes" name="notes" className="full-span" defaultValue="Created from production dashboard." />
           <div className="form-actions full-span">
-            <Button type="submit"><Save aria-hidden="true" size={18} />Save order</Button>
+            <Button type="submit" data-guide="production.save-order"><Save aria-hidden="true" size={18} />Save order</Button>
           </div>
         </form>
       </Dialog>
@@ -1244,7 +1809,7 @@ export function ProductionScreen() {
       </Dialog>
 
       <Dialog title="Create BOM" open={createDialog === "bom"} onClose={() => setCreateDialog(null)}>
-        <form className="form-grid" onSubmit={submitBom}>
+        <form className="form-grid" onSubmit={submitBom} data-guide="production.bom-form">
           <label className="select-field">
             <span>Product variant</span>
             <select name="productVariantId" defaultValue={masterData.productVariants[0]?.id ?? ""}>
@@ -1267,7 +1832,7 @@ export function ProductionScreen() {
           <Input label="Yield UOM" name="yieldUom" required defaultValue="bottle" />
           <Input label="Effective from" name="effectiveFrom" required type="date" defaultValue={new Date().toISOString().slice(0, 10)} />
           <div className="form-actions full-span">
-            <Button type="submit"><Save aria-hidden="true" size={18} />Save BOM</Button>
+            <Button type="submit" data-guide="production.save-bom"><Save aria-hidden="true" size={18} />Save BOM</Button>
           </div>
         </form>
       </Dialog>
@@ -1281,6 +1846,7 @@ function BomEditor({
   boms,
   ebrTemplates,
   formulas,
+  formatDate,
   formatNumber,
   masterData,
   onError,
@@ -1295,6 +1861,7 @@ function BomEditor({
   boms: BillOfMaterialsDetail[];
   ebrTemplates: EbrTemplateDetail[];
   formulas: FormulaRevisionDetail[];
+  formatDate: (value: Date) => string;
   formatNumber: (value: number) => string;
   masterData: MasterDataSnapshot;
   onError: (message: string | null) => void;
@@ -1314,6 +1881,20 @@ function BomEditor({
   const runtime = selectedBom?.productionPlan?.operationRuntimes.find(
     (entry) => entry.bomOperationId === selectedOperation?.operation.id
   ) ?? null;
+  const comparisonBom = selectedBom
+    ? boms.find((detail) => detail.bom.productVariantId === selectedBom.bom.productVariantId && detail.bom.id !== selectedBom.bom.id) ?? null
+    : null;
+  const bomCompareSummary = selectedBom && comparisonBom
+    ? {
+        operationDelta: (selectedBom.operations?.length ?? 0) - (comparisonBom.operations?.length ?? 0),
+        materialDelta:
+          (selectedBom.operations ?? []).reduce((total, operation) => total + operation.materials.length, 0) -
+          (comparisonBom.operations ?? []).reduce((total, operation) => total + operation.materials.length, 0),
+        outputDelta:
+          (selectedBom.operations ?? []).reduce((total, operation) => total + operation.outputs.length, 0) -
+          (comparisonBom.operations ?? []).reduce((total, operation) => total + operation.outputs.length, 0)
+      }
+    : null;
   const componentOptions = useMemo(
     () => [
       ...masterData.materials.map((item) => ({
@@ -1510,6 +2091,8 @@ function BomEditor({
           <div className="bom-status-strip">
             <Badge tone={statusTone(selectedBom.bom.status)}>{selectedBom.bom.status}</Badge>
             <span>{formatNumber(selectedBom.bom.yieldQuantity)} {selectedBom.bom.yieldUom}</span>
+            <span>{selectedBom.bom.bomKind}</span>
+            <span>{selectedBom.bom.activeRevisionLocked ? "Locked" : "Editable"}</span>
             <span>{operations.length} operation(s)</span>
             <span>{selectedBom.productionPlan ? `${formatNumber(selectedBom.productionPlan.totalElapsedMinutes)} min elapsed` : "No runtime"}</span>
           </div>
@@ -1521,6 +2104,60 @@ function BomEditor({
           formulas={formulas}
           formatNumber={formatNumber}
         />
+        <div className="process-overview" aria-label="BOM readiness and compare">
+          <article>
+            <span>Readiness</span>
+            <strong>{selectedBom.readiness.status}</strong>
+            <small>{selectedBom.readiness.checks.filter((check) => check.status !== "ready").map((check) => check.label).join(", ") || "All checks ready"}</small>
+          </article>
+          <article>
+            <span>Revision compare</span>
+            <strong>{comparisonBom ? comparisonBom.bom.versionCode : "No peer"}</strong>
+            <small>
+              {bomCompareSummary
+                ? `${bomCompareSummary.operationDelta} ops / ${bomCompareSummary.materialDelta} materials / ${bomCompareSummary.outputDelta} outputs`
+                : "Copy a revision to compare changes"}
+            </small>
+          </article>
+          <article>
+            <span>Operation outputs</span>
+            <strong>{formatNumber(selectedBom.productionPlan?.operationOutputCount ?? 0)}</strong>
+            <small>{formatNumber(selectedBom.productionPlan?.byProductOutputCount ?? 0)} co/by-product line(s)</small>
+          </article>
+          <article>
+            <span>Operation costs</span>
+            <strong>{formatNumber(selectedBom.productionPlan?.operationCostTotal ?? 0)} EUR</strong>
+            <small>Setup, machine, overhead, tools, outside processing</small>
+          </article>
+        </div>
+      </section>
+
+      <section className="table-panel">
+        <div className="panel-heading">
+          <h3>Multi-level BOM explorer</h3>
+          <Badge tone="info"><GitCompare aria-hidden="true" size={16} /> Effectivity</Badge>
+        </div>
+        <table className="list-table">
+          <thead><tr><th>Level</th><th>Operation</th><th>Component</th><th>Qty</th><th>Effectivity</th></tr></thead>
+          <tbody>
+            {operations.flatMap((entry) =>
+              entry.materials.map((material) => (
+                <tr key={material.id}>
+                  <td>{material.componentType === "product_variant" ? "Phantom/child" : "0"}</td>
+                  <td>{entry.operation.operationId}</td>
+                  <td>{componentLabel(material.componentType, material.componentId)}</td>
+                  <td>{formatNumber(material.quantity)} {material.uom}</td>
+                  <td>
+                    {(material.effectiveFrom ? formatDate(new Date(material.effectiveFrom)) : "Any start")} - {material.effectiveTo ? formatDate(new Date(material.effectiveTo)) : "Open"}
+                    <div className="muted-line">
+                      {entry.substitutes.filter((item) => item.materialId === material.id).map((item) => `${item.substitute.replacementType}: ${componentLabel(item.substitute.componentType, item.substitute.componentId)}`).join(", ") || "No replacement rule"}
+                    </div>
+                  </td>
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
       </section>
 
       <section className="bom-definition-layout">
@@ -1551,7 +2188,7 @@ function BomEditor({
                     <Badge tone={entry.operation.controlPoint ? "success" : "neutral"}>
                       {entry.operation.controlPoint ? "Control point" : entry.operation.runtimeBasis}
                     </Badge>
-                    <small>{operationRuntime ? `${formatNumber(operationRuntime.totalElapsedMinutes)} min` : "Runtime pending"}</small>
+                    <small>{operationRuntime ? `${formatNumber(operationRuntime.totalElapsedMinutes)} min` : "Runtime pending"} / {entry.outputs.length} output(s)</small>
                   </span>
                 </button>
               );
@@ -1680,6 +2317,43 @@ function BomEditor({
                         <td>{componentLabel(material.componentType, material.componentId)}</td>
                         <td>{formatNumber(material.quantity)} {material.uom}<div className="muted-line">{formatNumber(material.wastePercent)}% waste</div></td>
                         <td>{material.issueMethod}{material.lotTraceRequired ? " / lot trace" : ""}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </section>
+              <section>
+                <h4>Outputs</h4>
+                <table className="list-table">
+                  <thead><tr><th>Type</th><th>Item</th><th>Qty</th></tr></thead>
+                  <tbody>
+                    {selectedOperation.outputs.map((output) => (
+                      <tr key={output.id}>
+                        <td>{output.outputType}{output.reworkRequired ? " / rework" : ""}</td>
+                        <td>{componentLabel(output.itemType === "wip" || output.itemType === "harvest" ? "product_variant" : output.itemType, output.itemId)}</td>
+                        <td>{formatNumber(output.quantity)} {output.uom}<div className="muted-line">{output.traceInventory ? "Inventory output" : `Loss record${output.scrapReasonCode ? ` / ${output.scrapReasonCode}` : ""}`}</div></td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </section>
+              <section>
+                <h4>Replacements and costs</h4>
+                <table className="list-table">
+                  <thead><tr><th>Kind</th><th>Code/item</th><th>Value</th></tr></thead>
+                  <tbody>
+                    {selectedOperation.substitutes.map(({ materialId, substitute }) => (
+                      <tr key={substitute.id}>
+                        <td>{substitute.replacementType}</td>
+                        <td>{componentLabel(substitute.componentType, substitute.componentId)}<div className="muted-line">{materialId}</div></td>
+                        <td>{substitute.approved ? "Approved" : "Pending"} / priority {substitute.priority}</td>
+                      </tr>
+                    ))}
+                    {selectedOperation.costs.map((cost) => (
+                      <tr key={cost.id}>
+                        <td>{cost.costType}</td>
+                        <td>{cost.costCode}<div className="muted-line">{cost.description}</div></td>
+                        <td>{formatNumber(cost.quantity * cost.unitCost)} {cost.currency}{cost.backflush ? " / backflush" : ""}</td>
                       </tr>
                     ))}
                   </tbody>

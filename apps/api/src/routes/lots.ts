@@ -35,6 +35,7 @@ const lotCreateSchema = z.object({
     "harvest",
     "drying_run",
     "processing_batch",
+    "production_order",
     "receipt",
     "purchase_order",
     "manual"

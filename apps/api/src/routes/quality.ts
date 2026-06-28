@@ -90,8 +90,8 @@ const holdDecisionSchema = z.object({
 
 export async function qualityRoutes(app: FastifyInstance, options: QualityRoutesOptions): Promise<void> {
   const canReadQuality = requireRoles({ anyOf: ["owner_admin", "production_farm", "packing_fulfillment", "auditor"] });
-  const canManageQuality = requireRoles({ anyOf: ["owner_admin", "production_farm"], allowOwnerAdmin: true });
-  const canApproveDisposition = requireRoles({ anyOf: ["owner_admin"], allowOwnerAdmin: true });
+  const canManageQuality = requireRoles({ anyOf: ["owner_admin", "production_farm", "qc"], allowOwnerAdmin: true });
+  const canApproveDisposition = requireRoles({ anyOf: ["owner_admin", "qc"], allowOwnerAdmin: true });
 
   app.get(
     "/api/quality/dashboard",

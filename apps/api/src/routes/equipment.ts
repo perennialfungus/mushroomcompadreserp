@@ -35,7 +35,8 @@ const equipmentSchema = z.object({
   calibrationIntervalDays: z.number().int().positive().nullable().optional(),
   maintenanceIntervalDays: z.number().int().positive().nullable().optional(),
   nextCalibrationDueAt: isoDate,
-  nextMaintenanceDueAt: isoDate
+  nextMaintenanceDueAt: isoDate,
+  metadataJson: z.record(z.string(), z.unknown()).optional()
 });
 
 const calibrationSchema = z.object({
@@ -57,6 +58,68 @@ const maintenanceSchema = z.object({
   dueAt: isoDate,
   performedBy: z.string().trim().min(1).nullable().optional(),
   summary: z.string().trim().min(1).max(200),
+  notes: z.string().trim().max(2000).nullable().optional()
+});
+
+const readingSchema = z.object({
+  equipmentId: z.string().trim().min(1),
+  productionOrderId: z.string().trim().min(1).nullable().optional(),
+  processingBatchId: z.string().trim().min(1).nullable().optional(),
+  ebrExecutionId: z.string().trim().min(1).nullable().optional(),
+  ebrStepResultId: z.string().trim().min(1).nullable().optional(),
+  routingOperationId: z.string().trim().min(1).nullable().optional(),
+  parameterType: z.enum(["temperature", "humidity", "pressure", "rpm", "time", "ph", "brix", "moisture", "custom"]),
+  parameterName: z.string().trim().max(120).nullable().optional(),
+  value: z.number(),
+  unit: z.string().trim().min(1).max(32),
+  source: z.enum(["manual", "mock_plc", "adapter"]).optional(),
+  recordedAt: isoDate,
+  minValue: z.number().nullable().optional(),
+  maxValue: z.number().nullable().optional(),
+  warningMinValue: z.number().nullable().optional(),
+  warningMaxValue: z.number().nullable().optional(),
+  createDeviationOnOutOfLimit: z.boolean().optional(),
+  createQualityEventOnOutOfLimit: z.boolean().optional(),
+  rawPayload: z.record(z.string(), z.unknown()).optional()
+});
+
+const preUseCheckSchema = z.object({
+  equipmentId: z.string().trim().min(1),
+  templateId: z.string().trim().min(1),
+  routingOperationId: z.string().trim().min(1).nullable().optional(),
+  productionOrderId: z.string().trim().min(1).nullable().optional(),
+  ebrExecutionId: z.string().trim().min(1).nullable().optional(),
+  checkedItems: z.array(
+    z.object({
+      itemId: z.string().trim().min(1),
+      label: z.string().trim().min(1),
+      passed: z.boolean(),
+      required: z.boolean().optional()
+    })
+  ).min(1),
+  completedAt: isoDate,
+  notes: z.string().trim().max(2000).nullable().optional()
+});
+
+const cleaningSchema = z.object({
+  equipmentId: z.string().trim().min(1),
+  cleaningType: z.enum(["pre_use", "post_use", "changeover", "sanitation", "deep_clean"]),
+  status: z.enum(["clean", "dirty", "expired", "unknown", "not_required"]).optional(),
+  cleanedAt: isoDate,
+  expiresAt: isoDate,
+  productionOrderId: z.string().trim().min(1).nullable().optional(),
+  ebrExecutionId: z.string().trim().min(1).nullable().optional(),
+  procedureId: z.string().trim().max(120).nullable().optional(),
+  notes: z.string().trim().max(2000).nullable().optional()
+});
+
+const downtimeSchema = z.object({
+  equipmentId: z.string().trim().min(1),
+  reasonCode: z.string().trim().min(1).max(80),
+  startedAt: z.string().datetime({ offset: true }),
+  endedAt: isoDate,
+  productionOrderId: z.string().trim().min(1).nullable().optional(),
+  routingOperationId: z.string().trim().min(1).nullable().optional(),
   notes: z.string().trim().max(2000).nullable().optional()
 });
 
@@ -150,6 +213,106 @@ export async function equipmentRoutes(app: FastifyInstance, options: EquipmentRo
       }
     }
   );
+
+  app.post(
+    "/api/equipment/readings",
+    {
+      preHandler: [options.requireUserContext, canManage],
+      schema: { tags: ["equipment"], summary: "Record equipment process reading", security: bearerSecurity }
+    },
+    async (request, reply) => {
+      const parsed = readingSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: "bad_request", message: "Invalid equipment reading" });
+      }
+      try {
+        const userContext = (request as AuthenticatedRequest).userContext;
+        const dashboard = await options.dataStore.recordEquipmentReading(
+          userContext,
+          stripUndefined(parseDateFields(parsed.data)) as Parameters<ApiDataStore["recordEquipmentReading"]>[1],
+          request.id
+        );
+        return reply.code(201).send({ dashboard: serializeDashboard(dashboard) });
+      } catch (error) {
+        return equipmentError(reply, error);
+      }
+    }
+  );
+
+  app.post(
+    "/api/equipment/pre-use-checks",
+    {
+      preHandler: [options.requireUserContext, canManage],
+      schema: { tags: ["equipment"], summary: "Complete equipment pre-use check", security: bearerSecurity }
+    },
+    async (request, reply) => {
+      const parsed = preUseCheckSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: "bad_request", message: "Invalid pre-use check" });
+      }
+      try {
+        const userContext = (request as AuthenticatedRequest).userContext;
+        const dashboard = await options.dataStore.completeEquipmentPreUseCheck(
+          userContext,
+          stripUndefined(parseDateFields(parsed.data)) as Parameters<ApiDataStore["completeEquipmentPreUseCheck"]>[1],
+          request.id
+        );
+        return reply.code(201).send({ dashboard: serializeDashboard(dashboard) });
+      } catch (error) {
+        return equipmentError(reply, error);
+      }
+    }
+  );
+
+  app.post(
+    "/api/equipment/cleaning-logs",
+    {
+      preHandler: [options.requireUserContext, canManage],
+      schema: { tags: ["equipment"], summary: "Record equipment cleaning log", security: bearerSecurity }
+    },
+    async (request, reply) => {
+      const parsed = cleaningSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: "bad_request", message: "Invalid cleaning log" });
+      }
+      try {
+        const userContext = (request as AuthenticatedRequest).userContext;
+        const dashboard = await options.dataStore.recordEquipmentCleaning(
+          userContext,
+          stripUndefined(parseDateFields(parsed.data)) as Parameters<ApiDataStore["recordEquipmentCleaning"]>[1],
+          request.id
+        );
+        return reply.code(201).send({ dashboard: serializeDashboard(dashboard) });
+      } catch (error) {
+        return equipmentError(reply, error);
+      }
+    }
+  );
+
+  app.post(
+    "/api/equipment/downtime",
+    {
+      preHandler: [options.requireUserContext, canManage],
+      schema: { tags: ["equipment"], summary: "Record equipment downtime", security: bearerSecurity }
+    },
+    async (request, reply) => {
+      const parsed = downtimeSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: "bad_request", message: "Invalid downtime record" });
+      }
+      try {
+        const userContext = (request as AuthenticatedRequest).userContext;
+        const dashboard = await options.dataStore.recordEquipmentDowntime(
+          userContext,
+          stripUndefined(parseDateFields(parsed.data)) as unknown as Parameters<ApiDataStore["recordEquipmentDowntime"]>[1],
+          request.id
+        );
+        return reply.code(201).send({ dashboard: serializeDashboard(dashboard) });
+      } catch (error) {
+        return equipmentError(reply, error);
+      }
+    }
+  );
 }
 
 function parseDateFields<T extends Record<string, unknown>>(input: T): T {
@@ -180,6 +343,9 @@ function serializeDashboard(dashboard: Awaited<ReturnType<ApiDataStore["getEquip
     calibrations: dashboard.calibrations.map(serializeRecord),
     maintenance: dashboard.maintenance.map(serializeRecord),
     events: dashboard.events.map(serializeRecord),
+    readings: dashboard.readings.map(serializeRecord),
+    preUseChecks: dashboard.preUseChecks.map(serializeRecord),
+    cleaningLogs: dashboard.cleaningLogs.map(serializeRecord),
     alerts: dashboard.alerts.map(serializeRecord)
   };
 }

@@ -1,8 +1,18 @@
 import { randomUUID } from "node:crypto";
 import {
+  defaultFieldPermissionRules,
+  defaultPermissionSets,
+  explainPermission,
+  permissionCatalog,
+  resolveEffectivePermissions,
   defaultProductTemplates,
+  defaultWorkspacePreferences,
+  defaultColorRules,
   defaultSkuRule,
-  generateProductPackage
+  generateProductPackage,
+  mergeWorkspacePreferences,
+  ensureAccessibleColorRule,
+  filterNavigationForRole
 } from "@mushroom-compadres/domain";
 import type {
   ApiDataStore,
@@ -11,6 +21,10 @@ import type {
   AppUserUpdateInput,
   AuditEventInsert,
   AuditEventRecord,
+  AccessScopeRule,
+  ColorRuleInput,
+  ColorRuleRecord,
+  FieldPermissionRule,
   ProductConfigurationInput,
   ProductConfigurationRecord,
   InventoryBalanceRecord,
@@ -23,6 +37,8 @@ import type {
   OrganizationRecord,
   PackagingComponentInput,
   PackagingComponentRecord,
+  PinnedItemInput,
+  PinnedItemRecord,
   ProductConfigurationResult,
   ProductInput,
   ProductTemplateRecord,
@@ -30,6 +46,13 @@ import type {
   ProductVariantInput,
   ProductVariantRecord,
   RoleRecord,
+  RolePermissionSetAssignmentRecord,
+  SavedViewInput,
+  SavedViewRecord,
+  PermissionSet,
+  PermissionPreviewInput,
+  UserPermissionOverride,
+  UserPermissionOverrideInput,
   SkuRuleRecord,
   StockCountConflictRecord,
   StockCountLineRecord,
@@ -38,6 +61,9 @@ import type {
   StockCountSessionRecord,
   StockMovementRecord,
   TransactionClient,
+  UserContext,
+  UserPreferenceRecord,
+  UserPreferenceUpdateInput,
   UserRoleAssignment
 } from "../src/types.js";
 
@@ -46,6 +72,11 @@ export type InMemorySeed = {
   users: AppUserRecord[];
   roles: RoleRecord[];
   userRoles: Array<Omit<UserRoleAssignment, "role">>;
+  permissionSets?: PermissionSet[];
+  rolePermissionSets?: RolePermissionSetAssignmentRecord[];
+  userPermissionOverrides?: UserPermissionOverride[];
+  fieldPermissionRules?: FieldPermissionRule[];
+  accessScopeRules?: AccessScopeRule[];
   locations?: LocationRecord[];
   products?: ProductRecord[];
   productVariants?: ProductVariantRecord[];
@@ -54,6 +85,10 @@ export type InMemorySeed = {
   productConfigurations?: ProductConfigurationRecord[];
   materials?: MaterialRecord[];
   packagingComponents?: PackagingComponentRecord[];
+  userPreferences?: UserPreferenceRecord[];
+  pinnedItems?: PinnedItemRecord[];
+  savedViews?: SavedViewRecord[];
+  colorRules?: ColorRuleRecord[];
 };
 
 export class InMemoryApiDataStore implements ApiDataStore {
@@ -125,6 +160,71 @@ export class InMemoryApiDataStore implements ApiDataStore {
     return this.seed.packagingComponents ?? [];
   }
 
+  private get userPreferences(): UserPreferenceRecord[] {
+    this.seed.userPreferences ??= [];
+    return this.seed.userPreferences;
+  }
+
+  private get pinnedItems(): PinnedItemRecord[] {
+    this.seed.pinnedItems ??= [];
+    return this.seed.pinnedItems;
+  }
+
+  private get savedViews(): SavedViewRecord[] {
+    this.seed.savedViews ??= [];
+    return this.seed.savedViews;
+  }
+
+  private get colorRules(): ColorRuleRecord[] {
+    const organizationId = this.seed.organizations[0]?.id ?? "org-test";
+    this.seed.colorRules ??= defaultColorRules.map((rule) => ({
+      ...rule,
+      organizationId,
+      userId: null,
+      createdAt: new Date(),
+      updatedAt: new Date(),
+      version: 1
+    }));
+    return this.seed.colorRules;
+  }
+
+  private get permissionSets(): PermissionSet[] {
+    return this.seed.permissionSets ?? defaultPermissionSets(this.seed.organizations[0]?.id ?? "org-test");
+  }
+
+  private get rolePermissionSets(): RolePermissionSetAssignmentRecord[] {
+    if (this.seed.rolePermissionSets) {
+      return this.seed.rolePermissionSets;
+    }
+    const defaultSetByCode = new Map(this.permissionSets.map((set) => [set.code, set.id]));
+    return this.seed.roles.flatMap((role) => {
+      const setCodeByRole: Record<string, string> = {
+        owner_admin: "owner-admin-full",
+        production_farm: "production-workflows",
+        qc: "quality-approval",
+        packing_fulfillment: "packing-fulfillment",
+        sales_wholesale: "sales-wholesale",
+        purchasing: "purchasing",
+        auditor: "auditor-read-export"
+      };
+      const setId = defaultSetByCode.get(setCodeByRole[role.code] ?? "");
+      return setId ? [{ id: `rps-${role.id}-${setId}`, roleId: role.id, permissionSetId: setId }] : [];
+    });
+  }
+
+  private get userPermissionOverrides(): UserPermissionOverride[] {
+    return this.seed.userPermissionOverrides ?? [];
+  }
+
+  private get fieldPermissionRules(): FieldPermissionRule[] {
+    const organizationId = this.seed.organizations[0]?.id ?? "org-test";
+    return this.seed.fieldPermissionRules ?? defaultFieldPermissionRules.map((rule) => ({ ...rule, organizationId }));
+  }
+
+  private get accessScopeRules(): AccessScopeRule[] {
+    return this.seed.accessScopeRules ?? [];
+  }
+
   private rolesForUser(user: AppUserRecord): UserRoleAssignment[] {
     return this.seed.userRoles
       .filter((assignment) => assignment.userId === user.id)
@@ -147,6 +247,46 @@ export class InMemoryApiDataStore implements ApiDataStore {
       ...user,
       roles: this.rolesForUser(user)
     };
+  }
+
+  private effectivePermissionsForUser(user: AppUserRecord) {
+    const permissionSets = this.permissionSets.filter((set) => set.organizationId === user.organizationId);
+    const setById = new Map(permissionSets.map((set) => [set.id, set.code]));
+    const rolePermissionSetCodes = Object.fromEntries(
+      this.seed.roles
+        .filter((role) => role.organizationId === user.organizationId)
+        .map((role) => [
+          role.code,
+          this.rolePermissionSets
+            .filter((assignment) => assignment.roleId === role.id)
+            .map((assignment) => setById.get(assignment.permissionSetId))
+            .filter((code): code is string => Boolean(code))
+        ])
+    );
+    const locationScope = this.seed.userRoles
+      .filter((assignment) => assignment.userId === user.id)
+      .map((assignment) => assignment.locationId)
+      .filter((locationId): locationId is string => Boolean(locationId));
+    return resolveEffectivePermissions({
+      roleCodes: this.rolesForUser(user).map((assignment) => assignment.role.code),
+      permissionSets,
+      rolePermissionSetCodes,
+      userOverrides: this.userPermissionOverrides.filter((override) => override.userId === user.id),
+      accessScopeRules: [
+        ...this.accessScopeRules.filter((rule) => rule.subjectType === "user" && rule.subjectId === user.id),
+        ...(locationScope.length > 0
+          ? [{
+              id: `role-location-scope-${user.id}`,
+              organizationId: user.organizationId,
+              subjectType: "user" as const,
+              subjectId: user.id,
+              dimension: "location" as const,
+              allowedIds: [...new Set(locationScope)]
+            }]
+          : [])
+      ],
+      userId: user.id
+    });
   }
 
   async listAppUsers(organizationId: string): Promise<AdminUserRecord[]> {
@@ -196,6 +336,129 @@ export class InMemoryApiDataStore implements ApiDataStore {
 
   async listLocations(organizationId: string): Promise<LocationRecord[]> {
     return this.locations.filter((location) => location.organizationId === organizationId);
+  }
+
+  async getEffectivePermissionsForUser(organizationId: string, userId: string) {
+    const user = this.seed.users.find((candidate) => candidate.id === userId && candidate.organizationId === organizationId);
+    return user ? this.effectivePermissionsForUser(user) : [];
+  }
+
+  async listPermissionMatrix(organizationId: string) {
+    const roles = this.seed.roles.filter((role) => role.organizationId === organizationId);
+    return {
+      catalog: permissionCatalog,
+      permissionSets: this.permissionSets.filter((set) => set.organizationId === organizationId),
+      rolePermissionSets: this.rolePermissionSets.filter((assignment) => roles.some((role) => role.id === assignment.roleId)),
+      userOverrides: this.userPermissionOverrides.filter((override) => override.organizationId === organizationId),
+      fieldRules: this.fieldPermissionRules.filter((rule) => rule.organizationId === organizationId),
+      accessScopeRules: this.accessScopeRules.filter((rule) => rule.organizationId === organizationId),
+      effectiveByRole: Object.fromEntries(
+        roles.map((role) => [
+          role.id,
+          resolveEffectivePermissions({
+            roleCodes: [role.code],
+            permissionSets: this.permissionSets.filter((set) => set.organizationId === organizationId),
+            rolePermissionSetCodes: Object.fromEntries(
+              roles.map((candidate) => [
+                candidate.code,
+                this.rolePermissionSets
+                  .filter((assignment) => assignment.roleId === candidate.id)
+                  .map((assignment) => this.permissionSets.find((set) => set.id === assignment.permissionSetId)?.code)
+                  .filter((code): code is string => Boolean(code))
+              ])
+            )
+          })
+        ])
+      ),
+      conflictWarnings: this.userPermissionOverrides
+        .filter((override) => override.organizationId === organizationId && override.level === "deny")
+        .map((override) => ({
+          subjectType: "user" as const,
+          subjectId: override.userId,
+          permissionCode: override.permissionCode,
+          message: `Explicit deny overrides role grants: ${override.reason}`
+        }))
+    };
+  }
+
+  async updateRolePermissionSets(userContext: { organizationId: string; userId: string }, roleId: string, permissionSetIds: string[], requestId: string) {
+    const before = await this.listPermissionMatrix(userContext.organizationId);
+    this.seed.rolePermissionSets = [
+      ...this.rolePermissionSets.filter((assignment) => assignment.roleId !== roleId),
+      ...permissionSetIds.map((permissionSetId) => ({ id: randomUUID(), roleId, permissionSetId }))
+    ];
+    const after = await this.listPermissionMatrix(userContext.organizationId);
+    await this.insertAuditEvent({
+      organizationId: userContext.organizationId,
+      actorUserId: userContext.userId,
+      eventType: "permission.role_sets.updated",
+      subjectType: "roles",
+      subjectId: roleId,
+      beforeJson: before.rolePermissionSets.filter((assignment) => assignment.roleId === roleId),
+      afterJson: after.rolePermissionSets.filter((assignment) => assignment.roleId === roleId),
+      requestId
+    });
+    return after;
+  }
+
+  async upsertUserPermissionOverride(userContext: { organizationId: string; userId: string }, input: UserPermissionOverrideInput, requestId: string) {
+    const before = await this.listPermissionMatrix(userContext.organizationId);
+    const overrides = [...this.userPermissionOverrides];
+    const existing = overrides.find(
+      (override) => override.userId === input.userId && override.permissionCode === input.permissionCode
+    );
+    if (existing) {
+      Object.assign(existing, input);
+    } else {
+      overrides.push({
+        id: randomUUID(),
+        organizationId: userContext.organizationId,
+        userId: input.userId,
+        permissionCode: input.permissionCode,
+        level: input.level,
+        reason: input.reason,
+        scope: input.scope
+      });
+    }
+    this.seed.userPermissionOverrides = overrides;
+    const after = await this.listPermissionMatrix(userContext.organizationId);
+    await this.insertAuditEvent({
+      organizationId: userContext.organizationId,
+      actorUserId: userContext.userId,
+      eventType: "permission.user_override.updated",
+      subjectType: "users",
+      subjectId: input.userId,
+      beforeJson: before.userOverrides.filter((override) => override.userId === input.userId),
+      afterJson: after.userOverrides.filter((override) => override.userId === input.userId),
+      requestId
+    });
+    return after;
+  }
+
+  async previewUserAccess(organizationId: string, subjectUserId: string, input: PermissionPreviewInput) {
+    const user = this.seed.users.find((candidate) => candidate.id === subjectUserId && candidate.organizationId === organizationId);
+    if (!user) {
+      return null;
+    }
+    const effective = this.effectivePermissionsForUser(user);
+    return {
+      subjectUserId,
+      action: input,
+      resolution: explainPermission({
+        effectivePermissions: effective,
+        permissionCode: input.permissionCode,
+        requiredLevel: input.requiredLevel,
+        locationId: input.locationId,
+        scope: input.scope
+      }),
+      effective
+    };
+  }
+
+  async listPermissionChangeHistory(organizationId: string) {
+    return this.auditEvents
+      .filter((event) => event.organizationId === organizationId && event.eventType.startsWith("permission."))
+      .sort((left, right) => right.occurredAt.getTime() - left.occurredAt.getTime());
   }
 
   async listMasterData(organizationId: string): Promise<MasterDataSnapshot> {
@@ -434,6 +697,229 @@ export class InMemoryApiDataStore implements ApiDataStore {
     return user;
   }
 
+  async getWorkspaceSnapshot(userContext: UserContext, previewRoleCode: string | null = null) {
+    const preferences = this.workspacePreferencesFor(userContext);
+    const roleCodes = userContext.roles.map((role) => role.code);
+    const canPreview = roleCodes.includes("owner_admin");
+    const navigation = filterNavigationForRole(
+      [
+        { id: "inventory", label: "Inventory", href: "/inventory", requiredRoles: ["owner_admin", "packing_fulfillment"] },
+        { id: "admin", label: "Admin", href: "/admin/roles", requiredRoles: ["owner_admin"] }
+      ],
+      roleCodes,
+      canPreview ? previewRoleCode : null
+    );
+    return {
+      preferences,
+      pinnedItems: this.pinnedItems.filter((pin) => pin.organizationId === userContext.organizationId && pin.userId === userContext.userId),
+      savedViews: this.savedViews.filter(
+        (view) =>
+          view.organizationId === userContext.organizationId &&
+          (view.ownerUserId === userContext.userId || view.sharedRoleCodes.some((roleCode) => roleCodes.includes(roleCode)))
+      ),
+      colorRules: this.colorRules.filter((rule) => rule.organizationId === userContext.organizationId),
+      navigation,
+      previewRoleCode: canPreview ? previewRoleCode : null
+    };
+  }
+
+  async updateUserPreferences(
+    userContext: UserContext,
+    input: UserPreferenceUpdateInput,
+    requestId: string
+  ): Promise<UserPreferenceRecord> {
+    const preference = this.workspacePreferencesFor(userContext);
+    const beforeJson = structuredClone(preference);
+    Object.assign(preference, mergeWorkspacePreferences(preference, input), {
+      savedFilters: input.savedFilters ?? preference.savedFilters,
+      updatedAt: new Date(),
+      version: preference.version + 1
+    });
+    await this.insertAuditEvent({
+      organizationId: userContext.organizationId,
+      actorUserId: userContext.userId,
+      eventType: "workspace.preferences.updated",
+      subjectType: "user_preferences",
+      subjectId: preference.id,
+      beforeJson,
+      afterJson: preference,
+      requestId
+    });
+    return preference;
+  }
+
+  async pinWorkspaceItem(userContext: UserContext, input: PinnedItemInput, requestId: string): Promise<PinnedItemRecord> {
+    const now = new Date();
+    const pin: PinnedItemRecord = {
+      id: randomUUID(),
+      organizationId: userContext.organizationId,
+      userId: userContext.userId,
+      pinKind: input.pinKind,
+      targetType: input.targetType,
+      targetId: input.targetId,
+      label: input.label,
+      href: input.href,
+      metadataJson: input.metadataJson ?? {},
+      sortOrder: input.sortOrder ?? this.pinnedItems.length + 1,
+      createdAt: now,
+      updatedAt: now,
+      version: 1
+    };
+    this.pinnedItems.push(pin);
+    await this.insertAuditEvent({
+      organizationId: userContext.organizationId,
+      actorUserId: userContext.userId,
+      eventType: "workspace.pin.created",
+      subjectType: "pinned_items",
+      subjectId: pin.id,
+      afterJson: pin,
+      requestId
+    });
+    return pin;
+  }
+
+  async unpinWorkspaceItem(userContext: UserContext, pinId: string, requestId: string): Promise<boolean> {
+    const before = this.pinnedItems.length;
+    const pin = this.pinnedItems.find((candidate) => candidate.id === pinId);
+    this.seed.pinnedItems = this.pinnedItems.filter(
+      (candidate) => !(candidate.id === pinId && candidate.organizationId === userContext.organizationId && candidate.userId === userContext.userId)
+    );
+    if (this.pinnedItems.length === before) {
+      return false;
+    }
+    await this.insertAuditEvent({
+      organizationId: userContext.organizationId,
+      actorUserId: userContext.userId,
+      eventType: "workspace.pin.deleted",
+      subjectType: "pinned_items",
+      subjectId: pinId,
+      beforeJson: pin ?? null,
+      requestId
+    });
+    return true;
+  }
+
+  async saveGridView(userContext: UserContext, input: SavedViewInput, requestId: string): Promise<SavedViewRecord> {
+    if (input.scope === "role_shared" && !userContext.roles.some((role) => role.code === "owner_admin")) {
+      throw new Error("admin_required_for_shared_view");
+    }
+    const now = new Date();
+    const view: SavedViewRecord = {
+      id: randomUUID(),
+      organizationId: userContext.organizationId,
+      ownerUserId: userContext.userId,
+      gridKey: input.gridKey,
+      name: input.name,
+      scope: input.scope ?? "private",
+      sharedRoleCodes: input.sharedRoleCodes ?? [],
+      filters: input.filters ?? {},
+      sort: input.sort ?? [],
+      grouping: input.grouping ?? [],
+      columns: input.columns ?? [],
+      colorRuleIds: input.colorRuleIds ?? [],
+      isDefault: input.isDefault ?? false,
+      createdAt: now,
+      updatedAt: now,
+      version: 1
+    };
+    this.savedViews.push(view);
+    await this.insertAuditEvent({
+      organizationId: userContext.organizationId,
+      actorUserId: userContext.userId,
+      eventType: "workspace.saved_view.created",
+      subjectType: "saved_views",
+      subjectId: view.id,
+      afterJson: view,
+      requestId
+    });
+    return view;
+  }
+
+  async deleteGridView(userContext: UserContext, savedViewId: string, requestId: string): Promise<boolean> {
+    const before = this.savedViews.length;
+    this.seed.savedViews = this.savedViews.filter(
+      (view) => !(view.id === savedViewId && view.organizationId === userContext.organizationId && view.ownerUserId === userContext.userId)
+    );
+    if (this.savedViews.length === before) {
+      return false;
+    }
+    await this.insertAuditEvent({
+      organizationId: userContext.organizationId,
+      actorUserId: userContext.userId,
+      eventType: "workspace.saved_view.deleted",
+      subjectType: "saved_views",
+      subjectId: savedViewId,
+      requestId
+    });
+    return true;
+  }
+
+  async saveColorRule(userContext: UserContext, input: ColorRuleInput, requestId: string): Promise<ColorRuleRecord> {
+    const now = new Date();
+    const accessible = ensureAccessibleColorRule({ id: randomUUID(), ...input });
+    const rule: ColorRuleRecord = {
+      ...accessible,
+      id: randomUUID(),
+      organizationId: userContext.organizationId,
+      userId: userContext.userId,
+      createdAt: now,
+      updatedAt: now,
+      version: 1
+    };
+    this.colorRules.push(rule);
+    await this.insertAuditEvent({
+      organizationId: userContext.organizationId,
+      actorUserId: userContext.userId,
+      eventType: "workspace.color_rule.created",
+      subjectType: "color_rules",
+      subjectId: rule.id,
+      afterJson: rule,
+      requestId
+    });
+    return rule;
+  }
+
+  async deleteColorRule(userContext: UserContext, colorRuleId: string, requestId: string): Promise<boolean> {
+    const before = this.colorRules.length;
+    this.seed.colorRules = this.colorRules.filter(
+      (rule) => !(rule.id === colorRuleId && rule.organizationId === userContext.organizationId && rule.userId === userContext.userId)
+    );
+    if (this.colorRules.length === before) {
+      return false;
+    }
+    await this.insertAuditEvent({
+      organizationId: userContext.organizationId,
+      actorUserId: userContext.userId,
+      eventType: "workspace.color_rule.deleted",
+      subjectType: "color_rules",
+      subjectId: colorRuleId,
+      requestId
+    });
+    return true;
+  }
+
+  private workspacePreferencesFor(userContext: UserContext): UserPreferenceRecord {
+    const existing = this.userPreferences.find(
+      (preference) => preference.organizationId === userContext.organizationId && preference.userId === userContext.userId
+    );
+    if (existing) {
+      return existing;
+    }
+    const now = new Date();
+    const preference: UserPreferenceRecord = {
+      id: randomUUID(),
+      organizationId: userContext.organizationId,
+      userId: userContext.userId,
+      ...defaultWorkspacePreferences,
+      savedFilters: {},
+      createdAt: now,
+      updatedAt: now,
+      version: 1
+    };
+    this.userPreferences.push(preference);
+    return preference;
+  }
+
   async listSuppliers(): Promise<never> {
     throw new Error("Not implemented in this test store");
   }
@@ -523,6 +1009,26 @@ export class InMemoryApiDataStore implements ApiDataStore {
   }
 
   async downloadGeneratedDocument(): Promise<never> {
+    throw new Error("Not implemented in this test store");
+  }
+
+  async getComplianceDashboard(): Promise<never> {
+    throw new Error("Not implemented in this test store");
+  }
+
+  async recordSanitationCheck(): Promise<never> {
+    throw new Error("Not implemented in this test store");
+  }
+
+  async recordTrainingCompletion(): Promise<never> {
+    throw new Error("Not implemented in this test store");
+  }
+
+  async evaluateComplianceGate(): Promise<never> {
+    throw new Error("Not implemented in this test store");
+  }
+
+  async generateAuditPacket(): Promise<never> {
     throw new Error("Not implemented in this test store");
   }
 

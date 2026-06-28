@@ -179,6 +179,7 @@ export function useToast() {
 }
 
 type TabsProps = {
+  defaultActiveTabId?: string;
   tabs: Array<{
     id: string;
     label: string;
@@ -186,9 +187,9 @@ type TabsProps = {
   }>;
 };
 
-export function Tabs({ tabs }: TabsProps) {
+export function Tabs({ defaultActiveTabId, tabs }: TabsProps) {
   const generatedId = useId();
-  const [activeTabId, setActiveTabId] = useState(tabs[0]?.id);
+  const [activeTabId, setActiveTabId] = useState(defaultActiveTabId ?? tabs[0]?.id);
   const activeTab = tabs.find((tab) => tab.id === activeTabId) ?? tabs[0];
 
   if (!activeTab) {

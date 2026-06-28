@@ -5,11 +5,15 @@ import { useAuth } from "./auth";
 import {
   generateProductConfiguration,
   listProductConfigurator,
-  previewProductConfiguration
+  previewProductConfiguration,
+  runProductConfiguratorRuleTests,
+  upsertConfiguratorRule
 } from "./lib/api";
 import type {
   GeneratedProductPackage,
   ProductConfigurationInput,
+  ConfiguratorRuleInput,
+  ProductConfiguratorRuleTestRun,
   ProductConfiguratorSnapshot
 } from "./types";
 
@@ -72,6 +76,15 @@ function optionalText(form: FormData, name: string): string | null {
   return value.length > 0 ? value : null;
 }
 
+function optionalNumber(form: FormData, name: string): number | null {
+  const value = formText(form, name);
+  return value.length > 0 ? Number(value) : null;
+}
+
+function signed(value: number): string {
+  return value > 0 ? `+${value}` : String(value);
+}
+
 export function ProductConfiguratorScreen() {
   const auth = useAuth();
   const toast = useToast();
@@ -80,6 +93,7 @@ export function ProductConfiguratorScreen() {
   const [loading, setLoading] = useState(true);
   const [preview, setPreview] = useState<GeneratedProductPackage | null>(null);
   const [generated, setGenerated] = useState<GeneratedProductPackage | null>(null);
+  const [ruleTestRuns, setRuleTestRuns] = useState<ProductConfiguratorRuleTestRun[]>([]);
   const [templateId, setTemplateId] = useState("template-tincture");
   const canGenerate = auth.isAdmin;
 
@@ -107,6 +121,11 @@ export function ProductConfiguratorScreen() {
     for (const key of Object.keys(shopifyFields)) {
       shopifyFields[key as keyof typeof shopifyFields] = formText(form, `shopify_${key}`);
     }
+    const selectedOptions: ProductConfigurationInput["selectedOptions"] = {};
+    for (const group of selectedTemplate?.optionGroups ?? []) {
+      const values = form.getAll(`option_${group.code}`).map((value) => String(value).trim()).filter(Boolean);
+      selectedOptions[group.code] = group.maxSelections > 1 ? values : values[0] ?? null;
+    }
 
     return {
       templateId: formText(form, "templateId"),
@@ -130,7 +149,8 @@ export function ProductConfiguratorScreen() {
       skuOverride: optionalText(form, "skuOverride"),
       adminOverrideReason: optionalText(form, "adminOverrideReason"),
       labelData,
-      shopifyFields
+      shopifyFields,
+      selectedOptions
     };
   }
 
@@ -164,6 +184,35 @@ export function ProductConfiguratorScreen() {
         : current
     );
     toast.showToast({ title: "Draft product package generated", description: result.variant.sku });
+  }
+
+  async function handleRunRuleTests() {
+    if (!token || !canGenerate) {
+      return;
+    }
+    const result = await runProductConfiguratorRuleTests(token, templateId);
+    setRuleTestRuns(result.runs);
+    const passed = result.runs.flatMap((run) => run.results).filter((test) => test.passed).length;
+    const total = result.runs.flatMap((run) => run.results).length;
+    toast.showToast({ title: "Rule fixtures completed", description: `${passed}/${total} passed.` });
+  }
+
+  async function handleSaveRule(input: ConfiguratorRuleInput) {
+    if (!token || !canGenerate) {
+      return;
+    }
+    const result = await upsertConfiguratorRule(token, input);
+    setSnapshot((current) =>
+      current
+        ? {
+            ...current,
+            productTemplates: current.productTemplates.map((template) =>
+              template.id === result.template.id ? result.template : template
+            )
+          }
+        : current
+    );
+    toast.showToast({ title: "Configurator rule saved", description: "Rule is pending change-control approval." });
   }
 
   if (loading) {
@@ -208,13 +257,37 @@ export function ProductConfiguratorScreen() {
           },
           {
             id: "rules",
-            label: "SKU rules",
-            content: <SkuRuleSettings snapshot={snapshot} />
+            label: "Options and rules",
+            content: (
+              <RuleEditor
+                canEdit={canGenerate}
+                onSaveRule={(input) => void handleSaveRule(input)}
+                snapshot={snapshot}
+                selectedTemplate={selectedTemplate}
+              />
+            )
           },
           {
             id: "labels",
             label: "Label checklist",
             content: <LabelChecklist productPackage={lastPackage} />
+          },
+          {
+            id: "package",
+            label: "Package",
+            content: <GeneratedPackageReview productPackage={lastPackage} />
+          },
+          {
+            id: "tests",
+            label: "Rule tests",
+            content: (
+              <RuleTestRunner
+                canRun={canGenerate}
+                onRun={() => void handleRunRuleTests()}
+                runs={ruleTestRuns}
+                selectedTemplate={selectedTemplate}
+              />
+            )
           },
           {
             id: "history",
@@ -307,6 +380,8 @@ function ConfiguratorForm(props: {
         <Input label="Admin override reason" name="adminOverrideReason" />
       </div>
 
+      <OptionSelectors selectedTemplate={template} />
+
       <h4>Preview layout</h4>
       <div className="form-grid">
         <label className="select-field">
@@ -383,6 +458,67 @@ function ConfiguratorForm(props: {
   );
 }
 
+function OptionSelectors({
+  selectedTemplate
+}: {
+  selectedTemplate: ProductConfiguratorSnapshot["productTemplates"][number] | undefined;
+}) {
+  const groups = selectedTemplate?.optionGroups ?? [];
+  const options = selectedTemplate?.options ?? [];
+
+  if (groups.length === 0) {
+    return null;
+  }
+
+  return (
+    <>
+      <h4>Configurable options</h4>
+      <div className="option-group-grid">
+        {groups.map((group) => {
+          const groupOptions = options.filter((option) => option.groupId === group.id);
+          const defaultIds = new Set(group.defaultOptionIds);
+          if (group.maxSelections > 1) {
+            return (
+              <fieldset className="option-fieldset" key={group.id}>
+                <legend>{group.name}</legend>
+                {groupOptions.map((option) => (
+                  <label key={option.id}>
+                    <input
+                      defaultChecked={defaultIds.has(option.id)}
+                      name={`option_${group.code}`}
+                      type="checkbox"
+                      value={option.code}
+                    />
+                    <span>{option.label}</span>
+                    <small>{option.priceDelta ? `${signed(option.priceDelta)} ${selectedTemplate?.currency ?? "EUR"}` : "No price change"}</small>
+                  </label>
+                ))}
+              </fieldset>
+            );
+          }
+          return (
+            <label className="select-field" key={group.id}>
+              <span>{group.name}</span>
+              <select
+                name={`option_${group.code}`}
+                defaultValue={groupOptions.find((option) => option.id === group.defaultOptionIds[0])?.code ?? ""}
+                required={group.required}
+              >
+                {!group.required ? <option value="">None</option> : null}
+                {groupOptions.map((option) => (
+                  <option key={option.id} value={option.code}>
+                    {option.label}{option.priceDelta ? ` (${signed(option.priceDelta)} ${selectedTemplate?.currency ?? "EUR"})` : ""}
+                  </option>
+                ))}
+              </select>
+            </label>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
 function PackageReview({ productPackage, generated }: { productPackage: GeneratedProductPackage | null; generated: boolean }) {
   if (!productPackage) {
     return <EmptyState title="No generated preview" description="Complete the wizard to review SKU, formula, QC, and label gaps." />;
@@ -404,7 +540,9 @@ function PackageReview({ productPackage, generated }: { productPackage: Generate
         <div><dt>BOM ops</dt><dd>{bomDraft.operations.length}</dd></div>
         <div><dt>QC tests</dt><dd>{productPackage.qcSpecification.tests.length}</dd></div>
         <div><dt>Package state</dt><dd>{generated ? "Generated draft" : "Preview"}</dd></div>
+        <div><dt>Margin</dt><dd>{productPackage.quotePreview.marginPercent}%</dd></div>
       </dl>
+      <QuotePreview productPackage={productPackage} />
       <BomPreview productPackage={productPackage} />
       <div className="variant-section">
         <h4>Readiness gaps</h4>
@@ -424,6 +562,30 @@ function PackageReview({ productPackage, generated }: { productPackage: Generate
         )}
       </div>
     </aside>
+  );
+}
+
+function QuotePreview({ productPackage }: { productPackage: GeneratedProductPackage }) {
+  const quote = productPackage.quotePreview;
+  return (
+    <div className="quote-preview">
+      <div className="panel-header">
+        <h4>Quote preview</h4>
+        <Badge tone={quote.marginPercent >= 55 ? "success" : "warning"}>{quote.marginPercent}% margin</Badge>
+      </div>
+      <dl className="compact-definition bom-summary">
+        <div><dt>Price</dt><dd>{quote.price.toFixed(2)} {quote.currency}</dd></div>
+        <div><dt>Expected cost</dt><dd>{quote.expectedCost.toFixed(2)} {quote.currency}</dd></div>
+        <div><dt>Margin</dt><dd>{quote.margin.toFixed(2)} {quote.currency}</dd></div>
+      </dl>
+      <div className="effect-list">
+        {quote.priceEffects.concat(quote.costEffects).filter((effect) => effect.amount !== 0).slice(0, 6).map((effect) => (
+          <span key={`${effect.sourceType}-${effect.sourceId}-${effect.label}`}>
+            {effect.label}: {signed(effect.amount)} {quote.currency}
+          </span>
+        ))}
+      </div>
+    </div>
   );
 }
 
@@ -528,7 +690,10 @@ function resolvedBomDraft(productPackage: GeneratedProductPackage): GeneratedPro
       totalMachineMinutes: runtime.totalMachineMinutes,
       totalElapsedMinutes: runtime.totalElapsedMinutes,
       backflushedMaterialCount: materials.filter((material) => material.issueMethod === "backflush").length,
-      manualIssueMaterialCount: materials.filter((material) => material.issueMethod === "manual").length
+      manualIssueMaterialCount: materials.filter((material) => material.issueMethod === "manual").length,
+      operationOutputCount: 1,
+      byProductOutputCount: 0,
+      operationCostTotal: 0
     }
   };
 }
@@ -600,13 +765,80 @@ function BomMaterialList({
   );
 }
 
-function SkuRuleSettings({ snapshot }: { snapshot: ProductConfiguratorSnapshot }) {
+function RuleEditor({
+  canEdit,
+  onSaveRule,
+  snapshot,
+  selectedTemplate
+}: {
+  canEdit: boolean;
+  onSaveRule: (input: ConfiguratorRuleInput) => void;
+  snapshot: ProductConfiguratorSnapshot;
+  selectedTemplate: ProductConfiguratorSnapshot["productTemplates"][number] | undefined;
+}) {
+  const groups = selectedTemplate?.optionGroups ?? [];
+  const firstGroup = groups[0];
+  const firstOption = selectedTemplate?.options?.find((option) => option.groupId === firstGroup?.id);
+
+  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!selectedTemplate) {
+      return;
+    }
+    const form = new FormData(event.currentTarget);
+    const priceDelta = optionalNumber(form, "priceDelta");
+    const expectedCostDelta = optionalNumber(form, "expectedCostDelta");
+    onSaveRule({
+      templateId: selectedTemplate.id,
+      name: formText(form, "ruleName"),
+      groupCode: formText(form, "ruleGroup"),
+      optionCode: formText(form, "ruleOption"),
+      skuSuffix: optionalText(form, "skuSuffix"),
+      labelField: optionalText(form, "labelField"),
+      qcTest: optionalText(form, "qcTest"),
+      priceDelta,
+      expectedCostDelta,
+      status: "pending_approval"
+    });
+    event.currentTarget.reset();
+  }
+
   return (
     <div className="detail-card">
       <div className="panel-header">
-        <h3>SKU rule settings</h3>
+        <h3>Option and rule editor</h3>
         <Settings2 aria-hidden="true" size={20} />
       </div>
+      {canEdit && selectedTemplate && firstGroup && firstOption ? (
+        <form className="rule-editor-form" onSubmit={handleSubmit}>
+          <Input label="Rule name" name="ruleName" required defaultValue="Custom option effect" />
+          <label className="select-field">
+            <span>When group</span>
+            <select name="ruleGroup" defaultValue={firstGroup.code}>
+              {groups.map((group) => (
+                <option key={group.id} value={group.code}>{group.name}</option>
+              ))}
+            </select>
+          </label>
+          <label className="select-field">
+            <span>Has option</span>
+            <select name="ruleOption" defaultValue={firstOption.code}>
+              {(selectedTemplate.options ?? []).map((option) => (
+                <option key={option.id} value={option.code}>{option.label}</option>
+              ))}
+            </select>
+          </label>
+          <Input label="SKU suffix" name="skuSuffix" placeholder="VIP" />
+          <Input label="Label field" name="labelField" placeholder="custom_claim" />
+          <Input label="QC test" name="qcTest" placeholder="custom_review" />
+          <Input label="Price delta" name="priceDelta" type="number" step="0.01" />
+          <Input label="Cost delta" name="expectedCostDelta" type="number" step="0.01" />
+          <Button type="submit" variant="secondary">
+            <Save aria-hidden="true" size={18} />
+            Save pending rule
+          </Button>
+        </form>
+      ) : null}
       {snapshot.skuRules.map((rule) => (
         <article className="variant-card" key={rule.id}>
           <span>
@@ -616,6 +848,39 @@ function SkuRuleSettings({ snapshot }: { snapshot: ProductConfiguratorSnapshot }
           <Badge tone="info">Separator {rule.separator}</Badge>
           <Badge tone={rule.editableWithAdminOverride ? "warning" : "success"}>
             {rule.editableWithAdminOverride ? "Admin override" : "Locked"}
+          </Badge>
+        </article>
+      ))}
+      <div className="panel-header">
+        <h4>Option groups</h4>
+        <Badge tone={selectedTemplate?.approvalStatus === "active" ? "success" : "warning"}>
+          {selectedTemplate?.approvalStatus ?? "draft"}
+        </Badge>
+      </div>
+      {(selectedTemplate?.optionGroups ?? []).map((group) => (
+        <article className="variant-card" key={group.id}>
+          <span>
+            <strong>{group.name}</strong>
+            <small>{group.code} / {group.required ? "required" : "optional"} / defaults {group.defaultOptionIds.length}</small>
+          </span>
+          <Badge tone="info">{group.minSelections}-{group.maxSelections}</Badge>
+        </article>
+      ))}
+      <div className="panel-header">
+        <h4>Rule effects</h4>
+        <Badge tone="info">{selectedTemplate?.templateVersion ?? "draft"}</Badge>
+      </div>
+      {(selectedTemplate?.configuratorRules ?? []).map((rule) => (
+        <article className="variant-card" key={rule.id}>
+          <span>
+            <strong>{rule.name}</strong>
+            <small>
+              {rule.appliesWhen.map((condition) => `${condition.groupCode}=${condition.optionCodes.join("|")}`).join(", ")}
+            </small>
+          </span>
+          <Badge tone={rule.status === "active" ? "success" : "warning"}>{rule.status}</Badge>
+          <Badge tone={rule.changeRequestId ? "success" : "warning"}>
+            {rule.changeRequestId ? "Change approved" : "Needs approval"}
           </Badge>
         </article>
       ))}
@@ -648,6 +913,103 @@ function LabelChecklist({ productPackage }: { productPackage: GeneratedProductPa
           ))}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function GeneratedPackageReview({ productPackage }: { productPackage: GeneratedProductPackage | null }) {
+  if (!productPackage) {
+    return <EmptyState title="No generated package" description="Preview a configuration to inspect generated production, supplemental, price, and cost effects." />;
+  }
+  const definition = productPackage.generatedProductionDefinition;
+  return (
+    <div className="detail-card">
+      <div className="panel-header">
+        <h3>Generated package review</h3>
+        <Badge tone={productPackage.activation.activeRulesApproved ? "success" : "warning"}>
+          {productPackage.activation.templateVersion}
+        </Badge>
+      </div>
+      <dl className="compact-definition">
+        <div><dt>Formula lines</dt><dd>{definition.formulaLines.length}</dd></div>
+        <div><dt>Routing choices</dt><dd>{definition.routingOperations.length}</dd></div>
+        <div><dt>Supplemental</dt><dd>{definition.supplementalItems.length}</dd></div>
+        <div><dt>Labels</dt><dd>{definition.labelFields.length}</dd></div>
+        <div><dt>QC</dt><dd>{definition.qcTests.length}</dd></div>
+        <div><dt>Shopify</dt><dd>{definition.shopifyMappingReady ? "Ready" : "Review"}</dd></div>
+      </dl>
+      <div className="variant-section">
+        <h4>Supplemental items</h4>
+        {definition.supplementalItems.length === 0 ? (
+          <p className="muted">No supplemental items generated.</p>
+        ) : (
+          definition.supplementalItems.map((item) => (
+            <article className="variant-card" key={item.id}>
+              <span>
+                <strong>{item.name}</strong>
+                <small>{item.kind.replaceAll("_", " ")} / {item.quantity} {item.uom}</small>
+              </span>
+              <Badge tone={item.required ? "warning" : "info"}>{item.required ? "Required" : "Optional"}</Badge>
+            </article>
+          ))
+        )}
+      </div>
+      <div className="variant-section">
+        <h4>Routing choices</h4>
+        {definition.routingOperations.length === 0 ? (
+          <p className="muted">Standard template routing applies.</p>
+        ) : (
+          definition.routingOperations.map((operation) => (
+            <article className="variant-card" key={operation.operationId}>
+              <span>
+                <strong>{operation.name}</strong>
+                <small>{operation.operationId}</small>
+              </span>
+              <Badge tone={operation.controlPoint ? "warning" : "info"}>{operation.runtimeMinutes} min</Badge>
+            </article>
+          ))
+        )}
+      </div>
+    </div>
+  );
+}
+
+function RuleTestRunner({
+  canRun,
+  onRun,
+  runs,
+  selectedTemplate
+}: {
+  canRun: boolean;
+  onRun: () => void;
+  runs: ProductConfiguratorRuleTestRun[];
+  selectedTemplate: ProductConfiguratorSnapshot["productTemplates"][number] | undefined;
+}) {
+  const fixtureCount = selectedTemplate?.ruleTests?.length ?? 0;
+  return (
+    <div className="detail-card">
+      <div className="panel-header">
+        <h3>Rule test runner</h3>
+        <Button type="button" variant="secondary" disabled={!canRun || fixtureCount === 0} onClick={onRun}>
+          <ClipboardCheck aria-hidden="true" size={18} />
+          Run fixtures
+        </Button>
+      </div>
+      <p className="muted">{fixtureCount} fixtures configured for {selectedTemplate?.name ?? "this template"}.</p>
+      {runs.length === 0 ? (
+        <p className="muted">Run fixtures before activating template or rule changes.</p>
+      ) : (
+        runs.flatMap((run) => run.results.map((result) => ({ run, result }))).map(({ run, result }) => (
+          <article className="variant-card" key={`${run.templateId}-${result.testId}`}>
+            <span>
+              <strong>{result.name}</strong>
+              <small>{result.sku} / price {result.price} / cost {result.expectedCost}</small>
+            </span>
+            <Badge tone={result.passed ? "success" : "warning"}>{result.passed ? "Passed" : "Failed"}</Badge>
+            {result.messages.length > 0 ? <small>{result.messages.join(" ")}</small> : null}
+          </article>
+        ))
+      )}
     </div>
   );
 }

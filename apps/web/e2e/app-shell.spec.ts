@@ -31,6 +31,28 @@ test("desktop shell shows sidebar navigation", async ({ page }) => {
   await expect(page.locator(".mobile-bottom-nav")).toBeHidden();
 });
 
+test("desktop sidebar groups module subsections for admins", async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 });
+  await signInAsOwner(page);
+  const sidebar = page.locator(".desktop-sidebar");
+
+  await expect(sidebar.getByRole("button", { name: "Production" })).toBeVisible();
+  await expect(sidebar.getByRole("button", { name: "Inventory" })).toBeVisible();
+  await expect(sidebar.getByRole("button", { name: "Quality" })).toBeVisible();
+  await expect(sidebar.getByRole("button", { name: "Commerce" })).toBeVisible();
+  await expect(sidebar.getByRole("button", { name: "Foundation" })).toBeVisible();
+  await expect(sidebar.getByRole("button", { name: "Admin" })).toHaveAttribute("aria-expanded", "true");
+
+  for (const label of ["Health", "Users", "Roles and permissions", "Feedback roadmap", "Shopify"]) {
+    await expect(sidebar.getByRole("link", { name: label })).toBeVisible();
+  }
+
+  await sidebar.getByRole("button", { name: "Inventory" }).click();
+  for (const label of ["Inventory", "Purchasing", "Scan", "Labels", "Stock counts"]) {
+    await expect(sidebar.getByRole("link", { name: label })).toBeVisible();
+  }
+});
+
 test("mobile shell shows bottom navigation", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await signInAsOwner(page);

@@ -150,4 +150,131 @@ describe("report routes", () => {
 
     await app.close();
   });
+
+  it("builds, runs, exports, and schedules governed generic inquiries", async () => {
+    let capturedError: unknown;
+    const app = await buildApp({
+      config: testConfig,
+      logger: false,
+      errorReporter: {
+        async report(error) {
+          capturedError = error;
+        }
+      }
+    });
+    const headers = { authorization: "Bearer test-owner" };
+
+    const catalogResponse = await app.inject({
+      method: "GET",
+      url: "/api/reports/datasets",
+      headers
+    });
+    if (catalogResponse.statusCode !== 200) {
+      throw capturedError;
+    }
+    expect(catalogResponse.statusCode).toBe(200);
+    expect(catalogResponse.json().datasets.map((dataset: { id: string }) => dataset.id)).toEqual(
+      expect.arrayContaining(["inventory_lot_balances", "sales_order_lines"])
+    );
+
+    const createResponse = await app.inject({
+      method: "POST",
+      url: "/api/reports/inquiries",
+      headers,
+      payload: {
+        name: "Built inventory inquiry",
+        description: "Inventory on hand by location",
+        datasetId: "inventory_lot_balances",
+        visibility: "role_shared",
+        sharedRoleCodes: ["owner_admin", "auditor"],
+        columns: [
+          { fieldKey: "location_name" },
+          { fieldKey: "on_hand_quantity", aggregate: "sum" },
+          { fieldKey: "held_quantity", aggregate: "sum" }
+        ],
+        filters: [{ fieldKey: "qc_status", operator: "equals", value: "released" }],
+        sorts: [{ fieldKey: "location_name", direction: "asc" }],
+        groupBy: ["location_name"],
+        calculations: [
+          {
+            id: "on_hand_quantity",
+            label: "On hand",
+            expression: "available_quantity + reserved_quantity + held_quantity",
+            type: "number",
+            aggregate: "sum"
+          }
+        ],
+        chart: { kind: "bar", labelField: "location_name", valueField: "sum_on_hand_quantity" },
+        published: true
+      }
+    });
+    expect(createResponse.statusCode).toBe(201);
+    const inquiry = createResponse.json().inquiry;
+
+    const runResponse = await app.inject({
+      method: "POST",
+      url: `/api/reports/inquiries/${inquiry.id}/run`,
+      headers
+    });
+    expect(runResponse.statusCode).toBe(200);
+    expect(runResponse.json().result).toMatchObject({
+      metadata: {
+        datasetId: "inventory_lot_balances",
+        rowCount: expect.any(Number)
+      },
+      chart: {
+        kind: "bar"
+      }
+    });
+    expect(runResponse.json().result.columns.map((column: { key: string }) => column.key)).toEqual([
+      "location_name",
+      "sum_on_hand_quantity",
+      "sum_held_quantity"
+    ]);
+
+    const exportResponse = await app.inject({
+      method: "POST",
+      url: `/api/reports/inquiries/${inquiry.id}/export`,
+      headers,
+      payload: { format: "csv" }
+    });
+    expect(exportResponse.statusCode).toBe(201);
+    expect(exportResponse.json().export).toMatchObject({
+      inquiryId: inquiry.id,
+      format: "csv",
+      status: "generated"
+    });
+
+    const scheduleResponse = await app.inject({
+      method: "POST",
+      url: "/api/reports/schedules",
+      headers,
+      payload: {
+        inquiryId: inquiry.id,
+        name: "Monday inventory export",
+        format: "csv",
+        cadence: "weekly",
+        timezone: "Europe/Lisbon",
+        parameters: {},
+        active: true,
+        nextRunAt: "2026-06-29T07:00:00.000Z"
+      }
+    });
+    expect(scheduleResponse.statusCode).toBe(201);
+    expect(scheduleResponse.json().schedule).toMatchObject({
+      inquiryId: inquiry.id,
+      cadence: "weekly"
+    });
+
+    const historyResponse = await app.inject({
+      method: "GET",
+      url: "/api/reports/exports",
+      headers
+    });
+    expect(historyResponse.json().exports).toEqual(
+      expect.arrayContaining([expect.objectContaining({ inquiryId: inquiry.id, fileName: "built-inventory-inquiry.csv" })])
+    );
+
+    await app.close();
+  });
 });

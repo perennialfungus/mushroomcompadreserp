@@ -3,7 +3,8 @@ import {
   defaultProductTemplates,
   detectDuplicateSku,
   generateProductPackage,
-  generateSku
+  generateSku,
+  runConfiguratorRuleTests
 } from "./product-configurator.js";
 
 const baseInput = {
@@ -110,6 +111,124 @@ describe("product configurator", () => {
         "missing_label_data",
         "missing_shopify_field"
       ])
+    );
+  });
+
+  it("resolves option defaults, rule effects, supplemental items, and quote margin", () => {
+    const productPackage = generateProductPackage(
+      {
+        ...baseInput,
+        selectedOptions: {
+          extract_style: "dual_extract",
+          packaging: "gift_box",
+          add_on: "sample_sachet"
+        },
+        labelData: {
+          ...baseInput.labelData,
+          extraction_ratio: "1:3",
+          gift_box_barcode: "5600000099999"
+        },
+        shopifyFields: {
+          ...baseInput.shopifyFields,
+          shopifyMappingApproval: "Ready for draft export"
+        }
+      },
+      {
+        templates: defaultProductTemplates,
+        existingSkus: []
+      }
+    );
+
+    expect(productPackage.sku).toBe("TIN-LM-TINC-DUAL-50ML-P1-EU-EN-SHP-GFT-BOX");
+    expect(productPackage.optionResolution.appliedRuleIds).toContain("rule-gift-box-routing");
+    expect(productPackage.supplementalItems.map((item) => item.code)).toEqual(
+      expect.arrayContaining(["GIFT-CARD", "SAMPLE-SACHET"])
+    );
+    expect(productPackage.generatedProductionDefinition).toMatchObject({
+      shopifyMappingReady: false,
+      sourceRuleIds: ["rule-gift-box-routing"]
+    });
+    expect(productPackage.generatedProductionDefinition.routingOperations[0]).toMatchObject({
+      operationId: "gift-pack"
+    });
+    expect(productPackage.quotePreview).toMatchObject({
+      currency: "EUR",
+      price: 30.5,
+      expectedCost: 7.28,
+      margin: 23.22
+    });
+    expect(productPackage.readinessGaps).toEqual([]);
+  });
+
+  it("blocks invalid option combinations with clear explanations", () => {
+    const productPackage = generateProductPackage(
+      {
+        ...baseInput,
+        selectedOptions: {
+          extract_style: "glycerite",
+          packaging: "amber_bottle",
+          add_on: "alcohol_warning_insert"
+        },
+        labelData: {},
+        shopifyFields: {}
+      },
+      {
+        templates: defaultProductTemplates
+      }
+    );
+
+    expect(productPackage.readinessGaps).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ code: "option_incompatible", severity: "blocker" }),
+        expect.objectContaining({ code: "option_dependency_missing", severity: "blocker" })
+      ])
+    );
+  });
+
+  it("runs admin rule test fixtures before activation", () => {
+    const template = defaultProductTemplates.find((candidate) => candidate.id === "template-tincture");
+    expect(template).toBeDefined();
+    const results = runConfiguratorRuleTests(template!);
+
+    expect(results).toHaveLength(2);
+    expect(results.every((result) => result.passed)).toBe(true);
+    expect(results[0]).toMatchObject({
+      testId: "test-tincture-gift-box",
+      actualValid: true,
+      price: 29,
+      expectedCost: 6.73
+    });
+  });
+
+  it("requires change-control approval for active configurator rules", () => {
+    const activeTemplate = defaultProductTemplates.find((candidate) => candidate.id === "template-tincture");
+    expect(activeTemplate).toBeDefined();
+    const unapprovedTemplate = {
+      ...activeTemplate!,
+      configuratorRules: activeTemplate!.configuratorRules?.map((rule) =>
+        rule.id === "rule-gift-box-routing" ? { ...rule, changeRequestId: null } : rule
+      )
+    };
+    const productPackage = generateProductPackage(
+      {
+        ...baseInput,
+        selectedOptions: { packaging: "gift_box" },
+        labelData: {
+          ...baseInput.labelData,
+          extraction_ratio: "1:3",
+          gift_box_barcode: "5600000099999"
+        },
+        shopifyFields: {
+          ...baseInput.shopifyFields,
+          shopifyMappingApproval: "Ready"
+        }
+      },
+      { templates: [unapprovedTemplate] }
+    );
+
+    expect(productPackage.activation.activeRulesApproved).toBe(false);
+    expect(productPackage.readinessGaps).toEqual(
+      expect.arrayContaining([expect.objectContaining({ code: "change_control_approval_required" })])
     );
   });
 });

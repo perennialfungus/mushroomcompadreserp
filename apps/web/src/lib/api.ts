@@ -1,5 +1,8 @@
 import {
   buildOperationalReport,
+  createDefaultInquiry,
+  createReportExport,
+  executeGenericInquiry,
   buildRecallAuditPacket,
   buildRecallReport as buildDemoRecallReport,
   buildTraceabilityGraph as buildDemoTraceabilityGraph,
@@ -10,22 +13,54 @@ import {
   calculateFormulaCostRollup,
   calculateProductionOrderEstimatedCost,
   defaultProductTemplates,
+  defaultPermissionSets,
+  defaultRolePermissionSetCodes,
+  permissionCatalog,
+  resolveEffectivePermissions,
+  explainPermission,
   defaultSkuRule,
+  defaultWorkspacePreferences,
+  defaultColorRules,
+  ensureAccessibleColorRule,
   compareFormulaRevisions as compareFormulaRevisionsDomain,
   codexBuildPromptForBacklog,
   clusterFeedback,
   generateProductPackage,
+  runConfiguratorRuleTests,
+  reportDatasetCatalog,
   reportDefinitions,
   reportToCsv,
   reportToJson,
   buildSkuReadiness,
   recallReportToCsv,
   recallContactsToCsv,
+  defaultWorkflowDefinitions,
+  defaultWorkflowGuides,
+  executeWorkflowTransition,
+  resolveWorkflow,
+  workflowDefinitionToDiagram,
+  workflowDefinitionToMermaid,
+  workflowAvailabilityForRoles,
+  workflowGuideToMermaid,
+  workflowGuideToPdfReadyJson,
+  generateDocumentNumber,
+  requiredAttributeDefinitionsForContext,
+  normalizeReceiptDisposition,
   parseImportFileAsync,
+  quantityCountsAgainstPurchaseOrder,
+  receivingLabelStatus,
+  resolveFieldBehavior,
   searchTraceability as searchDemoTraceability,
+  validateConfiguredRecord,
   simulateBatchMargins,
   scaleFormulaRevision as scaleFormulaRevisionDomain,
+  type ExportFormat,
+  type GenericInquiry,
+  type GenericInquiryResult,
   type ReportDataSet,
+  type ReportDatasetDefinition,
+  type ReportExportRecord,
+  type ReportSchedule,
   type TraceabilityDataSet
 } from "@mushroom-compadres/domain";
 import type {
@@ -48,9 +83,26 @@ import type {
   ImportTemplateKind,
   Location,
   CoaAttachment,
+  AttributeDefinitionRecord,
+  AttributeSet,
+  ConfigurationSnapshot,
+  ConfigurationValidation,
   DocumentTemplate,
+  DocumentType,
+  FieldBehavior,
+  FieldBehaviorRule,
+  GeneratedDocumentNumber,
   GeneratedDocument,
   CostingDashboard,
+  ExportMappingTemplate,
+  FinanceDashboard,
+  FinanceExportBatchRecord,
+  FinanceExportSourceType,
+  InventoryValuationSnapshotRecord,
+  LandedCostAllocationInput,
+  LandedCostAllocationRecord,
+  ReconciliationResult,
+  PeriodCloseRunRecord,
   CrmDashboard,
   CrmFilters,
   CrmInteraction,
@@ -58,7 +110,13 @@ import type {
   EbrPacket,
   EbrStepResultInput,
   EbrTemplateDetail,
+  WeighDispenseLineCompletionInput,
+  WeighDispenseSessionDetail,
   EquipmentDashboard,
+  AsnHeader,
+  AsnLine,
+  CustomerDocumentPortalPreview,
+  EdiStagingCenter,
   FeedbackCategory,
   FeedbackCreateInput,
   FeedbackItem,
@@ -77,51 +135,70 @@ import type {
   OperationalHealth,
   OperationalReport,
   PackagingComponent,
+  PinnedItem,
   PickPackInput,
   CapaRecord,
   Product,
   ProductionCostUsage,
+  ConfiguratorRuleInput,
   ProductConfigurationGenerationResult,
   ProductConfigurationInput,
   ProductConfiguratorSnapshot,
+  ProductConfiguratorRuleTestRun,
   ProductVariant,
+  LimsDashboard,
+  LabResult,
   QualityDashboard,
   QualityEvent,
+  NumberingSequence,
   LotHold,
   PurchaseOrderDetail,
+  PartnerItemMapping,
   ReceiptDetail,
   ReceiptInput,
+  ReasonCode,
   IncomingInspectionPlan,
   SupplierApproval,
   SupplierDocument,
   SupplierQualityDashboard,
   SupplierScorecard,
   DashboardWidget,
+  ColorRule,
   BillOfMaterials,
   BillOfMaterialsDetail,
   BomLine,
-  BomMaterialIssueMethod,
   BomOperation,
+  BomOperationCost,
   BomOperationEquipment,
   BomOperationMaterial,
+  BomOperationOutput,
   BomOperationStep,
-  BomRuntimeBasis,
-  BomScrapAction,
+  BomSubstitute,
   ChangeRequestDetail,
+  ComplianceDashboard,
+  ComplianceGate,
   ChangeRequestInput,
   ChangeReviewerCategory,
   ProcessingBatch,
   ProcessingBatchDetail,
   ProductionOrder,
   ProductionOrderDetail,
+  ProductionControlDashboard,
   OperationRunDetail,
+  DemandForecast,
   MrpConversionResult,
   MrpPlan,
   MrpSuggestion,
+  PlanningScenario,
   QcRecord,
   QcSpecification,
   QcTask,
   QcTestMethod,
+  RetainedSample,
+  SampleDetail,
+  SamplingPlan,
+  StabilityStudy,
+  StabilityPullPoint,
   LotReleaseChecklist,
   MockRecallDashboard,
   MockRecallRunDetail,
@@ -131,9 +208,15 @@ import type {
   ReportDefinition,
   ReportFilters,
   ReportPreset,
+  SopDashboard,
   ReleaseNote,
   RoadmapRelease,
   RoadmapSnapshot,
+  SavedView,
+  AccessPreview,
+  PermissionAuditEvent,
+  PermissionLevel,
+  PermissionMatrixSnapshot,
   Role,
   RoutingMasterData,
   RoutingTemplateDetail,
@@ -161,6 +244,17 @@ import type {
   TraceNodeType,
   TraceSearchResult,
   UserContext,
+  UserPreference,
+  WorkspaceSnapshot,
+  WorkflowAvailability,
+  WorkflowActionAvailability,
+  WorkflowApprovalRequest,
+  WorkflowDefinition,
+  WorkflowGuide,
+  WorkflowRunDetail,
+  WmsDashboard,
+  WmsScanCommandInput,
+  WmsScanCommandResult,
   WholesaleConversionResult
 } from "../types";
 import {
@@ -358,6 +452,557 @@ export async function updateDashboardWidgets(
         }
       }
       return { widgets: demoDashboardWidgets };
+    }
+    throw error;
+  }
+}
+
+export async function getWorkspace(token: string, previewRoleCode?: string): Promise<{ workspace: WorkspaceSnapshot }> {
+  const query = previewRoleCode ? `?previewRoleCode=${encodeURIComponent(previewRoleCode)}` : "";
+  try {
+    return await request(`/api/workspace${query}`, token);
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      return { workspace: demoWorkspaceSnapshot(token, previewRoleCode) };
+    }
+    throw error;
+  }
+}
+
+export async function updateWorkspacePreferences(
+  token: string,
+  input: Partial<Pick<UserPreference, "density" | "pinnedScreens" | "pinnedRecords" | "favoriteReports" | "savedFilters" | "dashboardWidgetOrder" | "colorCodingEnabled">>
+): Promise<{ preferences: UserPreference }> {
+  try {
+    return await request("/api/workspace/preferences", token, {
+      method: "PATCH",
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      const current = demoPreferenceForToken(token);
+      Object.assign(current, input, { updatedAt: new Date().toISOString(), version: current.version + 1 });
+      return { preferences: current };
+    }
+    throw error;
+  }
+}
+
+export async function pinWorkspaceItem(
+  token: string,
+  input: Pick<PinnedItem, "pinKind" | "targetType" | "targetId" | "label" | "href"> & {
+    metadataJson?: Record<string, unknown>;
+    sortOrder?: number;
+  }
+): Promise<{ pin: PinnedItem }> {
+  try {
+    return await request("/api/workspace/pins", token, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      const now = new Date().toISOString();
+      const userId = token === "test-staff" ? "user-staff" : "user-owner";
+      const existing = demoPinnedItems.find(
+        (pin) => pin.userId === userId && pin.pinKind === input.pinKind && pin.targetType === input.targetType && pin.targetId === input.targetId
+      );
+      const pin: PinnedItem = existing ?? {
+        id: crypto.randomUUID(),
+        organizationId: "org-mc",
+        userId,
+        pinKind: input.pinKind,
+        targetType: input.targetType,
+        targetId: input.targetId,
+        label: input.label,
+        href: input.href,
+        metadataJson: input.metadataJson ?? {},
+        sortOrder: input.sortOrder ?? demoPinnedItems.length + 1,
+        createdAt: now,
+        updatedAt: now,
+        version: 0
+      };
+      Object.assign(pin, input, { updatedAt: now, version: pin.version + 1 });
+      if (!existing) {
+        demoPinnedItems.push(pin);
+      }
+      return { pin };
+    }
+    throw error;
+  }
+}
+
+export async function unpinWorkspaceItem(token: string, pinId: string): Promise<{ deleted: boolean }> {
+  try {
+    return await request(`/api/workspace/pins/${pinId}`, token, { method: "DELETE" });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      const userId = token === "test-staff" ? "user-staff" : "user-owner";
+      const before = demoPinnedItems.length;
+      demoPinnedItems = demoPinnedItems.filter((pin) => !(pin.id === pinId && pin.userId === userId));
+      return { deleted: demoPinnedItems.length !== before };
+    }
+    throw error;
+  }
+}
+
+export async function saveWorkspaceView(
+  token: string,
+  input: {
+    gridKey: string;
+    name: string;
+    scope?: SavedView["scope"];
+    sharedRoleCodes?: string[];
+    filters?: Record<string, unknown>;
+    sort?: SavedView["sort"];
+    grouping?: string[];
+    columns?: SavedView["columns"];
+    colorRuleIds?: string[];
+    isDefault?: boolean;
+  }
+): Promise<{ savedView: SavedView }> {
+  try {
+    return await request("/api/workspace/saved-views", token, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      const now = new Date().toISOString();
+      const savedView: SavedView = {
+        id: crypto.randomUUID(),
+        organizationId: "org-mc",
+        ownerUserId: token === "test-staff" ? "user-staff" : "user-owner",
+        gridKey: input.gridKey,
+        name: input.name,
+        scope: input.scope ?? "private",
+        sharedRoleCodes: input.sharedRoleCodes ?? [],
+        filters: input.filters ?? {},
+        sort: input.sort ?? [],
+        grouping: input.grouping ?? [],
+        columns: input.columns ?? [],
+        colorRuleIds: input.colorRuleIds ?? [],
+        isDefault: input.isDefault ?? false,
+        createdAt: now,
+        updatedAt: now,
+        version: 1
+      };
+      demoSavedViews.push(savedView);
+      return { savedView };
+    }
+    throw error;
+  }
+}
+
+export async function saveWorkspaceColorRule(
+  token: string,
+  input: Pick<ColorRule, "subjectType" | "field" | "operator" | "value" | "label" | "backgroundColor" | "textColor"> &
+    Partial<Pick<ColorRule, "priority" | "enabled">>
+): Promise<{ colorRule: ColorRule }> {
+  try {
+    return await request("/api/workspace/color-rules", token, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      const now = new Date().toISOString();
+      const accessible = ensureAccessibleColorRule({
+        id: crypto.randomUUID(),
+        subjectType: input.subjectType,
+        field: input.field,
+        operator: input.operator,
+        value: input.value,
+        label: input.label,
+        backgroundColor: input.backgroundColor,
+        textColor: input.textColor,
+        priority: input.priority ?? 100,
+        enabled: input.enabled ?? true
+      });
+      const colorRule: ColorRule = {
+        ...accessible,
+        organizationId: "org-mc",
+        userId: token === "test-staff" ? "user-staff" : "user-owner",
+        createdAt: now,
+        updatedAt: now,
+        version: 1
+      };
+      demoColorRules.push(colorRule);
+      return { colorRule };
+    }
+    throw error;
+  }
+}
+
+function demoWorkflowRoleCodes(token: string): string[] {
+  return token === "test-staff" ? ["packing_fulfillment", "production_farm"] : ["owner_admin"];
+}
+
+function serializeDemoWorkflowGuide(guide: (typeof defaultWorkflowGuides)[number]): WorkflowGuide {
+  const now = new Date().toISOString();
+  return {
+    ...guide,
+    organizationId: "org-mc",
+    status: "active",
+    createdAt: now,
+    updatedAt: now,
+    version: 1,
+    mermaid: workflowGuideToMermaid(guide),
+    diagram: workflowGuideToPdfReadyJson(guide)
+  };
+}
+
+function serializeDemoWorkflowDefinition(definition: (typeof defaultWorkflowDefinitions)[number]): WorkflowDefinition {
+  return {
+    ...definition,
+    organizationId: "org-mc",
+    mermaid: workflowDefinitionToMermaid({ ...definition, organizationId: "org-mc" }),
+    diagram: workflowDefinitionToDiagram({ ...definition, organizationId: "org-mc" })
+  };
+}
+
+function demoWorkflowActor(token: string) {
+  const roleCodes = demoWorkflowRoleCodes(token);
+  return {
+    userId: token === "test-staff" ? "user-staff" : "user-owner",
+    roleCodes,
+    effectivePermissions: resolveEffectivePermissions({
+      roleCodes,
+      permissionSets: defaultPermissionSets("org-mc"),
+      userId: token === "test-staff" ? "user-staff" : "user-owner"
+    }),
+    locationId: "loc-production"
+  };
+}
+
+let demoWorkflowRuns: WorkflowRunDetail[] = [];
+let demoWorkflowApprovalRequests: WorkflowApprovalRequest[] = [
+  {
+    id: "approval-receipt-release-qc",
+    organizationId: "org-mc",
+    workflowDefinitionId: "wf-receipt",
+    recordType: "receipt",
+    recordId: "receipt-raw-001",
+    actionId: "release",
+    fromStateId: "quarantined",
+    toStateId: "released",
+    stepId: "qc-approval",
+    sequence: 10,
+    roleCode: "qc",
+    permissionCode: "quality.release.approve",
+    requestedBy: "user-staff",
+    status: "pending",
+    dueAt: "2026-06-26T10:00:00.000Z",
+    reason: "Incoming QC passed; release evidence is attached.",
+    evidence: { fileName: "incoming-qc-review.pdf" },
+    requestedAt: "2026-06-25T10:00:00.000Z",
+    updatedAt: "2026-06-25T10:00:00.000Z"
+  }
+];
+
+export async function listWorkflowGuides(token: string): Promise<{ guides: Array<WorkflowGuide & { availability: WorkflowAvailability }> }> {
+  try {
+    return await request("/api/workflows", token);
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      const roleCodes = demoWorkflowRoleCodes(token);
+      return {
+        guides: defaultWorkflowGuides.map((guide) => ({
+          ...serializeDemoWorkflowGuide(guide),
+          availability: workflowAvailabilityForRoles(guide, roleCodes)
+        }))
+      };
+    }
+    throw error;
+  }
+}
+
+export async function listWorkflowDefinitions(token: string): Promise<{ definitions: WorkflowDefinition[] }> {
+  try {
+    return await request("/api/workflows/engine/definitions", token);
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      return { definitions: defaultWorkflowDefinitions.map(serializeDemoWorkflowDefinition) };
+    }
+    throw error;
+  }
+}
+
+export async function listApprovalInbox(token: string): Promise<{ approvals: WorkflowApprovalRequest[] }> {
+  try {
+    return await request("/api/workflows/engine/approval-inbox", token);
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      const roleCodes = new Set(demoWorkflowRoleCodes(token));
+      const permissions = new Set(demoWorkflowActor(token).effectivePermissions.map((permission) => permission.permissionCode));
+      return {
+        approvals: demoWorkflowApprovalRequests.filter(
+          (request) =>
+            request.status === "pending" &&
+            (roleCodes.has("owner_admin") ||
+              (request.roleCode ? roleCodes.has(request.roleCode) : false) ||
+              (request.permissionCode ? permissions.has(request.permissionCode) : false))
+        )
+      };
+    }
+    throw error;
+  }
+}
+
+export async function resolveWorkflowActions(
+  token: string,
+  definitionId: string,
+  record: {
+    recordType: string;
+    recordId: string;
+    stateId: string;
+    documentTypeCode?: string | null;
+    fields: Record<string, unknown>;
+  }
+): Promise<{ availability: WorkflowActionAvailability }> {
+  try {
+    return await request(`/api/workflows/engine/${definitionId}/resolve`, token, {
+      method: "POST",
+      body: JSON.stringify(record)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      const definition = defaultWorkflowDefinitions.find((candidate) => candidate.id === definitionId);
+      if (!definition) {
+        throw error;
+      }
+      const resolution = resolveWorkflow({
+        definition: { ...definition, organizationId: "org-mc" },
+        record: record as Parameters<typeof resolveWorkflow>[0]["record"],
+        actor: demoWorkflowActor(token)
+      });
+      return {
+        availability: {
+          ...resolution,
+          definition: serializeDemoWorkflowDefinition(definition),
+          approvalEscalations: [],
+          blockedActionEscalations: []
+        }
+      };
+    }
+    throw error;
+  }
+}
+
+export async function requestWorkflowTransition(
+  token: string,
+  definitionId: string,
+  input: {
+    record: {
+      recordType: string;
+      recordId: string;
+      stateId: string;
+      documentTypeCode?: string | null;
+      fields: Record<string, unknown>;
+    };
+    actionId: string;
+    dialogValues?: Record<string, unknown>;
+    metadata?: { actorUserId: string; reason: string; occurredAt?: string; requestId?: string };
+  }
+): Promise<{ transition: { fromStateId: string; toStateId: string; approvalRequests: WorkflowApprovalRequest[]; requiresApproval: boolean } }> {
+  try {
+    return await request(`/api/workflows/engine/${definitionId}/transitions`, token, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      const definition = defaultWorkflowDefinitions.find((candidate) => candidate.id === definitionId);
+      if (!definition) {
+        throw error;
+      }
+      const result = executeWorkflowTransition({
+        definition: { ...definition, organizationId: "org-mc" },
+        record: input.record as Parameters<typeof executeWorkflowTransition>[0]["record"],
+        actionId: input.actionId,
+        actor: demoWorkflowActor(token),
+        ...(input.dialogValues === undefined ? {} : { dialogValues: input.dialogValues }),
+        ...(input.metadata === undefined ? {} : { metadata: input.metadata })
+      });
+      const now = new Date().toISOString();
+      const approvalRequests = result.approvalRequests.map((request) => ({
+        ...request,
+        requestedAt: now,
+        updatedAt: now
+      }));
+      demoWorkflowApprovalRequests = [...approvalRequests, ...demoWorkflowApprovalRequests];
+      return { transition: { ...result, approvalRequests } };
+    }
+    throw error;
+  }
+}
+
+export async function startWorkflowRun(
+  token: string,
+  input: { workflowId: string; mode: "show_me" | "practice" | "live"; practiceSeedJson?: Record<string, unknown> }
+): Promise<{ run: WorkflowRunDetail }> {
+  try {
+    return await request("/api/workflows/runs", token, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      const guide = defaultWorkflowGuides.find((candidate) => candidate.id === input.workflowId);
+      if (!guide) {
+        throw error;
+      }
+      const now = new Date().toISOString();
+      const detail: WorkflowRunDetail = {
+        run: {
+          id: crypto.randomUUID(),
+          organizationId: "org-mc",
+          workflowId: guide.id,
+          userId: token === "test-staff" ? "user-staff" : "user-owner",
+          mode: input.mode,
+          status: "active",
+          currentStepId: guide.steps[0]?.id ?? null,
+          practiceSeedJson:
+            input.mode === "practice"
+              ? {
+                  demoData: true,
+                  seed: input.practiceSeedJson ?? {},
+                  rollbackPolicy: "Practice runs record events only and never write live operational records."
+                }
+              : input.practiceSeedJson ?? {},
+          rollbackSummary: null,
+          startedAt: now,
+          completedAt: null,
+          createdAt: now,
+          updatedAt: now,
+          version: 1
+        },
+        guide: serializeDemoWorkflowGuide(guide),
+        events: [
+          {
+            id: crypto.randomUUID(),
+            organizationId: "org-mc",
+            runId: "pending",
+            workflowId: guide.id,
+            stepId: guide.steps[0]?.id ?? null,
+            eventType: "started",
+            message: `${guide.title} started in ${input.mode} mode.`,
+            metadataJson: { mode: input.mode },
+            occurredAt: now
+          }
+        ]
+      };
+      detail.events = detail.events.map((event) => ({ ...event, runId: detail.run.id }));
+      demoWorkflowRuns = [detail, ...demoWorkflowRuns];
+      return { run: detail };
+    }
+    throw error;
+  }
+}
+
+export async function recordWorkflowRunEvent(
+  token: string,
+  runId: string,
+  input: { stepId?: string | null; eventType: "step_viewed" | "step_confirmed" | "help_opened" | "cancelled"; message?: string; metadataJson?: Record<string, unknown> }
+): Promise<{ run: WorkflowRunDetail }> {
+  try {
+    return await request(`/api/workflows/runs/${runId}/events`, token, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      const detail = demoWorkflowRuns.find((candidate) => candidate.run.id === runId);
+      if (!detail) {
+        throw error;
+      }
+      const step = input.stepId ? detail.guide.steps.find((candidate) => candidate.id === input.stepId) : null;
+      const stepIndex = step ? detail.guide.steps.findIndex((candidate) => candidate.id === step.id) : -1;
+      if (input.eventType === "step_confirmed" && step && stepIndex >= 0) {
+        detail.run.currentStepId = detail.guide.steps[stepIndex + 1]?.id ?? step.id;
+      } else if (step) {
+        detail.run.currentStepId = step.id;
+      }
+      detail.run.updatedAt = new Date().toISOString();
+      detail.run.version += 1;
+      detail.events.push({
+        id: crypto.randomUUID(),
+        organizationId: "org-mc",
+        runId,
+        workflowId: detail.run.workflowId,
+        stepId: input.stepId ?? null,
+        eventType: input.eventType,
+        message: input.message ?? step?.title ?? input.eventType,
+        metadataJson: input.metadataJson ?? {},
+        occurredAt: new Date().toISOString()
+      });
+      return { run: detail };
+    }
+    throw error;
+  }
+}
+
+export async function completeWorkflowRun(token: string, runId: string): Promise<{ run: WorkflowRunDetail }> {
+  try {
+    return await request(`/api/workflows/runs/${runId}/complete`, token, { method: "POST", body: JSON.stringify({}) });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      const detail = demoWorkflowRuns.find((candidate) => candidate.run.id === runId);
+      if (!detail) {
+        throw error;
+      }
+      const now = new Date().toISOString();
+      detail.run.status = detail.run.mode === "practice" ? "rolled_back" : "completed";
+      detail.run.completedAt = now;
+      detail.run.updatedAt = now;
+      detail.run.rollbackSummary =
+        detail.run.mode === "practice"
+          ? "Practice mode completed with demo data only; no live operational records were changed."
+          : null;
+      detail.events.push({
+        id: crypto.randomUUID(),
+        organizationId: "org-mc",
+        runId,
+        workflowId: detail.run.workflowId,
+        stepId: detail.run.currentStepId,
+        eventType: detail.run.mode === "practice" ? "rolled_back" : "completed",
+        message: detail.run.rollbackSummary ?? "Workflow completed.",
+        metadataJson: { mode: detail.run.mode },
+        occurredAt: now
+      });
+      return { run: detail };
+    }
+    throw error;
+  }
+}
+
+export async function listWorkflowRuns(token: string): Promise<{ runs: WorkflowRunDetail[] }> {
+  try {
+    return await request("/api/workflows/runs", token);
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      return { runs: demoWorkflowRuns };
+    }
+    throw error;
+  }
+}
+
+export async function exportWorkflowMermaid(token: string, workflowId: string): Promise<string> {
+  try {
+    const response = await fetch(`${apiBaseUrl}/api/workflows/${workflowId}/diagram.mmd`, {
+      headers: { authorization: `Bearer ${token}` }
+    });
+    if (!response.ok) {
+      throw new ApiRequestError(`Request failed with ${response.status}`, response.status);
+    }
+    return await response.text();
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      const guide = defaultWorkflowGuides.find((candidate) => candidate.id === workflowId);
+      if (!guide) {
+        throw error;
+      }
+      return workflowGuideToMermaid(guide);
     }
     throw error;
   }
@@ -893,6 +1538,12 @@ const demoRoles: Role[] = [
     description: "Cultivation, harvest, drying, and production workflows."
   },
   {
+    id: "role-qc",
+    code: "qc",
+    name: "QC",
+    description: "Quality control tasks, CAPA follow-up, holds, and release readiness."
+  },
+  {
     id: "role-packing",
     code: "packing_fulfillment",
     name: "Packing/Fulfillment",
@@ -903,6 +1554,12 @@ const demoRoles: Role[] = [
     code: "sales_wholesale",
     name: "Sales/Wholesale",
     description: "Wholesale, CRM, customer, and sales workflows."
+  },
+  {
+    id: "role-purchasing",
+    code: "purchasing",
+    name: "Purchasing",
+    description: "Supplier, replenishment, and incoming document exceptions."
   },
   {
     id: "role-auditor",
@@ -1174,6 +1831,157 @@ const demoDashboardWidgets: DashboardWidget[] = [
     version: 1
   }
 ];
+
+const demoWorkspaceNavigation = [
+  { id: "dashboard", label: "Dashboard", href: "/", requiredRoles: [] },
+  { id: "production", label: "Production", href: "/production", requiredRoles: ["owner_admin", "production_farm"] },
+  { id: "purchasing", label: "Purchasing", href: "/purchasing", requiredRoles: ["owner_admin", "purchasing"] },
+  { id: "inventory", label: "Inventory", href: "/inventory", requiredRoles: ["owner_admin", "packing_fulfillment", "auditor"] },
+  { id: "quality", label: "Quality", href: "/quality", requiredRoles: ["owner_admin", "qc", "auditor"] },
+  { id: "traceability", label: "Traceability", href: "/traceability", requiredRoles: ["owner_admin", "qc", "auditor"] },
+  { id: "reports", label: "Reports", href: "/reports", requiredRoles: ["owner_admin", "sales_wholesale", "auditor"] },
+  { id: "admin", label: "Admin", href: "/admin/roles", requiredRoles: ["owner_admin"] }
+];
+
+const demoUserPreferences: UserPreference[] = [
+  {
+    id: "pref-owner",
+    organizationId: "org-mc",
+    userId: "user-owner",
+    ...defaultWorkspacePreferences,
+    pinnedScreens: ["/", "/purchasing", "/production", "/qc", "/traceability"],
+    pinnedRecords: ["po-demo-lions-mane", "lot-lm-tincture-001"],
+    favoriteReports: ["lot-recall", "inventory-aging", "supplier-scorecard"],
+    dashboardWidgetOrder: ["widget-owner-exceptions", "widget-owner-shopify", "widget-owner-sku"],
+    savedFilters: { lots: { qcStatus: ["hold", "released"], expiresWithinDays: 45 } },
+    createdAt: "2026-06-27T08:00:00.000Z",
+    updatedAt: "2026-06-27T08:00:00.000Z",
+    version: 1
+  }
+];
+
+let demoPinnedItems: PinnedItem[] = [
+  {
+    id: "pin-owner-purchasing",
+    organizationId: "org-mc",
+    userId: "user-owner",
+    pinKind: "module",
+    targetType: "module",
+    targetId: "purchasing",
+    label: "Purchasing",
+    href: "/purchasing",
+    metadataJson: { quickActions: ["receive_po", "create_supplier"] },
+    sortOrder: 1,
+    createdAt: "2026-06-27T08:00:00.000Z",
+    updatedAt: "2026-06-27T08:00:00.000Z",
+    version: 1
+  },
+  {
+    id: "pin-owner-lot",
+    organizationId: "org-mc",
+    userId: "user-owner",
+    pinKind: "record",
+    targetType: "lot",
+    targetId: "lot-lm-tincture-001",
+    label: "LM-2026-06 tincture lot with a wonderfully long label",
+    href: "/lots/lot-lm-tincture-001",
+    metadataJson: { quickActions: ["open_traceability", "start_qc_task"] },
+    sortOrder: 2,
+    createdAt: "2026-06-27T08:00:00.000Z",
+    updatedAt: "2026-06-27T08:00:00.000Z",
+    version: 1
+  },
+  {
+    id: "pin-owner-report",
+    organizationId: "org-mc",
+    userId: "user-owner",
+    pinKind: "report",
+    targetType: "report",
+    targetId: "lot-recall",
+    label: "Lot recall report",
+    href: "/reports?reportId=lot-recall",
+    metadataJson: { quickActions: ["open_traceability"] },
+    sortOrder: 3,
+    createdAt: "2026-06-27T08:00:00.000Z",
+    updatedAt: "2026-06-27T08:00:00.000Z",
+    version: 1
+  }
+];
+
+const demoColorRules: ColorRule[] = defaultColorRules.map((rule) => ({
+  ...rule,
+  organizationId: "org-mc",
+  userId: null,
+  createdAt: "2026-06-27T08:00:00.000Z",
+  updatedAt: "2026-06-27T08:00:00.000Z",
+  version: 1
+}));
+
+const demoSavedViews: SavedView[] = [
+  {
+    id: "saved-view-lots-release",
+    organizationId: "org-mc",
+    ownerUserId: "user-owner",
+    gridKey: "lots",
+    name: "Lots needing release review",
+    scope: "role_shared",
+    sharedRoleCodes: ["owner_admin", "qc", "packing_fulfillment"],
+    filters: { qcStatus: ["pending", "hold"], status: "active" },
+    sort: [{ field: "expiresAt", direction: "asc" }],
+    grouping: ["qcStatus"],
+    columns: [
+      { key: "lotCode", label: "Lot", visible: true, order: 1, width: 160 },
+      { key: "itemName", label: "Item", visible: true, order: 2, width: 260 },
+      { key: "qcStatus", label: "QC", visible: true, order: 3, width: 110 },
+      { key: "expiresAt", label: "Expiry", visible: true, order: 4, width: 120 }
+    ],
+    colorRuleIds: ["color-lot-hold", "color-lot-released"],
+    isDefault: true,
+    createdAt: "2026-06-27T08:00:00.000Z",
+    updatedAt: "2026-06-27T08:00:00.000Z",
+    version: 1
+  }
+];
+
+function demoPreferenceForToken(token: string): UserPreference {
+  const userId = token === "test-staff" ? "user-staff" : "user-owner";
+  let preference = demoUserPreferences.find((candidate) => candidate.userId === userId);
+  if (!preference) {
+    const now = nowIso();
+    preference = {
+      id: crypto.randomUUID(),
+      organizationId: "org-mc",
+      userId,
+      ...defaultWorkspacePreferences,
+      savedFilters: {},
+      createdAt: now,
+      updatedAt: now,
+      version: 1
+    };
+    demoUserPreferences.push(preference);
+  }
+  return preference;
+}
+
+function demoWorkspaceSnapshot(token: string, previewRoleCode?: string): WorkspaceSnapshot {
+  const userId = token === "test-staff" ? "user-staff" : "user-owner";
+  const roleCodes = token === "test-staff" ? ["packing_fulfillment"] : ["owner_admin"];
+  const effectivePreview = roleCodes.includes("owner_admin") ? previewRoleCode ?? null : null;
+  return {
+    preferences: demoPreferenceForToken(token),
+    pinnedItems: demoPinnedItems.filter((pin) => pin.userId === userId).sort((left, right) => left.sortOrder - right.sortOrder),
+    savedViews: demoSavedViews.filter(
+      (view) => view.ownerUserId === userId || view.sharedRoleCodes.some((roleCode) => roleCodes.includes(roleCode))
+    ),
+    colorRules: demoColorRules,
+    navigation: demoWorkspaceNavigation.filter(
+      (item) =>
+        item.requiredRoles.length === 0 ||
+        item.requiredRoles.some((roleCode) => (effectivePreview ? [effectivePreview] : roleCodes).includes(roleCode))
+    ),
+    previewRoleCode: effectivePreview
+  };
+}
 
 function demoOperationalDashboard(token: string): OperationalDashboard {
   const generatedAt = nowIso();
@@ -1627,6 +2435,109 @@ let demoPurchaseOrders: PurchaseOrderDetail[] = [
 
 let demoReceipts: ReceiptDetail[] = [];
 
+let demoEdiStaging: EdiStagingCenter = {
+  partners: [
+    {
+      id: "edi-partner-bio-farms",
+      organizationId: "org-mc",
+      partnerCode: "BIOFARMS-EDI",
+      name: "Bio Farms Portugal EDI",
+      partnerType: "supplier",
+      supplierId: "supplier-bio-farms",
+      customerId: null,
+      status: "active",
+      defaultDocumentFormat: "csv",
+      settingsJson: { intakeMode: "approval_required", supportedDocuments: ["order_acknowledgement", "asn", "invoice_export_metadata"] },
+      createdAt: "2026-06-26T10:00:00.000Z",
+      updatedAt: "2026-06-26T10:00:00.000Z",
+      version: 1
+    }
+  ],
+  mappings: [
+    {
+      id: "mapping-bio-alcohol-item",
+      organizationId: "org-mc",
+      partnerId: "edi-partner-bio-farms",
+      mappingType: "item",
+      externalCode: "ALC-96",
+      externalDescription: "Organic cane alcohol 96%",
+      internalType: "material",
+      internalId: "mat-alcohol",
+      internalCode: "RM-ALC-ORG",
+      active: true,
+      createdAt: "2026-06-26T10:05:00.000Z",
+      updatedAt: "2026-06-26T10:05:00.000Z",
+      version: 1
+    },
+    {
+      id: "mapping-bio-l-unit",
+      organizationId: "org-mc",
+      partnerId: "edi-partner-bio-farms",
+      mappingType: "unit",
+      externalCode: "L",
+      externalDescription: "Supplier liter code",
+      internalType: "unit",
+      internalId: "l",
+      internalCode: "l",
+      active: true,
+      createdAt: "2026-06-26T10:06:00.000Z",
+      updatedAt: "2026-06-26T10:06:00.000Z",
+      version: 1
+    },
+    {
+      id: "mapping-bio-dhl-carrier",
+      organizationId: "org-mc",
+      partnerId: "edi-partner-bio-farms",
+      mappingType: "carrier",
+      externalCode: "DHL",
+      externalDescription: "DHL Portugal",
+      internalType: "carrier",
+      internalId: "DHL",
+      internalCode: "DHL",
+      active: true,
+      createdAt: "2026-06-26T10:07:00.000Z",
+      updatedAt: "2026-06-26T10:07:00.000Z",
+      version: 1
+    }
+  ],
+  batches: [],
+  documents: [],
+  asns: [],
+  supplierPortalUsers: [
+    {
+      id: "supplier-portal-bio-marta",
+      organizationId: "org-mc",
+      supplierId: "supplier-bio-farms",
+      email: "marta@biofarms.example.test",
+      displayName: "Marta Costa",
+      status: "invited",
+      permissions: ["upload_documents", "submit_asn", "respond_capa"],
+      lastAccessAt: null,
+      createdAt: "2026-06-26T10:10:00.000Z",
+      updatedAt: "2026-06-26T10:10:00.000Z",
+      version: 1
+    }
+  ],
+  customerPortalAccess: [
+    {
+      id: "customer-access-lisbon-demo",
+      organizationId: "org-mc",
+      customerId: "cust-lisbon-wellness",
+      salesOrderId: null,
+      shipmentId: null,
+      accessTokenLabel: "Lisbon Wellness June document packet",
+      status: "active",
+      allowedDocumentTypes: ["finished_good_coa", "lot_release_packet", "sds", "shipment_document"],
+      expiresAt: "2026-08-01T00:00:00.000Z",
+      createdBy: "user-owner",
+      lastAccessAt: null,
+      createdAt: "2026-06-26T10:15:00.000Z",
+      updatedAt: "2026-06-26T10:15:00.000Z",
+      version: 1
+    }
+  ]
+};
+
 const demoLots = new Map<string, Lot>([
   [
     "lot-lm-2026-06",
@@ -1749,6 +2660,220 @@ const demoLots = new Map<string, Lot>([
     }
   ]
 ]);
+
+const demoControlledDocuments: ComplianceDashboard["documents"] = [
+  {
+    id: "ctrl-doc-sds-lm-v1",
+    organizationId: "org-mc",
+    documentType: "sds",
+    documentNumber: "SDS-LM-2026",
+    title: "Lion's Mane extract SDS",
+    subjectType: "product_family",
+    subjectId: "tincture",
+    filePath: "compliance/sds/lions-mane-extract-2026.pdf",
+    fileName: "lions-mane-extract-2026.pdf",
+    contentType: "application/pdf",
+    status: "current",
+    internalOnly: false,
+    issuedAt: "2026-01-15T00:00:00.000Z",
+    expiresAt: "2027-01-15T00:00:00.000Z",
+    ownerUserId: "user-owner",
+    createdAt: "2026-01-15T00:00:00.000Z",
+    updatedAt: "2026-01-15T00:00:00.000Z",
+    version: 1
+  },
+  {
+    id: "ctrl-doc-allergen-cacao-v1",
+    organizationId: "org-mc",
+    documentType: "allergen_statement",
+    documentNumber: "ALG-CACAO-2026",
+    title: "Cacao allergen statement",
+    subjectType: "ingredient_class",
+    subjectId: "cacao",
+    filePath: "compliance/allergens/cacao-2026.pdf",
+    fileName: "cacao-allergen-statement.pdf",
+    contentType: "application/pdf",
+    status: "current",
+    internalOnly: false,
+    issuedAt: "2026-02-01T00:00:00.000Z",
+    expiresAt: "2026-07-15T00:00:00.000Z",
+    ownerUserId: "user-owner",
+    createdAt: "2026-02-01T00:00:00.000Z",
+    updatedAt: "2026-02-01T00:00:00.000Z",
+    version: 1
+  },
+  {
+    id: "ctrl-doc-haccp-tincture-v1",
+    organizationId: "org-mc",
+    documentType: "haccp_plan",
+    documentNumber: "HACCP-TINC-2026",
+    title: "Tincture HACCP plan",
+    subjectType: "product_family",
+    subjectId: "tincture",
+    filePath: "compliance/haccp/tincture-2026.pdf",
+    fileName: "tincture-haccp-plan.pdf",
+    contentType: "application/pdf",
+    status: "current",
+    internalOnly: true,
+    issuedAt: "2026-03-01T00:00:00.000Z",
+    expiresAt: "2026-09-01T00:00:00.000Z",
+    ownerUserId: "user-owner",
+    createdAt: "2026-03-01T00:00:00.000Z",
+    updatedAt: "2026-03-01T00:00:00.000Z",
+    version: 1
+  }
+];
+
+const demoComplianceRequirements: ComplianceDashboard["requirements"] = [
+  {
+    id: "comp-req-sds-production-start",
+    organizationId: "org-mc",
+    requirementType: "document",
+    action: "production.start",
+    label: "Current SDS for tincture production",
+    requiredDocumentType: "sds",
+    trainingRequirementId: null,
+    scopeJson: { productFamily: "tincture" },
+    active: true,
+    createdAt: "2026-06-01T08:00:00.000Z",
+    updatedAt: "2026-06-01T08:00:00.000Z",
+    version: 1
+  },
+  {
+    id: "comp-req-training-production-start",
+    organizationId: "org-mc",
+    requirementType: "training",
+    action: "production.start",
+    label: "Bottling SOP training",
+    requiredDocumentType: null,
+    trainingRequirementId: "train-req-bottling-sop",
+    scopeJson: { equipmentId: "equip-filler-01" },
+    active: true,
+    createdAt: "2026-06-01T08:00:00.000Z",
+    updatedAt: "2026-06-01T08:00:00.000Z",
+    version: 1
+  },
+  {
+    id: "comp-req-sanitation-production-start",
+    organizationId: "org-mc",
+    requirementType: "sanitation",
+    action: "production.start",
+    label: "Bottling line sanitation",
+    requiredDocumentType: null,
+    trainingRequirementId: null,
+    scopeJson: { equipmentId: "equip-filler-01", roomId: "loc-pack" },
+    active: true,
+    createdAt: "2026-06-01T08:00:00.000Z",
+    updatedAt: "2026-06-01T08:00:00.000Z",
+    version: 1
+  },
+  {
+    id: "comp-req-allergen-production-start",
+    organizationId: "org-mc",
+    requirementType: "allergen_control",
+    action: "production.start",
+    label: "Cacao allergen control",
+    requiredDocumentType: null,
+    trainingRequirementId: null,
+    scopeJson: { ingredientClass: "cacao", productionOrderId: "prod-lm-2026-06" },
+    active: true,
+    createdAt: "2026-06-01T08:00:00.000Z",
+    updatedAt: "2026-06-01T08:00:00.000Z",
+    version: 1
+  }
+];
+
+let demoSanitationChecks: ComplianceDashboard["sanitationChecks"] = [
+  {
+    id: "san-check-filler-open",
+    organizationId: "org-mc",
+    checklistCode: "SAN-FILL-OPEN",
+    equipmentId: "equip-filler-01",
+    equipmentCode: "FILL-01",
+    roomId: "loc-pack",
+    roomName: "Packing Room",
+    productFamily: "tincture",
+    productionOrderId: "prod-lm-2026-06",
+    status: "fail",
+    performedBy: "user-owner",
+    completedAt: "2026-06-27T07:00:00.000Z",
+    expiresAt: "2027-06-28T07:00:00.000Z",
+    notes: "Line clearance incomplete before pre-op.",
+    createdAt: "2026-06-27T07:00:00.000Z",
+    updatedAt: "2026-06-27T07:00:00.000Z",
+    version: 1
+  }
+];
+
+const demoAllergenControls: ComplianceDashboard["allergenControls"] = [
+  {
+    id: "allergen-cacao-po-001",
+    organizationId: "org-mc",
+    controlCode: "ALG-CACAO-PO-001",
+    productFamily: "tincture",
+    ingredientClass: "cacao",
+    productionOrderId: "prod-lm-2026-06",
+    status: "pass",
+    verifiedBy: "user-owner",
+    verifiedAt: "2026-06-27T07:30:00.000Z",
+    notes: "No cacao-contact equipment assigned to this run.",
+    createdAt: "2026-06-27T07:30:00.000Z",
+    updatedAt: "2026-06-27T07:30:00.000Z",
+    version: 1
+  }
+];
+
+const demoTrainingRequirements: ComplianceDashboard["trainingRequirements"] = [
+  {
+    id: "train-req-bottling-sop",
+    organizationId: "org-mc",
+    code: "TR-BOTTLE-SOP",
+    title: "Bottling SOP and line clearance",
+    roleCode: "production_farm",
+    equipmentId: "equip-filler-01",
+    workflowId: "production.start",
+    sopDocumentId: "ctrl-doc-haccp-tincture-v1",
+    controlledAction: "production.start",
+    status: "active",
+    retrainCadenceDays: 365,
+    createdAt: "2026-06-01T08:00:00.000Z",
+    updatedAt: "2026-06-01T08:00:00.000Z",
+    version: 1
+  }
+];
+
+let demoTrainingRecords: ComplianceDashboard["trainingRecords"] = [
+  {
+    id: "train-rec-owner-bottling",
+    organizationId: "org-mc",
+    requirementId: "train-req-bottling-sop",
+    userId: "user-owner",
+    userName: "Owner Admin",
+    status: "current",
+    completedAt: "2026-06-10T08:00:00.000Z",
+    expiresAt: "2027-06-10T08:00:00.000Z",
+    evidenceDocumentId: null,
+    createdAt: "2026-06-10T08:00:00.000Z",
+    updatedAt: "2026-06-10T08:00:00.000Z",
+    version: 1
+  },
+  {
+    id: "train-rec-staff-bottling-expired",
+    organizationId: "org-mc",
+    requirementId: "train-req-bottling-sop",
+    userId: "user-staff",
+    userName: "Production Staff",
+    status: "expired",
+    completedAt: "2025-03-01T08:00:00.000Z",
+    expiresAt: "2026-03-01T08:00:00.000Z",
+    evidenceDocumentId: null,
+    createdAt: "2025-03-01T08:00:00.000Z",
+    updatedAt: "2026-03-01T08:00:00.000Z",
+    version: 1
+  }
+];
+
+let demoAuditPackets: ComplianceDashboard["auditPackets"] = [];
 
 let demoQcRecords: QcRecord[] = [
   {
@@ -2234,6 +3359,10 @@ let demoBoms: BillOfMaterialsDetail[] = [
       formulaRevisionId: "formula-lm-tincture-v1",
       versionCode: "v1",
       status: "active",
+      bomKind: "standard",
+      activeRevisionLocked: true,
+      alternateGroupCode: null,
+      planningPercent: 100,
       yieldQuantity: 48,
       yieldUom: "bottle",
       effectiveFrom: "2026-01-01T00:00:00.000Z",
@@ -2338,6 +3467,9 @@ let demoBoms: BillOfMaterialsDetail[] = [
             version: 1
           }
         ],
+        outputs: [],
+        substitutes: [],
+        costs: [],
         equipment: []
       },
       {
@@ -2405,6 +3537,9 @@ let demoBoms: BillOfMaterialsDetail[] = [
             version: 1
           }
         ],
+        outputs: [],
+        substitutes: [],
+        costs: [],
         equipment: [
           {
             requirement: {
@@ -2471,7 +3606,23 @@ let demoBoms: BillOfMaterialsDetail[] = [
       totalMachineMinutes: 58,
       totalElapsedMinutes: 130,
       backflushedMaterialCount: 1,
-      manualIssueMaterialCount: 1
+      manualIssueMaterialCount: 1,
+      operationOutputCount: 0,
+      byProductOutputCount: 0,
+      operationCostTotal: 0
+    },
+    alternates: [],
+    readiness: {
+      bomId: "bom-lm-tincture-v1",
+      status: "ready",
+      checks: [
+        {
+          code: "routing",
+          label: "Routing operations",
+          status: "ready",
+          message: "Routing operations are defined."
+        }
+      ]
     }
   }
 ];
@@ -2863,6 +4014,22 @@ const demoRoutingMasterData: RoutingMasterData = {
       nextCalibrationDueAt: "2026-07-05T08:00:00.000Z",
       lastMaintenanceAt: "2026-06-01T08:00:00.000Z",
       nextMaintenanceDueAt: "2026-12-01T08:00:00.000Z",
+      metadataJson: {
+        manufacturer: "Ohaus",
+        model: "Explorer EX224",
+        assetTag: "MC-ASSET-001",
+        oemContact: {
+          name: "Ohaus Service",
+          email: "service@example-oem.com",
+          phone: "555-0101",
+          url: "https://example.com/ohaus-service"
+        },
+        maintenanceReminderDays: 14,
+        power: { requirements: "120 V, standard bench outlet" },
+        documents: [
+          { documentType: "manual", fileName: "SCALE-01-manual.pdf", contentType: "application/pdf" }
+        ]
+      },
       createdAt: "2026-06-01T08:00:00.000Z",
       updatedAt: "2026-06-05T08:00:00.000Z",
       version: 2
@@ -2884,6 +4051,12 @@ const demoRoutingMasterData: RoutingMasterData = {
       nextCalibrationDueAt: null,
       lastMaintenanceAt: "2026-06-01T08:00:00.000Z",
       nextMaintenanceDueAt: "2026-08-30T08:00:00.000Z",
+      metadataJson: {
+        manufacturer: "Accutek",
+        model: "Mini-Pinch",
+        power: { requirements: "120 V, 6 A" },
+        maintenanceReminderDays: 10
+      },
       createdAt: "2026-06-01T08:00:00.000Z",
       updatedAt: "2026-06-01T08:00:00.000Z",
       version: 1
@@ -2905,6 +4078,12 @@ const demoRoutingMasterData: RoutingMasterData = {
       nextCalibrationDueAt: null,
       lastMaintenanceAt: "2026-04-01T08:00:00.000Z",
       nextMaintenanceDueAt: "2026-05-31T08:00:00.000Z",
+      metadataJson: {
+        manufacturer: "Harvest Right",
+        model: "Pharma Cabinet",
+        filter: { name: "HEPA H13 prefilter", url: "https://example.com/hepa-h13" },
+        maintenanceReminderDays: 7
+      },
       createdAt: "2026-06-01T08:00:00.000Z",
       updatedAt: "2026-06-01T08:00:00.000Z",
       version: 1
@@ -2999,6 +4178,70 @@ let demoEquipmentMaintenance: EquipmentDashboard["maintenance"] = [
 ];
 
 let demoEquipmentEvents: EquipmentDashboard["events"] = [];
+let demoEquipmentReadings: EquipmentDashboard["readings"] = [
+  {
+    id: "reading-filler-volume-001",
+    organizationId: "org-mc",
+    equipmentId: "equip-filler-01",
+    productionOrderId: "po-001",
+    processingBatchId: "batch-lm-bot-001",
+    ebrExecutionId: "ebr-exec-lm-bot-001",
+    ebrStepResultId: null,
+    routingOperationId: "routing-op-fill",
+    parameterType: "pressure",
+    parameterName: "Fill head pressure",
+    value: 1.8,
+    unit: "bar",
+    source: "mock_plc",
+    actorUserId: null,
+    recordedAt: "2026-06-26T08:55:00.000Z",
+    minValue: 1.4,
+    maxValue: 2.2,
+    warningMinValue: 1.5,
+    warningMaxValue: 2,
+    limitStatus: "in_limit",
+    qualityEventId: null,
+    rawPayload: { adapter: "mock-plc", stable: true },
+    createdAt: "2026-06-26T08:55:00.000Z"
+  }
+];
+let demoEquipmentPreUseChecks: EquipmentDashboard["preUseChecks"] = [
+  {
+    id: "preuse-filler-001",
+    organizationId: "org-mc",
+    equipmentId: "equip-filler-01",
+    templateId: "preuse-bottling-filler",
+    routingOperationId: "routing-op-fill",
+    productionOrderId: "po-001",
+    ebrExecutionId: "ebr-exec-lm-bot-001",
+    status: "completed",
+    checkedItems: [
+      { itemId: "line-clear", label: "Line clearance complete", passed: true, required: true },
+      { itemId: "guards", label: "Guards and hoses inspected", passed: true, required: true }
+    ],
+    performedBy: "user-production",
+    completedAt: "2026-06-26T07:50:00.000Z",
+    notes: "Ready for tincture fill run.",
+    createdAt: "2026-06-26T07:50:00.000Z"
+  }
+];
+let demoEquipmentCleaningLogs: EquipmentDashboard["cleaningLogs"] = [
+  {
+    id: "clean-filler-preuse-001",
+    organizationId: "org-mc",
+    equipmentId: "equip-filler-01",
+    cleaningType: "changeover",
+    status: "clean",
+    cleanedBy: "user-production",
+    cleanedAt: "2026-06-26T07:45:00.000Z",
+    expiresAt: "2026-12-27T07:45:00.000Z",
+    productionOrderId: "po-001",
+    ebrExecutionId: "ebr-exec-lm-bot-001",
+    procedureId: "SOP-CLEAN-FILLER",
+    notes: "Changeover from previous lot completed.",
+    createdAt: "2026-06-26T07:45:00.000Z"
+  }
+];
 
 const demoRoutingTemplates: RoutingTemplateDetail[] = [
   {
@@ -3069,6 +4312,11 @@ const demoOperationRuns: OperationRunDetail[] = [
       laborRoleId: "labor-lead",
       ebrExecutionId: "ebr-exec-lm-bot-001",
       status: "ready",
+      allowNonsequentialReporting: false,
+      supervisorApprovalStatus: "not_required",
+      supervisorApprovedBy: null,
+      supervisorApprovedAt: null,
+      skippedOperationIds: [],
       scheduledStartAt: "2026-06-26T08:00:00.000Z",
       scheduledEndAt: "2026-06-26T08:40:00.000Z",
       startedAt: null,
@@ -3089,8 +4337,30 @@ const demoOperationRuns: OperationRunDetail[] = [
     workCenter: demoRoutingMasterData.workCenters[0]!,
     equipment: null,
     laborRole: demoRoutingMasterData.laborRoles[1]!,
+    controlPoints: [
+      {
+        id: "cp-run-stage-reporting",
+        organizationId: "org-mc",
+        operationRunId: "run-po-001-stage",
+        sequence: 10,
+        purpose: "reporting",
+        required: true,
+        completedAt: null,
+        completedBy: null,
+        notes: "Stage reporting is required before downstream completion.",
+        createdAt: "2026-06-25T08:00:00.000Z",
+        updatedAt: "2026-06-25T08:00:00.000Z",
+        version: 1
+      }
+    ],
     laborTimeEntries: [],
-    machineTimeEntries: []
+    machineTimeEntries: [],
+    crewTimeEntries: [],
+    downtimeEvents: [],
+    scrapEvents: [],
+    reworkOrders: [],
+    generatedMovements: [],
+    reportingWarnings: []
   },
   {
     run: {
@@ -3105,6 +4375,11 @@ const demoOperationRuns: OperationRunDetail[] = [
       laborRoleId: "labor-operator",
       ebrExecutionId: "ebr-exec-lm-bot-001",
       status: "pending",
+      allowNonsequentialReporting: true,
+      supervisorApprovalStatus: "not_required",
+      supervisorApprovedBy: null,
+      supervisorApprovedAt: null,
+      skippedOperationIds: [],
       scheduledStartAt: "2026-06-26T08:45:00.000Z",
       scheduledEndAt: "2026-06-26T10:05:00.000Z",
       startedAt: null,
@@ -3125,8 +4400,44 @@ const demoOperationRuns: OperationRunDetail[] = [
     workCenter: demoRoutingMasterData.workCenters[1]!,
     equipment: demoRoutingMasterData.equipment[1]!,
     laborRole: demoRoutingMasterData.laborRoles[0]!,
+    controlPoints: [
+      {
+        id: "cp-run-fill-backflush",
+        organizationId: "org-mc",
+        operationRunId: "run-po-001-fill",
+        sequence: 20,
+        purpose: "backflush",
+        required: true,
+        completedAt: "2026-06-26T08:45:00.000Z",
+        completedBy: "user-owner",
+        notes: "Packaging backflush configured.",
+        createdAt: "2026-06-25T08:00:00.000Z",
+        updatedAt: "2026-06-26T08:45:00.000Z",
+        version: 2
+      },
+      {
+        id: "cp-run-fill-final",
+        organizationId: "org-mc",
+        operationRunId: "run-po-001-fill",
+        sequence: 20,
+        purpose: "final_completion",
+        required: true,
+        completedAt: null,
+        completedBy: null,
+        notes: "Final completion release required.",
+        createdAt: "2026-06-25T08:00:00.000Z",
+        updatedAt: "2026-06-25T08:00:00.000Z",
+        version: 1
+      }
+    ],
     laborTimeEntries: [],
-    machineTimeEntries: []
+    machineTimeEntries: [],
+    crewTimeEntries: [],
+    downtimeEvents: [],
+    scrapEvents: [],
+    reworkOrders: [],
+    generatedMovements: [],
+    reportingWarnings: []
   }
 ];
 
@@ -3283,6 +4594,126 @@ const demoEbrExecutions: EbrExecutionDetail[] = [
     results: [],
     signatures: [],
     packetReady: false
+  }
+];
+
+const demoWeighDispenseSessions: WeighDispenseSessionDetail[] = [
+  {
+    session: {
+      id: "wd-session-lm-bottle-001",
+      organizationId: "org-mc",
+      sessionCode: "WD-2026-001",
+      status: "open",
+      productionOrderId: "po-lm-bottle-001",
+      processingBatchId: "batch-lm-bottle-001",
+      ebrExecutionId: "ebr-exec-batch-lm-bottle-001",
+      bomId: "bom-lm-tincture-v1",
+      formulaRevisionId: "formula-lm-tincture-v1",
+      locationId: "loc-pack",
+      startedBy: "user-owner",
+      startedAt: "2026-06-26T09:05:00.000Z",
+      completedAt: null,
+      createdAt: "2026-06-26T09:05:00.000Z",
+      updatedAt: "2026-06-26T09:05:00.000Z",
+      version: 1
+    },
+    lines: [
+      {
+        id: "wd-line-alcohol",
+        sessionId: "wd-session-lm-bottle-001",
+        sequence: 10,
+        sourceType: "bom_operation_material",
+        sourceId: "bom-op-mat-alcohol",
+        componentType: "material",
+        componentId: "mat-alcohol",
+        componentName: "Organic Cane Alcohol",
+        targetQuantity: 2.04,
+        targetUom: "l",
+        potencyAdjustedTargetQuantity: null,
+        potencyBasis: null,
+        potencyAssay: null,
+        potencyQcResultId: null,
+        tolerancePercent: 2,
+        toleranceQuantity: null,
+        minQuantity: 1.99,
+        maxQuantity: 2.08,
+        isCritical: true,
+        requiresPotencyAdjustment: false,
+        status: "pending",
+        lotId: null,
+        locationId: null,
+        containerId: null,
+        scaleAdapterId: null,
+        equipmentId: "equip-scale-01",
+        calibrationStatus: null,
+        tareQuantity: null,
+        grossQuantity: null,
+        netQuantity: null,
+        varianceQuantity: null,
+        variancePercent: null,
+        withinTolerance: null,
+        overrideReason: null,
+        overrideBy: null,
+        overrideAt: null,
+        verifiedBy: null,
+        verifiedAt: null,
+        stockMovementId: null,
+        ebrStepResultId: null,
+        completedBy: null,
+        completedAt: null,
+        createdAt: "2026-06-26T09:05:00.000Z",
+        updatedAt: "2026-06-26T09:05:00.000Z",
+        version: 1
+      },
+      {
+        id: "wd-line-bottles",
+        sessionId: "wd-session-lm-bottle-001",
+        sequence: 20,
+        sourceType: "bom_operation_material",
+        sourceId: "bom-op-mat-bottle",
+        componentType: "packaging_component",
+        componentId: "pkg-amber-50",
+        componentName: "Amber dropper bottle 50 ml",
+        targetQuantity: 48.48,
+        targetUom: "each",
+        potencyAdjustedTargetQuantity: null,
+        potencyBasis: null,
+        potencyAssay: null,
+        potencyQcResultId: null,
+        tolerancePercent: 2,
+        toleranceQuantity: null,
+        minQuantity: null,
+        maxQuantity: null,
+        isCritical: false,
+        requiresPotencyAdjustment: false,
+        status: "pending",
+        lotId: null,
+        locationId: null,
+        containerId: null,
+        scaleAdapterId: null,
+        equipmentId: null,
+        calibrationStatus: null,
+        tareQuantity: null,
+        grossQuantity: null,
+        netQuantity: null,
+        varianceQuantity: null,
+        variancePercent: null,
+        withinTolerance: null,
+        overrideReason: null,
+        overrideBy: null,
+        overrideAt: null,
+        verifiedBy: null,
+        verifiedAt: null,
+        stockMovementId: null,
+        ebrStepResultId: null,
+        completedBy: null,
+        completedAt: null,
+        createdAt: "2026-06-26T09:05:00.000Z",
+        updatedAt: "2026-06-26T09:05:00.000Z",
+        version: 1
+      }
+    ],
+    history: []
   }
 ];
 
@@ -3930,6 +5361,537 @@ export async function listLocations(token: string): Promise<{ locations: Locatio
   }
 }
 
+function demoPermissionMatrix(): PermissionMatrixSnapshot {
+  const permissionSets = defaultPermissionSets("org-mc") as PermissionMatrixSnapshot["permissionSets"];
+  const setByCode = new Map(permissionSets.map((set) => [set.code, set.id]));
+  const rolePermissionSets = demoRoles.flatMap((role) =>
+    (defaultRolePermissionSetCodes[role.code] ?? []).map((setCode) => ({
+      id: `demo-rps-${role.id}-${setCode}`,
+      roleId: role.id,
+      permissionSetId: setByCode.get(setCode) ?? setCode
+    }))
+  );
+  return {
+    catalog: permissionCatalog as PermissionMatrixSnapshot["catalog"],
+    permissionSets,
+    rolePermissionSets,
+    userOverrides: [],
+    fieldRules: [],
+    accessScopeRules: [],
+    effectiveByRole: Object.fromEntries(
+      demoRoles.map((role) => [
+        role.id,
+        resolveEffectivePermissions({
+          roleCodes: [role.code],
+          permissionSets,
+          rolePermissionSetCodes: defaultRolePermissionSetCodes
+        })
+      ])
+    ) as PermissionMatrixSnapshot["effectiveByRole"],
+    conflictWarnings: []
+  };
+}
+
+export async function getPermissionMatrix(token: string): Promise<{ matrix: PermissionMatrixSnapshot }> {
+  try {
+    return await request("/api/admin/permissions", token);
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      assertDemoAdmin(token, error);
+      return { matrix: demoPermissionMatrix() };
+    }
+    throw error;
+  }
+}
+
+export async function updateRolePermissionSets(
+  token: string,
+  roleId: string,
+  permissionSetIds: string[]
+): Promise<{ matrix: PermissionMatrixSnapshot }> {
+  try {
+    return await request(`/api/admin/permissions/roles/${roleId}/permission-sets`, token, {
+      method: "PATCH",
+      body: JSON.stringify({ permissionSetIds })
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      assertDemoAdmin(token, error);
+      return { matrix: demoPermissionMatrix() };
+    }
+    throw error;
+  }
+}
+
+export async function saveUserPermissionOverride(
+  token: string,
+  input: {
+    userId: string;
+    permissionCode: string;
+    level: PermissionLevel;
+    reason: string;
+    scope?: Record<string, string[]>;
+  }
+): Promise<{ matrix: PermissionMatrixSnapshot }> {
+  try {
+    return await request("/api/admin/permissions/user-overrides", token, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      assertDemoAdmin(token, error);
+      return { matrix: demoPermissionMatrix() };
+    }
+    throw error;
+  }
+}
+
+export async function previewUserAccess(
+  token: string,
+  input: {
+    userId: string;
+    permissionCode: string;
+    requiredLevel: PermissionLevel;
+    locationId?: string | null;
+    scope?: Record<string, string>;
+  }
+): Promise<{ preview: AccessPreview }> {
+  try {
+    return await request("/api/admin/permissions/preview", token, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      assertDemoAdmin(token, error);
+      const user = demoUsers.find((candidate) => candidate.id === input.userId) ?? demoUsers[0];
+      if (!user) {
+        throw error;
+      }
+      const roleCodes = user.roles.map((role) => role.roleCode);
+      const scopedLocationIds = user.roles
+        .map((role) => role.locationId)
+        .filter((locationId): locationId is string => Boolean(locationId));
+      const effective = resolveEffectivePermissions({
+        roleCodes,
+        permissionSets: defaultPermissionSets("org-mc"),
+        rolePermissionSetCodes: defaultRolePermissionSetCodes,
+        accessScopeRules: scopedLocationIds.length > 0
+          ? [{
+              id: `demo-location-scope-${user.id}`,
+              organizationId: "org-mc",
+              subjectType: "user",
+              subjectId: user.id,
+              dimension: "location",
+              allowedIds: scopedLocationIds
+            }]
+          : [],
+        userId: user.id
+      });
+      return {
+        preview: {
+          subjectUserId: input.userId,
+          action: input,
+          resolution: explainPermission({
+            effectivePermissions: effective,
+            permissionCode: input.permissionCode,
+            requiredLevel: input.requiredLevel,
+            ...(input.locationId !== undefined ? { locationId: input.locationId } : {}),
+            ...(input.scope !== undefined ? { scope: input.scope } : {})
+          }),
+          effective: effective as AccessPreview["effective"]
+        }
+      };
+    }
+    throw error;
+  }
+}
+
+export async function listPermissionHistory(token: string): Promise<{ auditEvents: PermissionAuditEvent[] }> {
+  try {
+    return await request("/api/admin/permissions/history", token);
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      assertDemoAdmin(token, error);
+      return { auditEvents: [] };
+    }
+    throw error;
+  }
+}
+
+const demoConfigurationNow = new Date("2026-06-27T08:00:00.000Z").toISOString();
+const demoConfiguration: ConfigurationSnapshot = {
+  documentTypes: [
+    {
+      id: "doc-type-standard-receipt",
+      organizationId: "org-mc",
+      category: "receipt",
+      code: "STD-RCPT",
+      name: "Standard supplier receipt",
+      status: "active",
+      description: "Default receiving type for supplier deliveries with quarantine-aware QC.",
+      numberingSequenceId: "num-std-receipt",
+      defaultStatus: "posted",
+      defaultLocationId: "loc-pack",
+      defaultReasonCodeId: "reason-receipt-accepted",
+      requireAttributes: true,
+      settingsJson: { defaultDisposition: "quarantine", operationalForm: "purchasing.receipt" },
+      createdAt: demoConfigurationNow,
+      updatedAt: demoConfigurationNow,
+      version: 1
+    }
+  ],
+  numberingSequences: [
+    {
+      id: "num-std-receipt",
+      organizationId: "org-mc",
+      documentTypeId: "doc-type-standard-receipt",
+      code: "RCPT-YM-LOC",
+      description: "Receipt numbers by month and receiving location.",
+      prefix: "RCPT-{YYYY}{MM}-{LOC}-",
+      suffix: "",
+      padLength: 4,
+      nextNumber: 1,
+      incrementBy: 1,
+      scopeOrganization: true,
+      scopeYear: true,
+      scopeMonth: true,
+      scopeLocation: true,
+      resetPolicy: "monthly",
+      lastScopeKey: null,
+      active: true,
+      createdAt: demoConfigurationNow,
+      updatedAt: demoConfigurationNow,
+      version: 1
+    }
+  ],
+  reasonCodes: [
+    {
+      id: "reason-receipt-accepted",
+      organizationId: "org-mc",
+      catalog: "receipt_disposition",
+      code: "ACCEPT",
+      label: "Accepted at receiving",
+      description: "Material was accepted directly into available inventory.",
+      requiresComment: false,
+      active: true,
+      createdAt: demoConfigurationNow,
+      updatedAt: demoConfigurationNow,
+      version: 1
+    },
+    {
+      id: "reason-admin-override",
+      organizationId: "org-mc",
+      catalog: "admin_override",
+      code: "SUPERVISOR",
+      label: "Supervisor override",
+      description: "Controlled override with supervisor justification.",
+      requiresComment: true,
+      active: true,
+      createdAt: demoConfigurationNow,
+      updatedAt: demoConfigurationNow,
+      version: 1
+    }
+  ],
+  attributeDefinitions: [
+    {
+      id: "attr-supplier-lot",
+      organizationId: "org-mc",
+      code: "supplier_lot",
+      label: "Supplier lot",
+      dataType: "text",
+      required: true,
+      options: [],
+      validationExpression: "^[A-Za-z0-9][A-Za-z0-9._-]{2,79}$",
+      active: true,
+      createdAt: demoConfigurationNow,
+      updatedAt: demoConfigurationNow,
+      version: 1
+    }
+  ],
+  attributeSets: [
+    {
+      id: "attr-set-receipt-standard",
+      organizationId: "org-mc",
+      code: "RECEIPT-STD-ATTRS",
+      name: "Standard receipt attributes",
+      appliesTo: "document_type",
+      appliesToValue: "doc-type-standard-receipt",
+      attributeDefinitionIds: ["attr-supplier-lot"],
+      active: true,
+      createdAt: demoConfigurationNow,
+      updatedAt: demoConfigurationNow,
+      version: 1
+    }
+  ],
+  attributeValues: [],
+  fieldBehaviorRules: [
+    {
+      id: "field-rule-receipt-supplier-lot",
+      organizationId: "org-mc",
+      documentTypeId: "doc-type-standard-receipt",
+      targetEntity: "receipt",
+      fieldName: "supplierLotNumber",
+      workflowState: "draft",
+      visible: true,
+      readOnly: false,
+      required: true,
+      defaultValue: null,
+      validationExpression: "^[A-Za-z0-9][A-Za-z0-9._-]{2,79}$",
+      permissionCode: null,
+      priority: 10,
+      active: true,
+      createdAt: demoConfigurationNow,
+      updatedAt: demoConfigurationNow,
+      version: 1
+    }
+  ]
+};
+
+export async function getConfiguration(token: string): Promise<{ configuration: ConfigurationSnapshot }> {
+  try {
+    return await request("/api/configuration", token);
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      assertDemoAdmin(token, error);
+      return { configuration: demoConfiguration };
+    }
+    throw error;
+  }
+}
+
+export async function saveDocumentType(
+  token: string,
+  input: Omit<DocumentType, "id" | "organizationId" | "createdAt" | "updatedAt" | "version">
+): Promise<{ documentType: DocumentType }> {
+  try {
+    return await request("/api/configuration/document-types", token, { method: "POST", body: JSON.stringify(input) });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      assertDemoAdmin(token, error);
+      const now = new Date().toISOString();
+      const existing = demoConfiguration.documentTypes.find((type) => type.category === input.category && type.code === input.code);
+      const documentType: DocumentType = existing ?? {
+        ...input,
+        id: crypto.randomUUID(),
+        organizationId: "org-mc",
+        createdAt: now,
+        updatedAt: now,
+        version: 0
+      };
+      Object.assign(documentType, input, { updatedAt: now, version: documentType.version + 1 });
+      if (!existing) demoConfiguration.documentTypes = [documentType, ...demoConfiguration.documentTypes];
+      return { documentType };
+    }
+    throw error;
+  }
+}
+
+export async function saveNumberingSequence(
+  token: string,
+  input: Omit<NumberingSequence, "id" | "organizationId" | "createdAt" | "updatedAt" | "version" | "lastScopeKey"> & { lastScopeKey?: string | null }
+): Promise<{ numberingSequence: NumberingSequence }> {
+  try {
+    return await request("/api/configuration/numbering-sequences", token, { method: "POST", body: JSON.stringify(input) });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      assertDemoAdmin(token, error);
+      const now = new Date().toISOString();
+      const existing = demoConfiguration.numberingSequences.find((sequence) => sequence.code === input.code);
+      const numberingSequence: NumberingSequence = existing ?? {
+        ...input,
+        id: crypto.randomUUID(),
+        organizationId: "org-mc",
+        lastScopeKey: input.lastScopeKey ?? null,
+        createdAt: now,
+        updatedAt: now,
+        version: 0
+      };
+      Object.assign(numberingSequence, input, { lastScopeKey: input.lastScopeKey ?? numberingSequence.lastScopeKey, updatedAt: now, version: numberingSequence.version + 1 });
+      if (!existing) demoConfiguration.numberingSequences = [numberingSequence, ...demoConfiguration.numberingSequences];
+      return { numberingSequence };
+    }
+    throw error;
+  }
+}
+
+export async function saveReasonCode(
+  token: string,
+  input: Omit<ReasonCode, "id" | "organizationId" | "createdAt" | "updatedAt" | "version">
+): Promise<{ reasonCode: ReasonCode }> {
+  try {
+    return await request("/api/configuration/reason-codes", token, { method: "POST", body: JSON.stringify(input) });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      assertDemoAdmin(token, error);
+      const now = new Date().toISOString();
+      const existing = demoConfiguration.reasonCodes.find((reason) => reason.catalog === input.catalog && reason.code === input.code);
+      const reasonCode: ReasonCode = existing ?? { ...input, id: crypto.randomUUID(), organizationId: "org-mc", createdAt: now, updatedAt: now, version: 0 };
+      Object.assign(reasonCode, input, { updatedAt: now, version: reasonCode.version + 1 });
+      if (!existing) demoConfiguration.reasonCodes = [reasonCode, ...demoConfiguration.reasonCodes];
+      return { reasonCode };
+    }
+    throw error;
+  }
+}
+
+export async function saveAttributeDefinition(
+  token: string,
+  input: Omit<AttributeDefinitionRecord, "id" | "organizationId" | "createdAt" | "updatedAt" | "version">
+): Promise<{ attributeDefinition: AttributeDefinitionRecord }> {
+  try {
+    return await request("/api/configuration/attribute-definitions", token, { method: "POST", body: JSON.stringify(input) });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      assertDemoAdmin(token, error);
+      const now = new Date().toISOString();
+      const existing = demoConfiguration.attributeDefinitions.find((attribute) => attribute.code === input.code);
+      const attributeDefinition: AttributeDefinitionRecord = existing ?? { ...input, id: crypto.randomUUID(), organizationId: "org-mc", createdAt: now, updatedAt: now, version: 0 };
+      Object.assign(attributeDefinition, input, { updatedAt: now, version: attributeDefinition.version + 1 });
+      if (!existing) demoConfiguration.attributeDefinitions = [attributeDefinition, ...demoConfiguration.attributeDefinitions];
+      return { attributeDefinition };
+    }
+    throw error;
+  }
+}
+
+export async function saveAttributeSet(
+  token: string,
+  input: Omit<AttributeSet, "id" | "organizationId" | "createdAt" | "updatedAt" | "version">
+): Promise<{ attributeSet: AttributeSet }> {
+  try {
+    return await request("/api/configuration/attribute-sets", token, { method: "POST", body: JSON.stringify(input) });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      assertDemoAdmin(token, error);
+      const now = new Date().toISOString();
+      const existing = demoConfiguration.attributeSets.find((set) => set.code === input.code);
+      const attributeSet: AttributeSet = existing ?? { ...input, id: crypto.randomUUID(), organizationId: "org-mc", createdAt: now, updatedAt: now, version: 0 };
+      Object.assign(attributeSet, input, { updatedAt: now, version: attributeSet.version + 1 });
+      if (!existing) demoConfiguration.attributeSets = [attributeSet, ...demoConfiguration.attributeSets];
+      return { attributeSet };
+    }
+    throw error;
+  }
+}
+
+export async function saveFieldBehaviorRule(
+  token: string,
+  input: Omit<FieldBehaviorRule, "id" | "organizationId" | "createdAt" | "updatedAt" | "version">
+): Promise<{ fieldBehaviorRule: FieldBehaviorRule }> {
+  try {
+    return await request("/api/configuration/field-behavior-rules", token, { method: "POST", body: JSON.stringify(input) });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      assertDemoAdmin(token, error);
+      const now = new Date().toISOString();
+      const existing = demoConfiguration.fieldBehaviorRules.find(
+        (rule) => rule.documentTypeId === input.documentTypeId && rule.targetEntity === input.targetEntity && rule.fieldName === input.fieldName && rule.workflowState === input.workflowState
+      );
+      const fieldBehaviorRule: FieldBehaviorRule = existing ?? { ...input, id: crypto.randomUUID(), organizationId: "org-mc", createdAt: now, updatedAt: now, version: 0 };
+      Object.assign(fieldBehaviorRule, input, { updatedAt: now, version: fieldBehaviorRule.version + 1 });
+      if (!existing) demoConfiguration.fieldBehaviorRules = [fieldBehaviorRule, ...demoConfiguration.fieldBehaviorRules];
+      return { fieldBehaviorRule };
+    }
+    throw error;
+  }
+}
+
+export async function generateConfiguredNumber(
+  token: string,
+  input: { documentTypeId: string; locationId?: string | null; commit?: boolean; now?: string }
+): Promise<{ generated: GeneratedDocumentNumber }> {
+  try {
+    return await request("/api/configuration/generate-number", token, { method: "POST", body: JSON.stringify(input) });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      assertDemoAdmin(token, error);
+      const documentType = demoConfiguration.documentTypes.find((type) => type.id === input.documentTypeId) ?? demoConfiguration.documentTypes[0];
+      if (!documentType) throw error;
+      const sequence = demoConfiguration.numberingSequences.find((candidate) => candidate.id === documentType.numberingSequenceId || candidate.documentTypeId === documentType.id);
+      if (!sequence) throw error;
+      const location = demoMasterData.locations.find((candidate) => candidate.id === (input.locationId ?? documentType.defaultLocationId));
+      const generated = generateDocumentNumber(sequence, {
+        organizationId: "org-mc",
+        documentType,
+        now: input.now ? new Date(input.now) : new Date(),
+        locationCode: location?.code ?? null
+      });
+      if (input.commit) {
+        sequence.nextNumber = generated.nextNumber;
+        sequence.lastScopeKey = generated.scopeKey;
+        sequence.updatedAt = new Date().toISOString();
+        sequence.version += 1;
+      }
+      return { generated: { ...generated, documentType, sequence } };
+    }
+    throw error;
+  }
+}
+
+export async function previewConfiguredFieldBehavior(
+  token: string,
+  input: { targetEntity: string; documentTypeId?: string | null; workflowState?: string | null }
+): Promise<{ fields: FieldBehavior[] }> {
+  try {
+    return await request("/api/configuration/field-behavior/preview", token, { method: "POST", body: JSON.stringify(input) });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      assertDemoAdmin(token, error);
+      return {
+        fields: resolveFieldBehavior(demoConfiguration.fieldBehaviorRules, {
+          targetEntity: input.targetEntity,
+          ...(input.documentTypeId !== undefined ? { documentTypeId: input.documentTypeId } : {}),
+          ...(input.workflowState !== undefined ? { workflowState: input.workflowState } : {}),
+          permissionCodes: ["configuration.manage"]
+        })
+      };
+    }
+    throw error;
+  }
+}
+
+export async function validateConfiguredOperationalRecord(
+  token: string,
+  input: {
+    targetEntity: string;
+    documentTypeId?: string | null;
+    workflowState?: string | null;
+    values: Record<string, unknown>;
+    attributeValues?: Record<string, unknown>;
+    appliesTo?: Record<string, string>;
+  }
+): Promise<{ validation: ConfigurationValidation }> {
+  try {
+    return await request("/api/configuration/validate", token, { method: "POST", body: JSON.stringify(input) });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      assertDemoAdmin(token, error);
+      const fields = resolveFieldBehavior(demoConfiguration.fieldBehaviorRules, {
+        targetEntity: input.targetEntity,
+        ...(input.documentTypeId !== undefined ? { documentTypeId: input.documentTypeId } : {}),
+        ...(input.workflowState !== undefined ? { workflowState: input.workflowState } : {}),
+        permissionCodes: ["configuration.manage"]
+      });
+      const requiredAttributes = requiredAttributeDefinitionsForContext(
+        demoConfiguration.attributeSets,
+        demoConfiguration.attributeDefinitions,
+        (input.appliesTo ?? (input.documentTypeId ? { document_type: input.documentTypeId } : {})) as Parameters<typeof requiredAttributeDefinitionsForContext>[2]
+      );
+      return {
+        validation: validateConfiguredRecord({
+          values: input.values,
+          ...(input.attributeValues !== undefined ? { attributeValues: input.attributeValues } : {}),
+          resolvedFields: fields,
+          requiredAttributes
+        })
+      };
+    }
+    throw error;
+  }
+}
+
 export async function getShopifyStatus(
   token: string
 ): Promise<{ status: ShopifyIntegrationStatus; events: ShopifySyncEvent[] }> {
@@ -4009,6 +5971,12 @@ function postDemoReceipt(input: ReceiptInput): ReceiptDetail {
     supplierId: input.supplierId,
     receivedAt: input.receivedAt ?? now,
     locationId: input.locationId,
+    billOfLadingNumber: input.billOfLadingNumber ?? null,
+    carrier: input.carrier ?? null,
+    packingSlipNumber: input.packingSlipNumber ?? null,
+    receivedByUserId: input.receivedByUserId ?? "user-owner",
+    receivingNotes: input.receivingNotes ?? null,
+    supplierDocumentIds: input.supplierDocumentIds ?? [],
     status: "posted" as const,
     createdAt: now,
     updatedAt: now,
@@ -4020,6 +5988,8 @@ function postDemoReceipt(input: ReceiptInput): ReceiptDetail {
     const itemType = poLine?.itemType ?? lineInput.itemType ?? "material";
     const itemId = poLine?.itemId ?? lineInput.itemId ?? "mat-alcohol";
     const item = demoItemSnapshot(itemType, itemId);
+    const disposition = normalizeReceiptDisposition(lineInput);
+    const labelStatus = receivingLabelStatus(disposition);
     const lot: Lot = {
       id: crypto.randomUUID(),
       organizationId: "org-mc",
@@ -4030,15 +6000,25 @@ function postDemoReceipt(input: ReceiptInput): ReceiptDetail {
       itemSku: item.sku,
       sourceType: "receipt",
       sourceId: receiptId,
-      manufacturedAt: null,
+      manufacturedAt: lineInput.manufactureDate ?? null,
       receivedAt: receipt.receivedAt,
       expiresAt: lineInput.expiryDate ?? null,
-      qcStatus: "pending",
+      qcStatus:
+        disposition.rejectedQuantity > 0 && disposition.acceptedQuantity === 0 && disposition.quarantinedQuantity === 0
+          ? "rejected"
+          : disposition.quarantinedQuantity > 0 && disposition.acceptedQuantity === 0
+            ? "hold"
+            : "released",
       status: "active",
       parentLotId: null,
       metadataJson: {
         supplierId: input.supplierId,
         supplierLotNumber: lineInput.supplierLotNumber ?? null,
+        internalLotNumber: lineInput.internalLotNumber ?? lineInput.lotCode,
+        billOfLadingNumber: input.billOfLadingNumber ?? null,
+        carrier: input.carrier ?? null,
+        packingSlipNumber: input.packingSlipNumber ?? null,
+        disposition,
         purchaseOrderId: input.purchaseOrderId ?? null,
         purchaseOrderLineId: lineInput.purchaseOrderLineId ?? null
       },
@@ -4048,10 +6028,11 @@ function postDemoReceipt(input: ReceiptInput): ReceiptDetail {
     };
     demoLots.set(lot.id, lot);
 
+    const stockQuantity = disposition.acceptedQuantity + disposition.quarantinedQuantity;
     const movement: StockMovement = {
       id: crypto.randomUUID(),
       organizationId: "org-mc",
-      clientTransactionId: `${input.clientTransactionId}:line:${index + 1}`,
+      clientTransactionId: `${input.clientTransactionId}:line:${index + 1}:receipt`,
       movementNumber: `SM-DEMO-${String(demoStockMovements.length + 1).padStart(4, "0")}`,
       movementType: "receipt",
       itemType,
@@ -4059,7 +6040,7 @@ function postDemoReceipt(input: ReceiptInput): ReceiptDetail {
       lotId: lot.id,
       fromLocationId: null,
       toLocationId: input.locationId,
-      quantity: lineInput.quantity,
+      quantity: stockQuantity,
       uom: lineInput.uom,
       occurredAt: receipt.receivedAt,
       recordedBy: "user-owner",
@@ -4067,9 +6048,58 @@ function postDemoReceipt(input: ReceiptInput): ReceiptDetail {
       sourceId: receiptId,
       reasonCode: "supplier_receipt",
       notes: null,
-      metadataJson: { supplierLotNumber: lineInput.supplierLotNumber ?? null }
+      metadataJson: { supplierLotNumber: lineInput.supplierLotNumber ?? null, disposition }
     };
-    demoStockMovements = [movement, ...demoStockMovements];
+    const holdMovement: StockMovement | null = disposition.quarantinedQuantity > 0
+      ? {
+          id: crypto.randomUUID(),
+          organizationId: "org-mc",
+          clientTransactionId: `${input.clientTransactionId}:line:${index + 1}:hold`,
+          movementNumber: `SM-DEMO-${String(demoStockMovements.length + 2).padStart(4, "0")}`,
+          movementType: "hold",
+          itemType,
+          itemId,
+          lotId: lot.id,
+          fromLocationId: input.locationId,
+          toLocationId: null,
+          quantity: disposition.quarantinedQuantity,
+          uom: lineInput.uom,
+          occurredAt: receipt.receivedAt,
+          recordedBy: "user-owner",
+          sourceType: "lot_hold",
+          sourceId: `hold-${lot.id}`,
+          reasonCode: "incoming_qc_quarantine",
+          notes: disposition.dispositionReason,
+          metadataJson: { receiptId, supplierLotNumber: lineInput.supplierLotNumber ?? null }
+        }
+      : null;
+    demoStockMovements = [movement, ...(holdMovement ? [holdMovement] : []), ...demoStockMovements];
+    const lotHoldId = disposition.quarantinedQuantity > 0 ? `hold-${lot.id}` : null;
+    if (lotHoldId) {
+      demoLotHolds = [
+        {
+          id: lotHoldId,
+          organizationId: "org-mc",
+          lotId: lot.id,
+          qualityEventId: null,
+          status: "active",
+          reason: disposition.dispositionReason ?? "Incoming QC quarantine",
+          heldBy: "user-owner",
+          heldAt: receipt.receivedAt,
+          decision: "hold",
+          decisionBy: "user-owner",
+          decisionAt: receipt.receivedAt,
+          decisionReason: disposition.dispositionReason ?? "Incoming QC quarantine",
+          evidence: receipt.receiptNumber,
+          createdAt: now,
+          updatedAt: now,
+          version: 1,
+          lotCode: lot.lotCode,
+          itemName: lot.itemName
+        },
+        ...demoLotHolds
+      ];
+    }
     demoInventoryBalances = [
       ...demoInventoryBalances,
       {
@@ -4085,9 +6115,9 @@ function postDemoReceipt(input: ReceiptInput): ReceiptDetail {
         itemSku: item.sku,
         lotCode: lot.lotCode,
         expiresAt: lot.expiresAt,
-        availableQuantity: lineInput.quantity,
+        availableQuantity: disposition.acceptedQuantity,
         reservedQuantity: 0,
-        heldQuantity: 0,
+        heldQuantity: disposition.quarantinedQuantity,
         uom: lineInput.uom
       }
     ];
@@ -4147,20 +6177,48 @@ function postDemoReceipt(input: ReceiptInput): ReceiptDetail {
       generatedInspectionTasks.push(task);
     }
     if (poLine) {
-      poLine.receivedQuantity = (poLine.receivedQuantity ?? 0) + lineInput.quantity;
+      poLine.receivedQuantity = (poLine.receivedQuantity ?? 0) + quantityCountsAgainstPurchaseOrder(disposition);
       poLine.remainingQuantity = Math.max(0, poLine.quantity - poLine.receivedQuantity);
     }
+    const qcTaskIds = generatedInspectionTasks.filter((task) => task.lotId === lot.id).map((task) => task.id);
 
     return {
       id: crypto.randomUUID(),
       receiptId,
       purchaseOrderLineId: lineInput.purchaseOrderLineId ?? null,
       lotId: lot.id,
-      quantity: lineInput.quantity,
+      quantity: quantityCountsAgainstPurchaseOrder(disposition),
+      receivedQuantity: disposition.receivedQuantity,
+      damagedQuantity: disposition.damagedQuantity,
+      acceptedQuantity: disposition.acceptedQuantity,
+      quarantinedQuantity: disposition.quarantinedQuantity,
+      rejectedQuantity: disposition.rejectedQuantity,
       uom: lineInput.uom,
       expiryDate: lineInput.expiryDate ?? null,
+      manufactureDate: lineInput.manufactureDate ?? null,
       supplierLotNumber: lineInput.supplierLotNumber ?? null,
+      internalLotNumber: lineInput.internalLotNumber ?? lineInput.lotCode,
+      containerCount: lineInput.containerCount ?? null,
+      disposition: disposition.disposition,
+      dispositionReason: disposition.dispositionReason,
       stockMovementId: movement.id,
+      acceptedStockMovementId: movement.id,
+      quarantineStockMovementId: holdMovement?.id ?? null,
+      lotHoldId,
+      qcTaskIds,
+      receivingLabel: {
+        labelCode: `RCV-${receipt.receiptNumber}-${index + 1}`,
+        status: labelStatus,
+        fields: {
+          item: item.name,
+          lot: lot.lotCode,
+          supplierLot: lineInput.supplierLotNumber ?? null,
+          expiry: lineInput.expiryDate?.slice(0, 10) ?? null,
+          purchaseOrder: purchaseOrderDetail?.order.poNumber ?? null,
+          receipt: receipt.receiptNumber,
+          status: labelStatus
+        }
+      },
       correctedQuantity: 0,
       lot,
       stockMovement: movement,
@@ -4642,6 +6700,97 @@ export async function generateProductConfiguration(
   }
 }
 
+export async function runProductConfiguratorRuleTests(
+  token: string,
+  templateId?: string | null
+): Promise<{ runs: ProductConfiguratorRuleTestRun[] }> {
+  try {
+    return await request("/api/product-configurator/rule-tests", token, {
+      method: "POST",
+      body: JSON.stringify({ templateId: templateId ?? null })
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      assertDemoAdmin(token, error);
+      const snapshot = demoProductConfiguratorSnapshot();
+      return {
+        runs: snapshot.productTemplates
+          .filter((template) => !templateId || template.id === templateId)
+          .map((template) => ({
+            templateId: template.id,
+            templateVersion: template.templateVersion ?? "draft",
+            approvalStatus: template.approvalStatus ?? "draft",
+            results: runConfiguratorRuleTests(template, {
+              ...(snapshot.skuRules[0] ? { rule: snapshot.skuRules[0] } : {}),
+              existingSkus: demoMasterData.productVariants.map((variant) => variant.sku)
+            })
+          }))
+          .filter((run) => run.results.length > 0)
+      };
+    }
+
+    throw error;
+  }
+}
+
+export async function upsertConfiguratorRule(
+  token: string,
+  input: ConfiguratorRuleInput
+): Promise<{ template: ProductConfiguratorSnapshot["productTemplates"][number] }> {
+  try {
+    return await request("/api/product-configurator/rules", token, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      assertDemoAdmin(token, error);
+      const snapshot = demoProductConfiguratorSnapshot();
+      const template = snapshot.productTemplates.find((candidate) => candidate.id === input.templateId);
+      if (!template) {
+        throw error;
+      }
+      const group = template.optionGroups?.find((candidate) => candidate.code === input.groupCode);
+      const option = group ? template.options?.find((candidate) => candidate.groupId === group.id && candidate.code === input.optionCode) : null;
+      if (!group || !option) {
+        throw error;
+      }
+      if (input.status === "active" && !input.changeRequestId) {
+        throw error;
+      }
+      const existing = template.configuratorRules?.find(
+        (candidate) => candidate.name.trim().toLowerCase() === input.name.trim().toLowerCase()
+      );
+      const rule = existing ?? {
+        id: crypto.randomUUID(),
+        templateId: template.id,
+        name: input.name,
+        status: input.status ?? "pending_approval",
+        changeRequestId: input.changeRequestId ?? null,
+        appliesWhen: [{ groupCode: input.groupCode, optionCodes: [input.optionCode] }],
+        effects: {}
+      };
+      rule.name = input.name;
+      rule.status = input.status ?? "pending_approval";
+      rule.changeRequestId = input.changeRequestId ?? null;
+      rule.appliesWhen = [{ groupCode: input.groupCode, optionCodes: [input.optionCode] }];
+      rule.effects = {
+        ...(input.skuSuffix ? { skuSuffix: input.skuSuffix } : {}),
+        ...(input.labelField ? { labelFields: [input.labelField] } : {}),
+        ...(input.qcTest ? { qcTests: [input.qcTest] } : {}),
+        ...(typeof input.priceDelta === "number" ? { priceDelta: input.priceDelta } : {}),
+        ...(typeof input.expectedCostDelta === "number" ? { expectedCostDelta: input.expectedCostDelta } : {})
+      };
+      if (!existing) {
+        template.configuratorRules = [...(template.configuratorRules ?? []), rule];
+      }
+      return { template };
+    }
+
+    throw error;
+  }
+}
+
 export async function listSuppliers(token: string): Promise<{ suppliers: Supplier[] }> {
   try {
     return await request("/api/purchasing/suppliers", token);
@@ -5066,6 +7215,347 @@ export async function listReceipts(token: string): Promise<{ receipts: ReceiptDe
     }
     throw error;
   }
+}
+
+export async function getEdiStagingCenter(token: string): Promise<{ staging: EdiStagingCenter }> {
+  try {
+    return await request("/api/edi/staging", token);
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      return { staging: demoEdiStaging };
+    }
+    throw error;
+  }
+}
+
+export async function upsertPartnerMapping(
+  token: string,
+  input: {
+    partnerId: string;
+    mappingType: PartnerItemMapping["mappingType"];
+    externalCode: string;
+    externalDescription?: string | null;
+    internalType: string;
+    internalId: string;
+    internalCode?: string | null;
+    active?: boolean;
+  }
+): Promise<{ mapping: PartnerItemMapping }> {
+  try {
+    return await request("/api/edi/mappings", token, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      const now = new Date().toISOString();
+      const existing = demoEdiStaging.mappings.find(
+        (mapping) =>
+          mapping.partnerId === input.partnerId &&
+          mapping.mappingType === input.mappingType &&
+          mapping.externalCode.toLocaleLowerCase() === input.externalCode.trim().toLocaleLowerCase()
+      );
+      const mapping: PartnerItemMapping = {
+        id: existing?.id ?? crypto.randomUUID(),
+        organizationId: "org-mc",
+        partnerId: input.partnerId,
+        mappingType: input.mappingType,
+        externalCode: input.externalCode,
+        externalDescription: input.externalDescription ?? null,
+        internalType: input.internalType,
+        internalId: input.internalId,
+        internalCode: input.internalCode ?? null,
+        active: input.active ?? true,
+        createdAt: existing?.createdAt ?? now,
+        updatedAt: now,
+        version: (existing?.version ?? 0) + 1
+      };
+      demoEdiStaging = {
+        ...demoEdiStaging,
+        mappings: existing
+          ? demoEdiStaging.mappings.map((candidate) => (candidate.id === existing.id ? mapping : candidate))
+          : [mapping, ...demoEdiStaging.mappings]
+      };
+      return { mapping };
+    }
+    throw error;
+  }
+}
+
+export async function importAsnDocument(
+  token: string,
+  input: { partnerId: string; fileName: string; contents: string; format?: "csv" | "json" }
+): Promise<{ batch: EdiStagingCenter["batches"][number]; document: EdiStagingCenter["documents"][number]; asn: AsnHeader }> {
+  try {
+    return await request("/api/edi/asns/import", token, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      const result = importDemoAsn(input);
+      return result;
+    }
+    throw error;
+  }
+}
+
+export async function approveAsnDocument(token: string, asnHeaderId: string): Promise<{ asn: AsnHeader }> {
+  try {
+    return await request(`/api/edi/asns/${asnHeaderId}/approve`, token, { method: "POST" });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      const asn = demoEdiStaging.asns.find((candidate) => candidate.id === asnHeaderId);
+      if (!asn) {
+        throw error;
+      }
+      const hasErrors = [...asn.validationIssues, ...(asn.lines ?? []).flatMap((line) => line.validationIssues)].some(
+        (issue) => issue.level === "error"
+      );
+      if (hasErrors) {
+        throw new ApiRequestError("ASN validation errors block approval", 409);
+      }
+      const now = new Date().toISOString();
+      Object.assign(asn, { status: "approved" as const, approvedBy: "user-owner", approvedAt: now, updatedAt: now, version: asn.version + 1 });
+      demoEdiStaging.documents = demoEdiStaging.documents.map((document) =>
+        document.id === asn.ediDocumentId ? { ...document, status: "approved", approvedBy: "user-owner", approvedAt: now, updatedAt: now, version: document.version + 1 } : document
+      );
+      return { asn };
+    }
+    throw error;
+  }
+}
+
+export async function convertAsnToReceipt(
+  token: string,
+  asnHeaderId: string,
+  input: { receiptNumber: string; locationId: string; clientTransactionId: string; dispositionReason?: string | null }
+): Promise<{ receipt: ReceiptDetail }> {
+  try {
+    return await request(`/api/edi/asns/${asnHeaderId}/convert-to-receipt`, token, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      const asn = demoEdiStaging.asns.find((candidate) => candidate.id === asnHeaderId);
+      if (!asn || asn.status !== "approved") {
+        throw error;
+      }
+      const receipt = postDemoReceipt({
+        receiptNumber: input.receiptNumber,
+        purchaseOrderId: asn.purchaseOrderId,
+        supplierId: asn.supplierId,
+        receivedAt: asn.expectedAt ?? new Date().toISOString(),
+        locationId: input.locationId,
+        billOfLadingNumber: asn.trackingNumber,
+        carrier: asn.carrier,
+        packingSlipNumber: asn.packingSlipNumber,
+        receivingNotes: `Converted from approved ASN ${asn.asnNumber}.`,
+        clientTransactionId: input.clientTransactionId,
+        lines: (asn.lines ?? []).map((line) => ({
+          purchaseOrderLineId: line.purchaseOrderLineId,
+          ...(line.itemType ? { itemType: line.itemType } : {}),
+          ...(line.itemId ? { itemId: line.itemId } : {}),
+          lotCode: line.lotCode,
+          supplierLotNumber: line.supplierLotNumber,
+          quantity: line.quantity,
+          receivedQuantity: line.quantity,
+          acceptedQuantity: line.quantity,
+          quarantinedQuantity: 0,
+          rejectedQuantity: 0,
+          disposition: "accepted",
+          dispositionReason: input.dispositionReason ?? null,
+          uom: line.mappedUom ?? line.uom,
+          expiryDate: line.expiryDate
+        }))
+      });
+      asn.status = "converted";
+      asn.convertedReceiptId = receipt.receipt.id;
+      demoEdiStaging.documents = demoEdiStaging.documents.map((document) =>
+        document.id === asn.ediDocumentId
+          ? { ...document, status: "converted", convertedEntityType: "receipt", convertedEntityId: receipt.receipt.id }
+          : document
+      );
+      return { receipt };
+    }
+    throw error;
+  }
+}
+
+export async function getCustomerDocumentPortalPreview(
+  token: string
+): Promise<{ previews: CustomerDocumentPortalPreview[] }> {
+  try {
+    return await request("/api/edi/customer-document-portal/preview", token);
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      return {
+        previews: demoEdiStaging.customerPortalAccess.map((access) => ({
+          access,
+          documents: demoGeneratedDocuments.filter(
+            (document) =>
+              document.status === "final" &&
+              document.customerFacing &&
+              access.allowedDocumentTypes.includes(document.documentType) &&
+              (!access.salesOrderId || document.salesOrderId === access.salesOrderId) &&
+              (!access.shipmentId || document.shipmentId === access.shipmentId)
+          )
+        }))
+      };
+    }
+    throw error;
+  }
+}
+
+function importDemoAsn(input: { partnerId: string; fileName: string; contents: string }) {
+  const partner = demoEdiStaging.partners.find((candidate) => candidate.id === input.partnerId);
+  if (!partner?.supplierId) {
+    throw new ApiRequestError("EDI partner is not linked to a supplier", 400);
+  }
+  const parsed = parseDemoAsnCsv(input.contents, partner.supplierId);
+  const issues = parsed.lines.flatMap((line) => {
+    const itemMapping = demoEdiStaging.mappings.find(
+      (mapping) => mapping.partnerId === input.partnerId && mapping.mappingType === "item" && mapping.active && mapping.externalCode.toLocaleLowerCase() === line.externalItemCode.toLocaleLowerCase()
+    );
+    const unitMapping = demoEdiStaging.mappings.find(
+      (mapping) => mapping.partnerId === input.partnerId && mapping.mappingType === "unit" && mapping.active && mapping.externalCode.toLocaleLowerCase() === line.uom.toLocaleLowerCase()
+    );
+    return [
+      ...(itemMapping ? [] : [{ level: "error" as const, code: "missing_item_mapping", message: `No item mapping for ${line.externalItemCode}.`, lineNumber: line.lineNumber, field: "externalItemCode" }]),
+      ...(unitMapping ? [] : [{ level: "error" as const, code: "missing_unit_mapping", message: `No unit mapping for ${line.uom}.`, lineNumber: line.lineNumber, field: "uom" }])
+    ];
+  });
+  const status: AsnHeader["status"] = issues.some((issue) => issue.level === "error") ? "quarantined" : "validated";
+  const now = new Date().toISOString();
+  const batch = {
+    id: crypto.randomUUID(),
+    organizationId: "org-mc",
+    partnerId: input.partnerId,
+    batchNumber: `EDI-${String(demoEdiStaging.batches.length + 1).padStart(4, "0")}`,
+    sourceFileName: input.fileName,
+    documentType: "asn" as const,
+    status,
+    importedBy: "user-owner",
+    importedAt: now,
+    approvedBy: null,
+    approvedAt: null,
+    metadataJson: { format: "csv", quarantinePolicy: "approval_required_before_live_records" },
+    createdAt: now,
+    updatedAt: now,
+    version: 1
+  };
+  const document = {
+    id: crypto.randomUUID(),
+    organizationId: "org-mc",
+    partnerId: input.partnerId,
+    batchId: batch.id,
+    documentType: "asn" as const,
+    documentNumber: parsed.asnNumber,
+    status,
+    quarantineReason: status === "quarantined" ? "ASN requires mapping or data corrections before approval." : null,
+    validationIssues: issues,
+    payloadJson: parsed as unknown as Record<string, unknown>,
+    relatedEntityType: "purchase_order",
+    relatedEntityId: parsed.purchaseOrderId,
+    approvedBy: null,
+    approvedAt: null,
+    convertedEntityType: null,
+    convertedEntityId: null,
+    createdAt: now,
+    updatedAt: now,
+    version: 1
+  };
+  const asn: AsnHeader = {
+    id: crypto.randomUUID(),
+    organizationId: "org-mc",
+    partnerId: input.partnerId,
+    ediDocumentId: document.id,
+    asnNumber: parsed.asnNumber,
+    supplierId: parsed.supplierId,
+    purchaseOrderId: parsed.purchaseOrderId,
+    poNumber: parsed.poNumber,
+    status,
+    shipDate: parsed.shipDate,
+    expectedAt: parsed.expectedAt,
+    carrier: parsed.carrier,
+    trackingNumber: parsed.trackingNumber,
+    packingSlipNumber: parsed.packingSlipNumber,
+    validationIssues: issues,
+    approvedBy: null,
+    approvedAt: null,
+    convertedReceiptId: null,
+    createdAt: now,
+    updatedAt: now,
+    version: 1,
+    partner,
+    purchaseOrder: demoPurchaseOrders.find((detail) => detail.order.id === parsed.purchaseOrderId)?.order ?? null,
+    lines: parsed.lines.map((line) => {
+      const itemMapping = demoEdiStaging.mappings.find((mapping) => mapping.partnerId === input.partnerId && mapping.mappingType === "item" && mapping.externalCode.toLocaleLowerCase() === line.externalItemCode.toLocaleLowerCase());
+      const unitMapping = demoEdiStaging.mappings.find((mapping) => mapping.partnerId === input.partnerId && mapping.mappingType === "unit" && mapping.externalCode.toLocaleLowerCase() === line.uom.toLocaleLowerCase());
+      return {
+        id: crypto.randomUUID(),
+        organizationId: "org-mc",
+        asnHeaderId: "pending",
+        lineNumber: line.lineNumber,
+        purchaseOrderLineId: line.purchaseOrderLineId,
+        externalItemCode: line.externalItemCode,
+        supplierSku: line.supplierSku,
+        itemMappingId: itemMapping?.id ?? null,
+        unitMappingId: unitMapping?.id ?? null,
+        itemType: (itemMapping?.internalType as AsnLine["itemType"]) ?? null,
+        itemId: itemMapping?.internalId ?? null,
+        quantity: line.quantity,
+        uom: line.uom,
+        mappedUom: unitMapping?.internalCode ?? unitMapping?.internalId ?? null,
+        lotCode: line.lotCode,
+        supplierLotNumber: line.supplierLotNumber,
+        expiryDate: line.expiryDate,
+        validationIssues: issues.filter((issue) => issue.lineNumber === line.lineNumber),
+        createdAt: now,
+        updatedAt: now,
+        version: 1
+      };
+    })
+  };
+  asn.lines = (asn.lines ?? []).map((line) => ({ ...line, asnHeaderId: asn.id }));
+  demoEdiStaging = {
+    ...demoEdiStaging,
+    batches: [batch, ...demoEdiStaging.batches],
+    documents: [document, ...demoEdiStaging.documents],
+    asns: [asn, ...demoEdiStaging.asns]
+  };
+  return { batch, document, asn };
+}
+
+function parseDemoAsnCsv(contents: string, fallbackSupplierId: string) {
+  const [headerLine = "", ...lines] = contents.trim().split(/\r?\n/);
+  const headers = headerLine.split(",").map((header) => header.trim().toLocaleLowerCase());
+  const rows = lines.map((line) => Object.fromEntries(line.split(",").map((cell, index) => [headers[index], cell.trim()])));
+  const first = rows[0] ?? {};
+  const purchaseOrder = demoPurchaseOrders.find((detail) => detail.order.poNumber === first.po_number || detail.order.id === first.purchase_order_id);
+  return {
+    asnNumber: first.asn_number || `ASN-${String(Date.now()).slice(-5)}`,
+    supplierId: first.supplier_id || fallbackSupplierId,
+    purchaseOrderId: first.purchase_order_id || purchaseOrder?.order.id || null,
+    poNumber: first.po_number || purchaseOrder?.order.poNumber || null,
+    shipDate: first.ship_date ? new Date(first.ship_date).toISOString() : null,
+    expectedAt: first.expected_at ? new Date(first.expected_at).toISOString() : null,
+    carrier: first.carrier || null,
+    trackingNumber: first.tracking_number || null,
+    packingSlipNumber: first.packing_slip_number || null,
+    lines: rows.map((row, index) => ({
+      lineNumber: Number(row.line_number || index + 1),
+      purchaseOrderLineId: row.purchase_order_line_id || purchaseOrder?.lines[0]?.id || null,
+      externalItemCode: row.external_item_code || row.supplier_sku || "",
+      supplierSku: row.supplier_sku || null,
+      quantity: Number(row.quantity || "0"),
+      uom: row.uom || "",
+      lotCode: row.lot_code || `ASN-LOT-${String(Date.now()).slice(-4)}`,
+      supplierLotNumber: row.supplier_lot_number || null,
+      expiryDate: row.expiry_date ? new Date(row.expiry_date).toISOString() : null
+    }))
+  };
 }
 
 export async function createProduct(
@@ -6166,6 +8656,401 @@ export async function getGeneratedDocumentDownloadUrl(
   }
 }
 
+export async function getComplianceDashboard(token: string): Promise<{ dashboard: ComplianceDashboard }> {
+  try {
+    return await request("/api/compliance/dashboard", token);
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      return { dashboard: demoComplianceDashboard() };
+    }
+    throw error;
+  }
+}
+
+export async function recordComplianceSanitationCheck(
+  token: string,
+  input: {
+    checklistCode?: string | null;
+    equipmentId?: string | null;
+    roomId?: string | null;
+    productFamily?: string | null;
+    productionOrderId?: string | null;
+    status: "pending" | "pass" | "fail";
+    completedAt?: string | null;
+    expiresAt?: string | null;
+    notes?: string | null;
+  }
+): Promise<{ dashboard: ComplianceDashboard }> {
+  try {
+    return await request("/api/compliance/sanitation-checks", token, { method: "POST", body: JSON.stringify(input) });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      const now = new Date().toISOString();
+      demoSanitationChecks = [
+        {
+          id: crypto.randomUUID(),
+          organizationId: "org-mc",
+          checklistCode: input.checklistCode ?? `SAN-${demoSanitationChecks.length + 1}`,
+          equipmentId: input.equipmentId ?? null,
+          equipmentCode: input.equipmentId === "equip-filler-01" ? "FILL-01" : null,
+          roomId: input.roomId ?? null,
+          roomName: input.roomId === "loc-pack" ? "Packing Room" : null,
+          productFamily: input.productFamily ?? null,
+          productionOrderId: input.productionOrderId ?? null,
+          status: input.status,
+          performedBy: token === "test-staff" ? "user-staff" : "user-owner",
+          completedAt: input.completedAt ?? now,
+          expiresAt: input.expiresAt ?? new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          notes: input.notes ?? null,
+          createdAt: now,
+          updatedAt: now,
+          version: 1
+        },
+        ...demoSanitationChecks
+      ];
+      return { dashboard: demoComplianceDashboard() };
+    }
+    throw error;
+  }
+}
+
+export async function recordComplianceTraining(
+  token: string,
+  input: {
+    requirementId: string;
+    userId: string;
+    completedAt?: string | null;
+    expiresAt?: string | null;
+    evidenceDocumentId?: string | null;
+  }
+): Promise<{ dashboard: ComplianceDashboard }> {
+  try {
+    return await request("/api/compliance/training-records", token, { method: "POST", body: JSON.stringify(input) });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      const now = new Date().toISOString();
+      const existing = demoTrainingRecords.find((record) => record.requirementId === input.requirementId && record.userId === input.userId);
+      const record = existing ?? {
+        id: crypto.randomUUID(),
+        organizationId: "org-mc",
+        requirementId: input.requirementId,
+        userId: input.userId,
+        userName: input.userId === "user-staff" ? "Production Staff" : "Owner Admin",
+        status: "current" as const,
+        completedAt: now,
+        expiresAt: new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString(),
+        evidenceDocumentId: null,
+        createdAt: now,
+        updatedAt: now,
+        version: 0
+      };
+      record.status = "current";
+      record.completedAt = input.completedAt ?? now;
+      record.expiresAt = input.expiresAt ?? new Date(Date.now() + 365 * 24 * 60 * 60 * 1000).toISOString();
+      record.evidenceDocumentId = input.evidenceDocumentId ?? record.evidenceDocumentId;
+      record.updatedAt = now;
+      record.version += 1;
+      if (!existing) {
+        demoTrainingRecords = [record, ...demoTrainingRecords];
+      }
+      return { dashboard: demoComplianceDashboard() };
+    }
+    throw error;
+  }
+}
+
+export async function evaluateComplianceGate(
+  token: string,
+  input: {
+    action: string;
+    actorUserId?: string | null;
+    roleCodes?: string[];
+    equipmentId?: string | null;
+    roomId?: string | null;
+    productFamily?: string | null;
+    ingredientClass?: string | null;
+    productionOrderId?: string | null;
+  }
+): Promise<{ gate: ComplianceGate }> {
+  try {
+    return await request("/api/compliance/gate", token, { method: "POST", body: JSON.stringify(input) });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      return { gate: demoEvaluateComplianceGate(input, token) };
+    }
+    throw error;
+  }
+}
+
+export async function generateComplianceAuditPacket(
+  token: string,
+  input: {
+    targetType: "lot" | "batch" | "supplier" | "customer_shipment" | "recall";
+    targetId: string;
+    customerFacing?: boolean;
+    includeInternalData?: boolean;
+  }
+): Promise<{ packet: ComplianceDashboard["auditPackets"][number]; document: GeneratedDocument }> {
+  try {
+    return await request("/api/compliance/audit-packets", token, { method: "POST", body: JSON.stringify(input) });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      const now = new Date().toISOString();
+      const packetNumber = `AUD-${String(demoAuditPackets.length + 1).padStart(4, "0")}`;
+      const packetJson = {
+        packetNumber,
+        targetType: input.targetType,
+        targetId: input.targetId,
+        customerFacing: input.customerFacing ?? false,
+        sections: {
+          coa: demoGeneratedDocuments.filter((document) => document.lotId === input.targetId && document.status === "final"),
+          sds: demoControlledDocuments.filter((document) => document.documentType === "sds"),
+          supplierDocuments: demoSupplierDocuments,
+          lotGenealogy: [{ lotCode: "HVLOT-LM-2026-06", itemName: "Lion's Mane dried harvest" }],
+          deviations: input.customerFacing ? [] : demoQualityDashboard().recentEvents,
+          capa: input.customerFacing ? [] : demoQualityDashboard().capaRecords,
+          equipmentLogs: input.customerFacing ? [] : demoEquipmentEvents,
+          approvals: [],
+          shippingHistory: []
+        },
+        redaction: {
+          internalDataHidden: input.customerFacing === true,
+          hiddenDeviationCount: input.customerFacing ? demoQualityDashboard().recentEvents.length : 0,
+          hiddenCapaCount: input.customerFacing ? demoQualityDashboard().capaRecords.length : 0
+        }
+      };
+      const document: GeneratedDocument = {
+        id: crypto.randomUUID(),
+        organizationId: "org-mc",
+        documentNumber: packetNumber,
+        documentType: "audit_packet",
+        templateId: "doc-template-release-packet-v1",
+        templateName: "Compliance Audit Packet",
+        versionNumber: 1,
+        status: "final",
+        watermark: "FINAL",
+        subjectType: input.targetType,
+        subjectId: input.targetId,
+        lotId: input.targetType === "lot" ? input.targetId : null,
+        lotCode: input.targetType === "lot" ? demoLots.get(input.targetId)?.lotCode ?? null : null,
+        salesOrderId: input.targetType === "customer_shipment" ? input.targetId : null,
+        shipmentId: input.targetType === "customer_shipment" ? input.targetId : null,
+        filePath: `org-mc/audit-packets/${packetNumber}.pdf`,
+        fileName: `${packetNumber}.pdf`,
+        contentType: "application/pdf",
+        renderedDataJson: packetJson,
+        bodyText: JSON.stringify(packetJson, null, 2),
+        customerFacing: input.customerFacing ?? false,
+        generatedBy: "user-owner",
+        generatedAt: now,
+        finalizedBy: "user-owner",
+        finalizedAt: now,
+        voidedBy: null,
+        voidedAt: null,
+        voidReason: null,
+        replacesDocumentId: null,
+        createdAt: now,
+        updatedAt: now,
+        version: 1
+      };
+      const packet = {
+        id: crypto.randomUUID(),
+        organizationId: "org-mc",
+        packetNumber,
+        targetType: input.targetType,
+        targetId: input.targetId,
+        status: "generated" as const,
+        customerFacing: input.customerFacing ?? false,
+        includeInternalData: input.includeInternalData ?? false,
+        generatedDocumentId: document.id,
+        packetJson,
+        generatedBy: "user-owner",
+        generatedAt: now,
+        createdAt: now,
+        updatedAt: now,
+        version: 1
+      };
+      demoAuditPackets = [packet, ...demoAuditPackets];
+      demoGeneratedDocuments = [document, ...demoGeneratedDocuments];
+      writeDemoGeneratedDocuments();
+      return { packet, document };
+    }
+    throw error;
+  }
+}
+
+function demoComplianceDashboard(): ComplianceDashboard {
+  const now = Date.now();
+  const soon = now + 30 * 24 * 60 * 60 * 1000;
+  const currentDocuments = demoControlledDocuments.filter(
+    (document) => document.status === "current" && (!document.expiresAt || new Date(document.expiresAt).getTime() >= now)
+  );
+  const expiringDocuments = demoControlledDocuments.filter(
+    (document) =>
+      document.status === "current" &&
+      document.expiresAt !== null &&
+      new Date(document.expiresAt).getTime() >= now &&
+      new Date(document.expiresAt).getTime() <= soon
+  );
+  const currentTraining = demoTrainingRecords.filter(
+    (record) => record.status === "current" && (!record.expiresAt || new Date(record.expiresAt).getTime() >= now)
+  );
+  const trainingGaps = demoTrainingRequirements.filter(
+    (requirement) =>
+      !demoTrainingRecords.some(
+        (record) =>
+          record.requirementId === requirement.id &&
+          record.status === "current" &&
+          (!record.expiresAt || new Date(record.expiresAt).getTime() >= now)
+      )
+  );
+  const sanitationReady = demoSanitationChecks.filter(
+    (check) => check.status === "pass" && (!check.expiresAt || new Date(check.expiresAt).getTime() >= now)
+  );
+  const allergenReady = demoAllergenControls.filter((control) => control.status === "pass");
+
+  return {
+    documents: demoControlledDocuments,
+    requirements: demoComplianceRequirements,
+    sanitationChecks: demoSanitationChecks,
+    allergenControls: demoAllergenControls,
+    trainingRequirements: demoTrainingRequirements,
+    trainingRecords: demoTrainingRecords,
+    auditPackets: demoAuditPackets,
+    readiness: {
+      controlledDocumentsCurrent: currentDocuments.length,
+      controlledDocumentsTotal: demoControlledDocuments.length,
+      expiringDocuments: expiringDocuments.length,
+      trainingCurrent: currentTraining.length,
+      trainingTotal: demoTrainingRequirements.length,
+      trainingGaps: trainingGaps.length,
+      sanitationReady: sanitationReady.length,
+      sanitationTotal: demoSanitationChecks.length,
+      allergenReady: allergenReady.length,
+      allergenTotal: demoAllergenControls.length
+    },
+    alerts: [
+      ...expiringDocuments.map((document) => ({
+        id: `doc-alert-${document.id}`,
+        severity: "warning" as const,
+        title: `${document.documentType.replaceAll("_", " ")} renewal due`,
+        message: `${document.title} expires ${document.expiresAt?.slice(0, 10) ?? "soon"}.`,
+        sourceType: "controlled_document",
+        sourceId: document.id,
+        dueAt: document.expiresAt
+      })),
+      ...trainingGaps.map((requirement) => ({
+        id: `training-gap-${requirement.id}`,
+        severity: "warning" as const,
+        title: "Training gap",
+        message: `${requirement.title} has at least one missing or expired record.`,
+        sourceType: "training_requirement",
+        sourceId: requirement.id,
+        dueAt: null
+      }))
+    ]
+  };
+}
+
+function demoEvaluateComplianceGate(
+  input: {
+    action: string;
+    actorUserId?: string | null;
+    roleCodes?: string[];
+    equipmentId?: string | null;
+    roomId?: string | null;
+    productFamily?: string | null;
+    ingredientClass?: string | null;
+    productionOrderId?: string | null;
+  },
+  token: string
+): ComplianceGate {
+  const actorUserId = input.actorUserId ?? (token === "test-staff" ? "user-staff" : "user-owner");
+  const now = Date.now();
+  const blockers: ComplianceGate["blockers"] = [];
+  const satisfiedRequirementIds: string[] = [];
+
+  for (const requirement of demoComplianceRequirements.filter((candidate) => candidate.action === input.action && candidate.active)) {
+    const scope = requirement.scopeJson as Record<string, string>;
+    if (scope.equipmentId && scope.equipmentId !== input.equipmentId) continue;
+    if (scope.roomId && scope.roomId !== input.roomId) continue;
+    if (scope.productFamily && scope.productFamily !== input.productFamily) continue;
+    if (scope.ingredientClass && scope.ingredientClass !== input.ingredientClass) continue;
+    if (scope.productionOrderId && scope.productionOrderId !== input.productionOrderId) continue;
+
+    if (requirement.requirementType === "document") {
+      const document = demoControlledDocuments.find(
+        (candidate) =>
+          candidate.documentType === requirement.requiredDocumentType &&
+          candidate.status === "current" &&
+          (!candidate.expiresAt || new Date(candidate.expiresAt).getTime() >= now)
+      );
+      if (!document) {
+        blockers.push({ requirementId: requirement.id, requirementType: "document", label: requirement.label, reason: "missing", message: `${requirement.label} is missing or expired.` });
+        continue;
+      }
+    }
+
+    if (requirement.requirementType === "training") {
+      const record = demoTrainingRecords.find(
+        (candidate) =>
+          candidate.userId === actorUserId &&
+          candidate.requirementId === requirement.trainingRequirementId &&
+          candidate.status === "current" &&
+          (!candidate.expiresAt || new Date(candidate.expiresAt).getTime() >= now)
+      );
+      if (!record) {
+        blockers.push({ requirementId: requirement.id, requirementType: "training", label: requirement.label, reason: "expired", message: `${requirement.label} training is missing or expired.` });
+        continue;
+      }
+    }
+
+    if (requirement.requirementType === "sanitation") {
+      const checks = demoSanitationChecks.filter(
+        (candidate) =>
+          (!input.equipmentId || candidate.equipmentId === input.equipmentId) &&
+          (!input.roomId || candidate.roomId === input.roomId) &&
+          (!input.productionOrderId || candidate.productionOrderId === input.productionOrderId)
+      );
+      const latestCheck = [...checks].sort(
+        (left, right) => new Date(right.completedAt ?? right.createdAt).getTime() - new Date(left.completedAt ?? left.createdAt).getTime()
+      )[0];
+      if (latestCheck?.status === "fail") {
+        blockers.push({ requirementId: requirement.id, requirementType: "sanitation", label: requirement.label, reason: "failed", message: `${requirement.label} sanitation check failed.` });
+        continue;
+      }
+      if (!checks.some((check) => check.status === "pass" && (!check.expiresAt || new Date(check.expiresAt).getTime() >= now))) {
+        blockers.push({ requirementId: requirement.id, requirementType: "sanitation", label: requirement.label, reason: "missing", message: `${requirement.label} sanitation check is missing.` });
+        continue;
+      }
+    }
+
+    if (requirement.requirementType === "allergen_control") {
+      const control = demoAllergenControls.find(
+        (candidate) =>
+          candidate.status === "pass" &&
+          (!input.productFamily || candidate.productFamily === input.productFamily) &&
+          (!input.ingredientClass || candidate.ingredientClass === input.ingredientClass) &&
+          (!input.productionOrderId || candidate.productionOrderId === input.productionOrderId)
+      );
+      if (!control) {
+        blockers.push({ requirementId: requirement.id, requirementType: "allergen_control", label: requirement.label, reason: "missing", message: `${requirement.label} allergen control is missing.` });
+        continue;
+      }
+    }
+
+    satisfiedRequirementIds.push(requirement.id);
+  }
+
+  return {
+    allowed: blockers.length === 0,
+    action: input.action,
+    evaluatedAt: new Date().toISOString(),
+    blockers,
+    satisfiedRequirementIds
+  };
+}
+
 function demoGenerateDocument(
   input: {
     templateId: string;
@@ -6424,6 +9309,368 @@ export async function transitionLotQc(
       return { lotDetail: applyDemoLotTransition(lotId, input.action, input.reason) };
     }
 
+    throw error;
+  }
+}
+
+const demoSamplingPlans: SamplingPlan[] = [
+  {
+    id: "sampling-plan-fg-release",
+    planCode: "LIMS-FG-REL",
+    name: "Finished good release sampling",
+    inspectionType: "finished_good",
+    sampleSize: 3,
+    containerSampleCount: 0,
+    active: true,
+    instructions: "Pull finished bottles for release, retained sample, and stability testing."
+  }
+];
+
+let demoSamples: SampleDetail[] = [
+  {
+    id: "sample-lm-2026-06-release",
+    sampleNumber: "SMP-2026-0001",
+    sourceType: "lot",
+    sourceId: "lot-lm-2026-06",
+    inspectionType: "finished_good",
+    lotId: "lot-lm-2026-06",
+    supplierId: null,
+    status: "awaiting_review",
+    sampleSize: 3,
+    uom: "each",
+    dueAt: "2026-06-19T11:00:00.000Z",
+    collectedAt: "2026-06-19T08:00:00.000Z",
+    notes: "Finished goods release sample.",
+    lot: demoLots.get("lot-lm-2026-06") ?? null,
+    supplier: null,
+    tests: [
+      {
+        id: "sampletest-lm-moisture",
+        sampleId: "sample-lm-2026-06-release",
+        testMethodId: "qctm-moisture",
+        status: "awaiting_review",
+        expectedMin: 4,
+        expectedMax: 12,
+        unit: "%",
+        dueAt: "2026-06-19T11:00:00.000Z",
+        testMethod: demoQcTestMethods.find((method) => method.id === "qctm-moisture") ?? null,
+        results: [
+          {
+            id: "labresult-lm-moisture-pass",
+            sampleId: "sample-lm-2026-06-release",
+            sampleTestId: "sampletest-lm-moisture",
+            testMethodId: "qctm-moisture",
+            retestOfResultId: null,
+            resultNumber: "LAB-2026-0001",
+            valueNumber: 8.2,
+            valueText: null,
+            valueBoolean: null,
+            unit: "%",
+            evaluatedStatus: "pass",
+            reviewStatus: "pending",
+            reason: null,
+            comments: "Moisture within release range.",
+            evidence: [],
+            enteredAt: "2026-06-19T09:00:00.000Z",
+            reviewedAt: null,
+            invalidatedAt: null,
+            qualityEventId: null
+          }
+        ]
+      }
+    ]
+  }
+];
+
+const demoRetainedSamples: RetainedSample[] = [
+  {
+    id: "retain-lm-2026-06",
+    retainedSampleNumber: "RET-2026-0001",
+    lotId: "lot-lm-2026-06",
+    lot: demoLots.get("lot-lm-2026-06") ?? null,
+    storageLocationId: "loc-warehouse",
+    initialQuantity: 12,
+    remainingQuantity: 12,
+    uom: "each",
+    expiresAt: "2028-06-18T00:00:00.000Z",
+    status: "available",
+    pulls: []
+  }
+];
+
+let demoStabilityStudies: StabilityStudy[] = [
+  {
+    id: "stability-lm-2026-06",
+    studyNumber: "STAB-2026-0001",
+    lotId: "lot-lm-2026-06",
+    lot: demoLots.get("lot-lm-2026-06") ?? null,
+    protocolName: "Ambient finished good stability",
+    storageCondition: "25C / ambient humidity",
+    status: "active",
+    startDate: "2026-06-19T00:00:00.000Z",
+    testPanelJson: { testMethodIds: ["qctm-moisture"], intervalsDays: [0, 30, 90, 180], windowDays: 7 },
+    pullPoints: [
+      {
+        id: "stabpull-lm-t30",
+        stabilityStudyId: "stability-lm-2026-06",
+        sampleId: null,
+        sequence: 2,
+        intervalDays: 30,
+        scheduledPullAt: "2026-07-19T00:00:00.000Z",
+        windowStartAt: "2026-07-12T00:00:00.000Z",
+        windowEndAt: "2026-07-26T00:00:00.000Z",
+        status: "scheduled"
+      }
+    ]
+  }
+];
+
+function demoLimsDashboard(): LimsDashboard {
+  const results = demoSamples.flatMap((sample) => sample.tests.flatMap((test) => test.results));
+  return {
+    openSamples: demoSamples.filter((sample) => !["approved", "failed", "invalidated"].includes(sample.status)).length,
+    awaitingReview: demoSamples.filter((sample) => sample.status === "awaiting_review").length,
+    failedResults: results.filter((result) => result.evaluatedStatus === "fail" && !result.invalidatedAt).length,
+    retainedAvailable: demoRetainedSamples.filter((sample) => ["available", "partially_pulled"].includes(sample.status)).length,
+    stabilityDue: demoStabilityStudies.flatMap((study) => study.pullPoints).filter((pull) => pull.status === "due" || pull.status === "missed").length,
+    sampleQueue: demoSamples,
+    retainedSamples: demoRetainedSamples,
+    stabilityStudies: demoStabilityStudies,
+    trends: [
+      {
+        groupKey: "Moisture percentage",
+        resultCount: results.length,
+        failureCount: results.filter((result) => result.evaluatedStatus === "fail").length,
+        passRate: results.length ? (results.length - results.filter((result) => result.evaluatedStatus === "fail").length) / results.length : 1,
+        averageValue: 8.2
+      }
+    ]
+  };
+}
+
+export async function getLimsDashboard(token: string): Promise<{ dashboard: LimsDashboard }> {
+  try {
+    return await request("/api/lims/dashboard", token);
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      return { dashboard: demoLimsDashboard() };
+    }
+    throw error;
+  }
+}
+
+export async function generateLimsSamples(
+  token: string,
+  input: {
+    sourceType: SampleDetail["sourceType"];
+    sourceId: string;
+    inspectionType: SampleDetail["inspectionType"];
+    lotId?: string | null;
+    itemType?: Lot["itemType"] | null;
+    itemId?: string | null;
+    productVariantId?: string | null;
+    riskLevel?: "low" | "medium" | "high" | "critical" | null;
+    batchSize?: number | null;
+    testMethodIds?: string[];
+  }
+): Promise<{ samples: SampleDetail[]; samplingPlan: SamplingPlan | null }> {
+  try {
+    return await request("/api/lims/samples/generate", token, { method: "POST", body: JSON.stringify(input) });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      const lot = input.lotId ? demoLots.get(input.lotId) ?? null : null;
+      const samples = Array.from({ length: demoSamplingPlans[0]?.sampleSize ?? 1 }, (_, index): SampleDetail => ({
+        id: crypto.randomUUID(),
+        sampleNumber: `SMP-DEMO-${String(demoSamples.length + index + 1).padStart(4, "0")}`,
+        sourceType: input.sourceType,
+        sourceId: input.sourceId,
+        inspectionType: input.inspectionType,
+        lotId: input.lotId ?? null,
+        supplierId: null,
+        status: "planned",
+        sampleSize: 1,
+        uom: "each",
+        dueAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+        collectedAt: null,
+        notes: "Generated from demo sampling plan.",
+        lot,
+        supplier: null,
+        tests: [{
+          id: crypto.randomUUID(),
+          sampleId: "pending",
+          testMethodId: input.testMethodIds?.[0] ?? "qctm-moisture",
+          status: "pending",
+          expectedMin: 4,
+          expectedMax: 12,
+          unit: "%",
+          dueAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString(),
+          testMethod: demoQcTestMethods.find((method) => method.id === (input.testMethodIds?.[0] ?? "qctm-moisture")) ?? null,
+          results: []
+        }]
+      }));
+      for (const sample of samples) {
+        sample.tests = sample.tests.map((test) => ({ ...test, sampleId: sample.id }));
+      }
+      demoSamples = [...samples, ...demoSamples];
+      return { samples, samplingPlan: demoSamplingPlans[0] ?? null };
+    }
+    throw error;
+  }
+}
+
+export async function enterLimsResult(
+  token: string,
+  input: {
+    sampleTestId: string;
+    retestOfResultId?: string | null;
+    valueNumber?: number | null;
+    valueText?: string | null;
+    valueBoolean?: boolean | null;
+    unit?: string | null;
+    reason?: string | null;
+    comments?: string | null;
+    evidence?: Array<{ filePath: string; fileName: string; contentType: string }>;
+  }
+): Promise<{ sample: SampleDetail; labResult: LabResult; qualityEvent: QualityEvent | null }> {
+  try {
+    return await request("/api/lims/results", token, { method: "POST", body: JSON.stringify(input) });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      const sample = demoSamples.find((candidate) => candidate.tests.some((test) => test.id === input.sampleTestId));
+      const test = sample?.tests.find((candidate) => candidate.id === input.sampleTestId);
+      if (!sample || !test) throw error;
+      const value = input.valueNumber ?? null;
+      const failed = typeof value === "number" ? value < 4 || value > 12 : input.valueBoolean === false;
+      const labResult: LabResult = {
+        id: crypto.randomUUID(),
+        sampleId: sample.id,
+        sampleTestId: test.id,
+        testMethodId: test.testMethodId,
+        retestOfResultId: input.retestOfResultId ?? null,
+        resultNumber: `LAB-DEMO-${String(test.results.length + 1).padStart(4, "0")}`,
+        valueNumber: value,
+        valueText: input.valueText ?? null,
+        valueBoolean: input.valueBoolean ?? null,
+        unit: input.unit ?? test.unit,
+        evaluatedStatus: failed ? "fail" : "pass",
+        reviewStatus: failed ? "fail" : "pending",
+        reason: input.reason ?? null,
+        comments: input.comments ?? null,
+        evidence: input.evidence ?? [],
+        enteredAt: new Date().toISOString(),
+        reviewedAt: null,
+        invalidatedAt: null,
+        qualityEventId: failed ? `qe-${Date.now()}` : null
+      };
+      test.results = [labResult, ...test.results];
+      test.status = failed ? "failed" : "awaiting_review";
+      sample.status = failed ? "failed" : "awaiting_review";
+      const qualityEvent = failed
+        ? {
+            id: labResult.qualityEventId!,
+            organizationId: "org-mc",
+            eventNumber: `OOS-DEMO-${demoQualityEvents.length + 1}`,
+            eventType: "out_of_spec" as const,
+            severity: "major" as const,
+            status: "open" as const,
+            title: `Out-of-spec lab result for ${sample.sampleNumber}`,
+            description: input.comments ?? "Lab result outside range.",
+            detectedAt: new Date().toISOString(),
+            sourceType: "lab_result",
+            sourceId: labResult.id,
+            openedBy: "user-owner",
+            closedAt: null,
+            closureSummary: null,
+            createdAt: new Date().toISOString(),
+            updatedAt: new Date().toISOString(),
+            version: 1,
+            links: sample.lotId ? [{ id: crypto.randomUUID(), qualityEventId: labResult.qualityEventId!, entityType: "lot" as const, entityId: sample.lotId }] : []
+          }
+        : null;
+      if (qualityEvent) {
+        demoQualityEvents = [qualityEvent, ...demoQualityEvents];
+      }
+      return { sample, labResult, qualityEvent };
+    }
+    throw error;
+  }
+}
+
+export async function reviewLimsResult(token: string, resultId: string, status: "approved" | "rejected"): Promise<{ sample: SampleDetail }> {
+  try {
+    return await request(`/api/lims/results/${resultId}/review`, token, { method: "POST", body: JSON.stringify({ status }) });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      const sample = demoSamples.find((candidate) => candidate.tests.some((test) => test.results.some((result) => result.id === resultId)));
+      const result = sample?.tests.flatMap((test) => test.results).find((candidate) => candidate.id === resultId);
+      if (!sample || !result) throw error;
+      result.reviewStatus = status;
+      result.reviewedAt = new Date().toISOString();
+      sample.status = status === "approved" ? "approved" : "failed";
+      return { sample };
+    }
+    throw error;
+  }
+}
+
+export async function pullRetainedSample(
+  token: string,
+  retainedSampleId: string,
+  input: { quantity: number; purpose: string; disposition?: string | null; createSample?: boolean }
+): Promise<{ retainedSample: RetainedSample; sample: SampleDetail | null }> {
+  try {
+    return await request(`/api/lims/retained-samples/${retainedSampleId}/pulls`, token, { method: "POST", body: JSON.stringify(input) });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      const retained = demoRetainedSamples.find((sample) => sample.id === retainedSampleId);
+      if (!retained) throw error;
+      retained.remainingQuantity = Math.max(0, retained.remainingQuantity - input.quantity);
+      retained.status = retained.remainingQuantity === 0 ? "depleted" : "partially_pulled";
+      retained.pulls = [{ id: crypto.randomUUID(), quantity: input.quantity, uom: retained.uom, purpose: input.purpose, pulledAt: new Date().toISOString(), disposition: input.disposition ?? null }, ...(retained.pulls ?? [])];
+      return { retainedSample: retained, sample: null };
+    }
+    throw error;
+  }
+}
+
+export async function createStabilityStudy(
+  token: string,
+  input: { lotId: string; protocolName: string; storageCondition: string; startDate: string; intervalsDays: number[]; testMethodIds: string[]; windowDays?: number }
+): Promise<{ stabilityStudy: StabilityStudy; pullPoints: StabilityPullPoint[] }> {
+  try {
+    return await request("/api/lims/stability-studies", token, { method: "POST", body: JSON.stringify(input) });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      const study: StabilityStudy = {
+        id: crypto.randomUUID(),
+        studyNumber: `STAB-DEMO-${demoStabilityStudies.length + 1}`,
+        lotId: input.lotId,
+        lot: demoLots.get(input.lotId) ?? null,
+        protocolName: input.protocolName,
+        storageCondition: input.storageCondition,
+        status: "active",
+        startDate: input.startDate,
+        testPanelJson: {
+          testMethodIds: input.testMethodIds,
+          intervalsDays: input.intervalsDays,
+          ...(input.windowDays === undefined ? {} : { windowDays: input.windowDays })
+        },
+        pullPoints: input.intervalsDays.map((days, index) => ({
+          id: crypto.randomUUID(),
+          stabilityStudyId: "pending",
+          sampleId: null,
+          sequence: index + 1,
+          intervalDays: days,
+          scheduledPullAt: new Date(new Date(input.startDate).getTime() + days * 24 * 60 * 60 * 1000).toISOString(),
+          windowStartAt: input.startDate,
+          windowEndAt: input.startDate,
+          status: "scheduled"
+        }))
+      };
+      study.pullPoints = study.pullPoints.map((pull) => ({ ...pull, stabilityStudyId: study.id }));
+      demoStabilityStudies = [study, ...demoStabilityStudies];
+      return { stabilityStudy: study, pullPoints: study.pullPoints };
+    }
     throw error;
   }
 }
@@ -6767,6 +10014,59 @@ let demoReportPresets: ReportPreset[] = [
   }
 ];
 
+let demoGenericInquiries: GenericInquiry[] = [
+  {
+    ...createDefaultInquiry({
+      id: "inq-inventory-exposure",
+      organizationId: "org-mc",
+      ownerUserId: "user-owner",
+      name: "Inventory exposure by location",
+      datasetId: "inventory_lot_balances",
+      now: new Date("2026-06-26T11:00:00.000Z"),
+      visibility: "role_shared",
+      sharedRoleCodes: ["owner_admin", "auditor", "packing_fulfillment"]
+    }),
+    description: "On-hand quantity and held quantity grouped by location.",
+    columns: [
+      { fieldKey: "location_name" },
+      { fieldKey: "on_hand_quantity", aggregate: "sum" },
+      { fieldKey: "held_quantity", aggregate: "sum" }
+    ],
+    groupBy: ["location_name"],
+    calculations: [
+      {
+        id: "on_hand_quantity",
+        label: "On hand",
+        expression: "available_quantity + reserved_quantity + held_quantity",
+        type: "number",
+        aggregate: "sum"
+      }
+    ],
+    chart: { kind: "bar", labelField: "location_name", valueField: "sum_on_hand_quantity" },
+    published: true
+  }
+];
+
+let demoReportSchedules: ReportSchedule[] = [
+  {
+    id: "sched-weekly-inventory",
+    organizationId: "org-mc",
+    inquiryId: "inq-inventory-exposure",
+    name: "Weekly inventory exposure CSV",
+    format: "csv",
+    cadence: "weekly",
+    timezone: "Europe/Lisbon",
+    parameters: {},
+    active: true,
+    nextRunAt: "2026-06-29T06:00:00.000Z",
+    createdBy: "user-owner",
+    createdAt: "2026-06-26T11:15:00.000Z",
+    updatedAt: "2026-06-26T11:15:00.000Z"
+  }
+];
+
+let demoReportExports: ReportExportRecord[] = [];
+
 function demoReportDataSet(): ReportDataSet {
   const traceability = demoTraceabilityDataSet();
   return {
@@ -6868,6 +10168,189 @@ export async function listReports(token: string): Promise<{ reports: ReportDefin
   } catch (error) {
     if (canUseDemoApi(token, error)) {
       return { reports: reportDefinitions };
+    }
+    throw error;
+  }
+}
+
+function demoRoleCodes(token: string): string[] {
+  return token === "test-staff" ? ["packing_fulfillment"] : ["owner_admin"];
+}
+
+function demoEffectivePermissions(token: string) {
+  return resolveEffectivePermissions({
+    roleCodes: demoRoleCodes(token),
+    permissionSets: defaultPermissionSets("org-mc"),
+    rolePermissionSetCodes: defaultRolePermissionSetCodes,
+    userId: currentDemoUserId(token)
+  });
+}
+
+export async function listReportDatasets(token: string): Promise<{ datasets: ReportDatasetDefinition[] }> {
+  try {
+    return await request("/api/reports/datasets", token);
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      return { datasets: reportDatasetCatalog };
+    }
+    throw error;
+  }
+}
+
+export async function listGenericInquiries(token: string): Promise<{ inquiries: GenericInquiry[] }> {
+  try {
+    return await request("/api/reports/inquiries", token);
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      const userId = currentDemoUserId(token);
+      const roles = demoRoleCodes(token);
+      return {
+        inquiries: demoGenericInquiries.filter(
+          (inquiry) =>
+            inquiry.ownerUserId === userId ||
+            roles.includes("owner_admin") ||
+            (inquiry.visibility === "role_shared" && inquiry.sharedRoleCodes.some((roleCode) => roles.includes(roleCode)))
+        )
+      };
+    }
+    throw error;
+  }
+}
+
+export async function saveGenericInquiry(
+  token: string,
+  input: Omit<GenericInquiry, "id" | "organizationId" | "ownerUserId" | "createdAt" | "updatedAt">
+): Promise<{ inquiry: GenericInquiry }> {
+  try {
+    return await request("/api/reports/inquiries", token, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      const now = new Date().toISOString();
+      const inquiry: GenericInquiry = {
+        id: crypto.randomUUID(),
+        organizationId: "org-mc",
+        ownerUserId: currentDemoUserId(token),
+        ...input,
+        chart: input.chart ?? null,
+        createdAt: now,
+        updatedAt: now
+      };
+      executeGenericInquiry({
+        inquiry,
+        data: demoReportDataSet(),
+        effectivePermissions: demoEffectivePermissions(token)
+      });
+      demoGenericInquiries = [inquiry, ...demoGenericInquiries];
+      return { inquiry };
+    }
+    throw error;
+  }
+}
+
+export async function runGenericInquiry(token: string, inquiryId: string): Promise<{ result: GenericInquiryResult }> {
+  try {
+    return await request(`/api/reports/inquiries/${inquiryId}/run`, token, { method: "POST" });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      const inquiry = demoGenericInquiries.find((candidate) => candidate.id === inquiryId);
+      if (!inquiry) {
+        throw error;
+      }
+      return {
+        result: executeGenericInquiry({
+          inquiry,
+          data: demoReportDataSet(),
+          effectivePermissions: demoEffectivePermissions(token)
+        })
+      };
+    }
+    throw error;
+  }
+}
+
+export async function exportGenericInquiry(
+  token: string,
+  inquiryId: string,
+  format: ExportFormat
+): Promise<{ export: ReportExportRecord }> {
+  try {
+    return await request(`/api/reports/inquiries/${inquiryId}/export`, token, {
+      method: "POST",
+      body: JSON.stringify({ format })
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      const inquiry = demoGenericInquiries.find((candidate) => candidate.id === inquiryId);
+      if (!inquiry) {
+        throw error;
+      }
+      const result = executeGenericInquiry({
+        inquiry,
+        data: demoReportDataSet(),
+        effectivePermissions: demoEffectivePermissions(token)
+      });
+      const generated = createReportExport({
+        id: crypto.randomUUID(),
+        organizationId: "org-mc",
+        inquiry,
+        result,
+        format,
+        generatedBy: currentDemoUserId(token)
+      });
+      demoReportExports = [generated.exportRecord, ...demoReportExports];
+      return { export: generated.exportRecord };
+    }
+    throw error;
+  }
+}
+
+export async function listReportSchedules(token: string): Promise<{ schedules: ReportSchedule[] }> {
+  try {
+    return await request("/api/reports/schedules", token);
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      return { schedules: demoReportSchedules };
+    }
+    throw error;
+  }
+}
+
+export async function saveReportSchedule(
+  token: string,
+  input: Omit<ReportSchedule, "id" | "organizationId" | "createdBy" | "createdAt" | "updatedAt">
+): Promise<{ schedule: ReportSchedule }> {
+  try {
+    return await request("/api/reports/schedules", token, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      const now = new Date().toISOString();
+      const schedule: ReportSchedule = {
+        id: crypto.randomUUID(),
+        organizationId: "org-mc",
+        createdBy: currentDemoUserId(token),
+        createdAt: now,
+        updatedAt: now,
+        ...input
+      };
+      demoReportSchedules = [schedule, ...demoReportSchedules];
+      return { schedule };
+    }
+    throw error;
+  }
+}
+
+export async function listReportExports(token: string): Promise<{ exports: ReportExportRecord[] }> {
+  try {
+    return await request("/api/reports/exports", token);
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      return { exports: demoReportExports };
     }
     throw error;
   }
@@ -7622,6 +11105,233 @@ function postDemoStockCount(input: StockCountPostInput): StockCountPostResult {
     movements,
     idempotent: Boolean(existing)
   };
+}
+
+function demoWmsDashboard(): WmsDashboard {
+  const now = new Date().toISOString();
+  const releasedBalance = demoInventoryBalances.find((balance) => balance.itemType === "product_variant" && balance.availableQuantity > 0);
+  const lot = releasedBalance?.lotId ? demoLots.get(releasedBalance.lotId) ?? null : null;
+  const container: WmsDashboard["containers"][number] = {
+    id: "demo-container-pallet",
+    organizationId: "org-mc",
+    containerCode: "LP-DEMO-001",
+    containerType: "pallet",
+    parentContainerId: null,
+    locationId: releasedBalance?.locationId ?? "loc-pack",
+    locationName: releasedBalance?.locationName ?? "Packing Room",
+    zoneId: "zone-ambient",
+    status: "open",
+    tareWeight: 14,
+    weightUom: "kg",
+    createdAt: now,
+    updatedAt: now,
+    version: 1
+  };
+  const containerLine: WmsDashboard["containerLines"][number] = {
+    id: "demo-container-line",
+    organizationId: "org-mc",
+    containerId: container.id,
+    itemType: releasedBalance?.itemType ?? "product_variant",
+    itemId: releasedBalance?.itemId ?? "var-lions-mane-50",
+    itemName: releasedBalance?.itemName ?? lot?.itemName ?? "Lion's Mane Tincture 50 ml",
+    itemSku: releasedBalance?.itemSku ?? lot?.itemSku ?? "LM-TINC-50",
+    lotId: releasedBalance?.lotId ?? lot?.id ?? null,
+    lotCode: releasedBalance?.lotCode ?? lot?.lotCode ?? "LM-2026-06",
+    qcStatus: lot?.qcStatus ?? "released",
+    expiresAt: releasedBalance?.expiresAt ?? lot?.expiresAt ?? null,
+    quantity: Math.min(24, releasedBalance?.availableQuantity ?? 24),
+    uom: releasedBalance?.uom ?? "bottle",
+    receivedAt: lot?.receivedAt ?? now
+  };
+  return {
+    scanModes: ["receive", "put_away", "transfer", "issue", "count", "pick", "pack", "ship", "storage_lookup", "item_lookup", "container_lookup"],
+    containers: [container],
+    containerLines: [containerLine],
+    warehouseZones: [
+      {
+        id: "zone-ambient",
+        organizationId: "org-mc",
+        code: "AMB",
+        name: "Ambient released storage",
+        zoneType: "ambient",
+        temperatureMinC: 16,
+        temperatureMaxC: 24,
+        quarantine: false,
+        createdAt: now,
+        updatedAt: now,
+        version: 1
+      },
+      {
+        id: "zone-quarantine",
+        organizationId: "org-mc",
+        code: "QTN",
+        name: "Quarantine storage",
+        zoneType: "quarantine",
+        temperatureMinC: 16,
+        temperatureMaxC: 24,
+        quarantine: true,
+        createdAt: now,
+        updatedAt: now,
+        version: 1
+      }
+    ],
+    storageRules: [],
+    stagingLocations: [],
+    putawayTasks: [
+      {
+        id: "demo-putaway",
+        organizationId: "org-mc",
+        taskNumber: "PA-DEMO-001",
+        containerId: container.id,
+        containerCode: container.containerCode,
+        itemType: containerLine.itemType,
+        itemId: containerLine.itemId,
+        lotId: containerLine.lotId,
+        lotCode: containerLine.lotCode ?? null,
+        fromLocationId: container.locationId,
+        toLocationId: null,
+        suggestedLocationId: "loc-pack",
+        status: "open",
+        quantity: containerLine.quantity,
+        uom: containerLine.uom,
+        priority: 5,
+        suggestions: [
+          {
+            locationId: "loc-pack",
+            locationName: "Packing Room",
+            zoneCode: "AMB",
+            zoneType: "ambient",
+            availableCapacity: 500,
+            score: 900,
+            ruleId: "demo",
+            reasons: ["Released lot", "Ambient capacity available"]
+          }
+        ],
+        exceptionReason: null,
+        createdAt: now,
+        completedAt: null
+      }
+    ],
+    waveBatches: [
+      {
+        id: "demo-wave",
+        organizationId: "org-mc",
+        waveNumber: "WAVE-DEMO-AM",
+        status: "released",
+        orderIds: ["so-shopify-1001"],
+        stagingLocationId: "stage-1",
+        toteContainerIds: ["demo-tote"],
+        pickStrategy: "fefo",
+        pickPathSummary: "PACK -> STAGE-1, FEFO released lots first",
+        releasedAt: now,
+        completedAt: null,
+        createdAt: now
+      }
+    ],
+    pickTasks: [
+      {
+        id: "demo-pick",
+        organizationId: "org-mc",
+        taskNumber: "PICK-DEMO-001",
+        waveId: "demo-wave",
+        salesOrderLineId: "sol-shopify-1001-1",
+        salesOrderNumber: "SO-1001",
+        toteContainerId: "demo-tote",
+        toteCode: "TOTE-DEMO",
+        itemType: containerLine.itemType,
+        itemId: containerLine.itemId,
+        lotId: containerLine.lotId,
+        lotCode: containerLine.lotCode ?? null,
+        fromLocationId: container.locationId,
+        fromLocationName: container.locationName ?? null,
+        stagingLocationId: "stage-1",
+        sequence: 10,
+        quantity: 2,
+        uom: containerLine.uom,
+        status: "open",
+        strategy: "fefo",
+        suggestionReason: `FEFO by expiry ${containerLine.expiresAt ? new Date(containerLine.expiresAt).toISOString().slice(0, 10) : "n/a"}`,
+        overrideReason: null,
+        completedAt: null
+      }
+    ],
+    packSessions: [
+      {
+        id: "demo-pack",
+        organizationId: "org-mc",
+        sessionNumber: "PACK-DEMO-001",
+        salesOrderId: "so-shopify-1001",
+        shipmentId: null,
+        stagingLocationId: "stage-1",
+        cartonContainerId: "demo-carton",
+        status: "open",
+        verifiedLineCount: 0,
+        exceptionReason: null,
+        startedAt: now,
+        packedAt: null,
+        shippedAt: null
+      }
+    ],
+    pickSuggestion: {
+      strategy: "fefo",
+      requestedQuantity: 2,
+      suggestedQuantity: 2,
+      shortQuantity: 0,
+      suggestions: [
+        {
+          lotId: containerLine.lotId,
+          lotCode: containerLine.lotCode ?? null,
+          locationId: container.locationId,
+          quantity: 2,
+          uom: containerLine.uom,
+          availableQuantity: releasedBalance?.availableQuantity ?? 24,
+          rankingReason: `FEFO by expiry ${containerLine.expiresAt ? new Date(containerLine.expiresAt).toISOString().slice(0, 10) : "n/a"}`
+        }
+      ]
+    }
+  };
+}
+
+function postDemoWmsCommand(input: WmsScanCommandInput): WmsScanCommandResult {
+  const dashboard = demoWmsDashboard();
+  const result: WmsScanCommandResult = {
+    mode: input.mode,
+    code: input.code,
+    message: `${input.mode} demo command accepted`,
+    container: dashboard.containers.find((container) => container.containerCode === input.code) ?? dashboard.containers[0] ?? null,
+    containerLines: dashboard.containerLines,
+    putawayTask: dashboard.putawayTasks[0] ?? null,
+    pickTask: dashboard.pickTasks[0] ?? null,
+    packSession: dashboard.packSessions[0] ?? null,
+    movement: null,
+    countResult: null,
+    lookup: {
+      balances: demoInventoryFilters(),
+      locations: demoLocations,
+      lots: Array.from(demoLots.values())
+    },
+    warnings: input.overrideReason ? ["FEFO/FIFO suggestion override reason was audited."] : []
+  };
+
+  if (input.mode === "count") {
+    const balance = demoInventoryBalances[0];
+    if (balance) {
+      result.countResult = postDemoStockCount({
+        id: crypto.randomUUID(),
+        sessionCode: `WMS-CNT-${String(Date.now()).slice(-4)}`,
+        locationId: balance.locationId,
+        lines: [{
+          itemType: balance.itemType,
+          itemId: balance.itemId,
+          lotId: balance.lotId,
+          countedQuantity: input.quantity ?? balance.availableQuantity,
+          uom: input.uom ?? balance.uom
+        }]
+      });
+    }
+  }
+
+  return result;
 }
 
 function readPendingStockCounts(): StockCountPostInput[] {
@@ -8846,7 +12556,11 @@ export async function listBillOfMaterials(token: string): Promise<{ boms: BillOf
 
 export async function createBillOfMaterials(
   token: string,
-  input: Omit<BillOfMaterials, "id" | "organizationId" | "createdAt" | "updatedAt" | "version">
+  input: Omit<
+    BillOfMaterials,
+    "id" | "organizationId" | "createdAt" | "updatedAt" | "version" | "bomKind" | "activeRevisionLocked" | "alternateGroupCode" | "planningPercent"
+  > &
+    Partial<Pick<BillOfMaterials, "bomKind" | "activeRevisionLocked" | "alternateGroupCode" | "planningPercent">>
 ): Promise<{ bom: BillOfMaterials }> {
   try {
     return await request("/api/production/boms", token, {
@@ -8859,13 +12573,37 @@ export async function createBillOfMaterials(
       const now = new Date().toISOString();
       const bom: BillOfMaterials = {
         ...input,
+        bomKind: input.bomKind ?? "standard",
+        activeRevisionLocked: input.activeRevisionLocked ?? false,
+        alternateGroupCode: input.alternateGroupCode ?? null,
+        planningPercent: input.planningPercent ?? 100,
         id: crypto.randomUUID(),
         organizationId: "org-mc",
         createdAt: now,
         updatedAt: now,
         version: 1
       };
-      demoBoms = [{ bom, lines: [] }, ...demoBoms];
+      demoBoms = [
+        {
+          bom,
+          lines: [],
+          operations: [],
+          alternates: [],
+          readiness: {
+            bomId: bom.id,
+            status: "blocked",
+            checks: [
+              {
+                code: "routing",
+                label: "Routing operations",
+                status: "blocked",
+                message: "At least one operation is required."
+              }
+            ]
+          }
+        },
+        ...demoBoms
+      ];
       return { bom };
     }
 
@@ -8930,6 +12668,7 @@ function refreshDemoBomPlan(detail: BillOfMaterialsDetail): BillOfMaterialsDetai
           moveTimeMinutes: operation.moveTimeMinutes,
           finishTimeMinutes: operation.finishTimeMinutes,
           runtimeBasis: operation.runtimeBasis,
+          backflushLabor: operation.backflushLabor,
           controlPoint: operation.controlPoint
         })),
         materials: operations.flatMap((entry) =>
@@ -8939,9 +12678,20 @@ function refreshDemoBomPlan(detail: BillOfMaterialsDetail): BillOfMaterialsDetai
             quantity: material.quantity,
             uom: material.uom,
             wastePercent: material.wastePercent,
-            issueMethod: material.issueMethod
+            issueMethod: material.issueMethod,
+            componentType: material.componentType,
+            componentId: material.componentId,
+            effectiveFrom: material.effectiveFrom ? new Date(material.effectiveFrom) : null,
+            effectiveTo: material.effectiveTo ? new Date(material.effectiveTo) : null
           }))
         ),
+        outputs: operations.flatMap((entry) =>
+          entry.outputs.map((output) => ({
+            ...output,
+            scrapReasonCode: output.scrapReasonCode
+          }))
+        ),
+        costs: operations.flatMap((entry) => entry.costs),
         equipment: operations.flatMap((entry) =>
           entry.equipment.map(({ requirement }) => ({
             id: requirement.id,
@@ -8999,6 +12749,9 @@ export async function createBomOperation(
               laborRole: demoRoutingMasterData.laborRoles.find((candidate) => candidate.id === operation.laborRoleId) ?? null,
               steps: [],
               materials: [],
+              outputs: [],
+              substitutes: [],
+              costs: [],
               equipment: []
             }
           ].sort((left, right) => left.operation.sequence - right.operation.sequence)
@@ -9081,6 +12834,117 @@ export async function createBomOperationMaterial(
         return refreshDemoBomPlan(nextDetail);
       });
       return { material };
+    }
+
+    throw error;
+  }
+}
+
+export async function createBomOperationOutput(
+  token: string,
+  operationId: string,
+  input: Omit<BomOperationOutput, "id" | "bomOperationId" | "createdAt" | "updatedAt" | "version">
+): Promise<{ output: BomOperationOutput }> {
+  try {
+    return await request(`/api/production/boms/operations/${operationId}/outputs`, token, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      assertDemoAdmin(token, error);
+      const now = new Date().toISOString();
+      const output: BomOperationOutput = {
+        ...input,
+        id: crypto.randomUUID(),
+        bomOperationId: operationId,
+        createdAt: now,
+        updatedAt: now,
+        version: 1
+      };
+      demoBoms = demoBoms.map((detail) =>
+        refreshDemoBomPlan({
+          ...detail,
+          operations: (detail.operations ?? []).map((entry) =>
+            entry.operation.id === operationId ? { ...entry, outputs: [...entry.outputs, output] } : entry
+          )
+        })
+      );
+      return { output };
+    }
+
+    throw error;
+  }
+}
+
+export async function createBomSubstitute(
+  token: string,
+  materialId: string,
+  input: Omit<BomSubstitute, "id" | "bomOperationMaterialId" | "createdAt" | "updatedAt" | "version">
+): Promise<{ substitute: BomSubstitute }> {
+  try {
+    return await request(`/api/production/boms/materials/${materialId}/substitutes`, token, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      assertDemoAdmin(token, error);
+      const now = new Date().toISOString();
+      const substitute: BomSubstitute = {
+        ...input,
+        id: crypto.randomUUID(),
+        bomOperationMaterialId: materialId,
+        createdAt: now,
+        updatedAt: now,
+        version: 1
+      };
+      demoBoms = demoBoms.map((detail) => ({
+        ...detail,
+        operations: (detail.operations ?? []).map((entry) =>
+          entry.materials.some((material) => material.id === materialId)
+            ? { ...entry, substitutes: [...entry.substitutes, { materialId, substitute }] }
+            : entry
+        )
+      }));
+      return { substitute };
+    }
+
+    throw error;
+  }
+}
+
+export async function createBomOperationCost(
+  token: string,
+  operationId: string,
+  input: Omit<BomOperationCost, "id" | "bomOperationId" | "createdAt" | "updatedAt" | "version">
+): Promise<{ cost: BomOperationCost }> {
+  try {
+    return await request(`/api/production/boms/operations/${operationId}/costs`, token, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      assertDemoAdmin(token, error);
+      const now = new Date().toISOString();
+      const cost: BomOperationCost = {
+        ...input,
+        id: crypto.randomUUID(),
+        bomOperationId: operationId,
+        createdAt: now,
+        updatedAt: now,
+        version: 1
+      };
+      demoBoms = demoBoms.map((detail) =>
+        refreshDemoBomPlan({
+          ...detail,
+          operations: (detail.operations ?? []).map((entry) =>
+            entry.operation.id === operationId ? { ...entry, costs: [...entry.costs, cost] } : entry
+          )
+        })
+      );
+      return { cost };
     }
 
     throw error;
@@ -9274,6 +13138,38 @@ export async function getEquipmentDashboard(token: string): Promise<{ dashboard:
   }
 }
 
+export async function createEquipment(
+  token: string,
+  input: {
+    code: string;
+    name: string;
+    workCenterId: string;
+    equipmentType: EquipmentDashboard["equipment"][number]["equipmentType"];
+    status?: EquipmentDashboard["equipment"][number]["status"];
+    serialNumber?: string | null;
+    locationId?: string | null;
+    calibrationRequired?: boolean;
+    calibrationIntervalDays?: number | null;
+    maintenanceIntervalDays?: number | null;
+    nextCalibrationDueAt?: string | null;
+    nextMaintenanceDueAt?: string | null;
+    metadataJson?: Record<string, unknown>;
+  }
+): Promise<{ equipment: EquipmentDashboard["equipment"][number] }> {
+  try {
+    return await request("/api/equipment", token, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      return { equipment: createDemoEquipment(input) };
+    }
+
+    throw error;
+  }
+}
+
 export async function recordEquipmentCalibration(
   token: string,
   input: {
@@ -9324,6 +13220,125 @@ export async function recordEquipmentMaintenance(
   }
 }
 
+export async function recordEquipmentReading(
+  token: string,
+  input: {
+    equipmentId: string;
+    productionOrderId?: string | null;
+    processingBatchId?: string | null;
+    ebrExecutionId?: string | null;
+    ebrStepResultId?: string | null;
+    routingOperationId?: string | null;
+    parameterType: EquipmentDashboard["readings"][number]["parameterType"];
+    parameterName?: string | null;
+    value: number;
+    unit: string;
+    source?: EquipmentDashboard["readings"][number]["source"];
+    recordedAt?: string | null;
+    minValue?: number | null;
+    maxValue?: number | null;
+    warningMinValue?: number | null;
+    warningMaxValue?: number | null;
+    createDeviationOnOutOfLimit?: boolean;
+    createQualityEventOnOutOfLimit?: boolean;
+    rawPayload?: Record<string, unknown>;
+  }
+): Promise<{ dashboard: EquipmentDashboard }> {
+  try {
+    return await request("/api/equipment/readings", token, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      return { dashboard: recordDemoEquipmentReading(input) };
+    }
+
+    throw error;
+  }
+}
+
+export async function completeEquipmentPreUseCheck(
+  token: string,
+  input: {
+    equipmentId: string;
+    templateId: string;
+    routingOperationId?: string | null;
+    productionOrderId?: string | null;
+    ebrExecutionId?: string | null;
+    checkedItems: Array<{ itemId: string; label: string; passed: boolean; required?: boolean }>;
+    completedAt?: string | null;
+    notes?: string | null;
+  }
+): Promise<{ dashboard: EquipmentDashboard }> {
+  try {
+    return await request("/api/equipment/pre-use-checks", token, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      return { dashboard: recordDemoPreUseCheck(input) };
+    }
+
+    throw error;
+  }
+}
+
+export async function recordEquipmentCleaning(
+  token: string,
+  input: {
+    equipmentId: string;
+    cleaningType: EquipmentDashboard["cleaningLogs"][number]["cleaningType"];
+    status?: EquipmentDashboard["cleaningLogs"][number]["status"];
+    cleanedAt?: string | null;
+    expiresAt?: string | null;
+    productionOrderId?: string | null;
+    ebrExecutionId?: string | null;
+    procedureId?: string | null;
+    notes?: string | null;
+  }
+): Promise<{ dashboard: EquipmentDashboard }> {
+  try {
+    return await request("/api/equipment/cleaning-logs", token, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      return { dashboard: recordDemoEquipmentCleaning(input) };
+    }
+
+    throw error;
+  }
+}
+
+export async function recordEquipmentDowntime(
+  token: string,
+  input: {
+    equipmentId: string;
+    reasonCode: string;
+    startedAt: string;
+    endedAt?: string | null;
+    productionOrderId?: string | null;
+    routingOperationId?: string | null;
+    notes?: string | null;
+  }
+): Promise<{ dashboard: EquipmentDashboard }> {
+  try {
+    return await request("/api/equipment/downtime", token, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      return { dashboard: recordDemoEquipmentDowntime(input) };
+    }
+
+    throw error;
+  }
+}
+
 export async function listRoutingTemplates(token: string): Promise<{ routings: RoutingTemplateDetail[] }> {
   try {
     return await request("/api/routings/templates", token);
@@ -9348,6 +13363,18 @@ export async function listProductionOperationRuns(token: string): Promise<{ runs
   }
 }
 
+export async function getProductionControlDashboard(token: string): Promise<{ dashboard: ProductionControlDashboard }> {
+  try {
+    return await request("/api/routings/production-control", token);
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      return { dashboard: buildDemoProductionControlDashboard() };
+    }
+
+    throw error;
+  }
+}
+
 export async function transitionProductionOperationRun(
   token: string,
   operationRunId: string,
@@ -9358,6 +13385,9 @@ export async function transitionProductionOperationRun(
     scrapQuantity?: number | null;
     reworkQuantity?: number | null;
     notes?: string | null;
+    completeControlPointPurposes?: Array<"reporting" | "material_issue" | "backflush" | "qc_check" | "final_completion">;
+    allowNonsequentialReporting?: boolean;
+    supervisorApprovalComment?: string | null;
   }
 ): Promise<{ run: OperationRunDetail }> {
   try {
@@ -9368,6 +13398,90 @@ export async function transitionProductionOperationRun(
   } catch (error) {
     if (canUseDemoApi(token, error)) {
       return { run: transitionDemoOperationRun(operationRunId, input) };
+    }
+
+    throw error;
+  }
+}
+
+export async function recordProductionLabor(
+  token: string,
+  input: {
+    operationRunId: string;
+    startedAt?: string | null;
+    endedAt?: string | null;
+    laborRoleId?: string | null;
+    entryType?: "direct" | "indirect";
+    crewName?: string | null;
+    crewSize?: number;
+    indirectCode?: string | null;
+    downtimeReasonCode?: string | null;
+    notes?: string | null;
+    requiresSupervisorApproval?: boolean;
+  }
+): Promise<{ run: OperationRunDetail }> {
+  try {
+    return await request("/api/routings/operation-runs/labor", token, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      return { run: recordDemoProductionLabor(input) };
+    }
+
+    throw error;
+  }
+}
+
+export async function recordProductionDisposition(
+  token: string,
+  input: {
+    operationRunId: string;
+    dispositionType: "scrap" | "waste" | "rework" | "return_to_stock" | "return_to_vendor";
+    itemType: "product_variant" | "material" | "packaging_component" | "wip" | "harvest";
+    itemId: string;
+    lotId?: string | null;
+    locationId?: string | null;
+    quantity: number;
+    uom: string;
+    reasonCode: string;
+    qualityEventId?: string | null;
+    notes?: string | null;
+    occurredAt?: string | null;
+  }
+): Promise<{ run: OperationRunDetail }> {
+  try {
+    return await request("/api/routings/operation-runs/dispositions", token, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      return { run: recordDemoProductionDisposition(input) };
+    }
+
+    throw error;
+  }
+}
+
+export async function approveProductionException(
+  token: string,
+  input: {
+    subjectType: ProductionControlDashboard["supervisorQueue"][number]["subjectType"];
+    subjectId: string;
+    decision: "approved" | "rejected";
+    comment?: string | null;
+  }
+): Promise<{ dashboard: ProductionControlDashboard }> {
+  try {
+    return await request("/api/routings/operation-runs/supervisor-approvals", token, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      return { dashboard: approveDemoProductionException(input) };
     }
 
     throw error;
@@ -9437,6 +13551,124 @@ export async function exportCostingJson(token: string): Promise<string> {
   } catch (error) {
     if (canUseDemoApi(token, error)) {
       return JSON.stringify(demoCostingDashboard(), null, 2);
+    }
+
+    throw error;
+  }
+}
+
+export async function getFinanceDashboard(token: string): Promise<{ dashboard: FinanceDashboard }> {
+  try {
+    return await request("/api/finance/dashboard", token);
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      return { dashboard: demoFinanceDashboard() };
+    }
+
+    throw error;
+  }
+}
+
+export async function allocateFinanceLandedCost(
+  token: string,
+  input: LandedCostAllocationInput
+): Promise<{ allocation: LandedCostAllocationRecord }> {
+  try {
+    return await request("/api/finance/landed-costs/allocate", token, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      const allocation = demoAllocateLandedCost(input);
+      return { allocation };
+    }
+
+    throw error;
+  }
+}
+
+export async function createFinanceValuationSnapshot(
+  token: string,
+  input: { snapshotNumber?: string; period: string; asOf?: string | null; currency?: string; valuationMethod?: string }
+): Promise<{ snapshot: InventoryValuationSnapshotRecord }> {
+  try {
+    return await request("/api/finance/valuation-snapshots", token, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      const snapshot = demoCreateValuationSnapshot(input);
+      return { snapshot };
+    }
+
+    throw error;
+  }
+}
+
+export async function runFinancePeriodClose(
+  token: string,
+  input: { period: string }
+): Promise<{ run: PeriodCloseRunRecord }> {
+  try {
+    return await request("/api/finance/period-close", token, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      const run = demoPeriodClose(input.period);
+      demoFinancePeriodCloseRuns = [run, ...demoFinancePeriodCloseRuns];
+      return { run };
+    }
+
+    throw error;
+  }
+}
+
+export async function createFinanceExportBatch(
+  token: string,
+  input: {
+    format?: "csv" | "json";
+    mappingTemplateId?: string | null;
+    sourceTypes?: FinanceExportSourceType[];
+    repeatedFromBatchId?: string | null;
+  }
+): Promise<{ batch: FinanceExportBatchRecord }> {
+  try {
+    return await request("/api/finance/export-batches", token, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      const batch = demoCreateFinanceExportBatch(input);
+      return { batch };
+    }
+
+    throw error;
+  }
+}
+
+export async function listFinanceExportMappingTemplates(token: string): Promise<{ templates: ExportMappingTemplate[] }> {
+  try {
+    return await request("/api/finance/export-mapping-templates", token);
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      return { templates: demoFinanceMappingTemplates };
+    }
+
+    throw error;
+  }
+}
+
+export async function listFinanceReconciliations(token: string): Promise<{ reconciliations: ReconciliationResult[] }> {
+  try {
+    return await request("/api/finance/reconciliations", token);
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      return { reconciliations: demoFinanceReconciliations };
     }
 
     throw error;
@@ -9589,6 +13821,36 @@ export async function amendEbrExecution(
       execution.execution.updatedAt = now;
       execution.execution.version += 1;
       return { execution };
+    }
+    throw error;
+  }
+}
+
+export async function listWeighDispenseSessions(token: string): Promise<{ sessions: WeighDispenseSessionDetail[] }> {
+  try {
+    return await request("/api/weigh-dispense/sessions", token);
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      return { sessions: demoWeighDispenseSessions };
+    }
+    throw error;
+  }
+}
+
+export async function completeWeighDispenseLine(
+  token: string,
+  sessionId: string,
+  lineId: string,
+  input: WeighDispenseLineCompletionInput
+): Promise<{ session: WeighDispenseSessionDetail }> {
+  try {
+    return await request(`/api/weigh-dispense/sessions/${sessionId}/lines/${lineId}/complete`, token, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      return { session: completeDemoWeighDispenseLine(sessionId, lineId, input) };
     }
     throw error;
   }
@@ -9756,6 +14018,218 @@ function demoMrpPlan(horizonEnd: string, locationId?: string): MrpPlan {
         suggestedEndAt: "2026-06-27T09:20:00.000Z",
         overloadMinutes: 20,
         reason: "Bottling line is overloaded; move FILL to the next finite-capacity slot."
+      }
+    ],
+    scheduleRun: {
+      id: "schedule:demo",
+      runNumber: "APS-20260626",
+      generatedAt: now,
+      status: "active",
+      horizonStart: "2026-06-26T00:00:00.000Z",
+      horizonEnd: dueAt,
+      operationCount: 2,
+      overloadCount: 1,
+      materialConstraintCount: 1,
+      lateOperationCount: 1,
+      explanation: [
+        "Finite scheduling loads work centers, equipment, and labor roles before selecting operation slots.",
+        "Material shortages, purchase receipts, production supply, and QC lead time can hold production starts.",
+        "Completed operations remain locked; regeneration only changes open work."
+      ]
+    },
+    scheduleOperations: [
+      {
+        id: "run-po-001-stage",
+        productionOrderId: "po-lm-bottle-001",
+        orderNumber: "PO-2026-001",
+        operationCode: "STAGE",
+        description: "Stage materials",
+        workCenterId: "wc-prep",
+        workCenterName: "Prep bench",
+        equipmentId: null,
+        equipmentName: null,
+        laborRoleId: "labor-lead",
+        laborRoleName: "Production lead",
+        sequence: 10,
+        requiredMinutes: 40,
+        scheduledStartAt: "2026-06-26T08:00:00.000Z",
+        scheduledEndAt: "2026-06-26T08:40:00.000Z",
+        finiteStartAt: "2026-06-26T08:00:00.000Z",
+        finiteEndAt: "2026-06-26T08:45:00.000Z",
+        dueAt,
+        dispatchPriority: 2,
+        constraintDate: dueAt,
+        materialConstraintAt: null,
+        constrainedByMaterialUntil: null,
+        minBlockMinutes: 40,
+        changeoverMinutes: 5,
+        blockMinutes: 45,
+        status: "ready",
+        warnings: [{ type: "changeover", severity: "info", message: "5 changeover minute(s) are included for cleaning or setup." }],
+        predecessorOperationId: null
+      },
+      {
+        id: "run-po-001-fill",
+        productionOrderId: "po-lm-bottle-001",
+        orderNumber: "PO-2026-001",
+        operationCode: "FILL",
+        description: "Fill bottles",
+        workCenterId: "wc-bottling",
+        workCenterName: "Bottling line",
+        equipmentId: "equip-filler-01",
+        equipmentName: "Piston filler",
+        laborRoleId: "labor-operator",
+        laborRoleName: "Production operator",
+        sequence: 20,
+        requiredMinutes: 80,
+        scheduledStartAt: "2026-06-26T08:45:00.000Z",
+        scheduledEndAt: "2026-06-26T10:05:00.000Z",
+        finiteStartAt: "2026-06-27T08:00:00.000Z",
+        finiteEndAt: "2026-06-27T09:35:00.000Z",
+        dueAt,
+        dispatchPriority: 2,
+        constraintDate: dueAt,
+        materialConstraintAt: "2026-06-27T08:00:00.000Z",
+        constrainedByMaterialUntil: "2026-06-27T08:00:00.000Z",
+        minBlockMinutes: 80,
+        changeoverMinutes: 15,
+        blockMinutes: 95,
+        status: "pending",
+        warnings: [
+          { type: "material_shortage", severity: "critical", message: "Material availability holds this operation until 2026-06-27." },
+          { type: "changeover", severity: "info", message: "15 changeover minute(s) are included for cleaning or setup." },
+          { type: "capacity_wait", severity: "warning", message: "Finite capacity moves FILL to the next available resource block." }
+        ],
+        predecessorOperationId: "run-po-001-stage"
+      }
+    ],
+    roughCutCapacity: [
+      {
+        id: "work_center:wc-bottling:2026-06-26",
+        resourceType: "work_center",
+        resourceId: "wc-bottling",
+        resourceName: "Bottling line",
+        bucketStart: "2026-06-26T00:00:00.000Z",
+        bucketEnd: "2026-06-26T23:59:59.999Z",
+        plannedMinutes: 95,
+        openMinutes: 0,
+        availableMinutes: 60,
+        utilizationPercent: 158.333333,
+        overloadMinutes: 35,
+        productionOrderIds: ["po-lm-bottle-001"]
+      },
+      {
+        id: "labor_role:labor-operator:2026-06-26",
+        resourceType: "labor_role",
+        resourceId: "labor-operator",
+        resourceName: "Production operator",
+        bucketStart: "2026-06-26T00:00:00.000Z",
+        bucketEnd: "2026-06-26T23:59:59.999Z",
+        plannedMinutes: 95,
+        openMinutes: 0,
+        availableMinutes: 120,
+        utilizationPercent: 79.166667,
+        overloadMinutes: 0,
+        productionOrderIds: ["po-lm-bottle-001"]
+      }
+    ],
+    dispatchBoard: [
+      {
+        id: "run-po-001-stage",
+        productionOrderId: "po-lm-bottle-001",
+        orderNumber: "PO-2026-001",
+        operationCode: "STAGE",
+        description: "Stage materials",
+        workCenterId: "wc-prep",
+        workCenterName: "Prep bench",
+        equipmentId: null,
+        equipmentName: null,
+        laborRoleId: "labor-lead",
+        laborRoleName: "Production lead",
+        sequence: 10,
+        requiredMinutes: 40,
+        scheduledStartAt: "2026-06-26T08:00:00.000Z",
+        scheduledEndAt: "2026-06-26T08:40:00.000Z",
+        finiteStartAt: "2026-06-26T08:00:00.000Z",
+        finiteEndAt: "2026-06-26T08:45:00.000Z",
+        dueAt,
+        dispatchPriority: 2,
+        constraintDate: dueAt,
+        materialConstraintAt: null,
+        constrainedByMaterialUntil: null,
+        minBlockMinutes: 40,
+        changeoverMinutes: 5,
+        blockMinutes: 45,
+        status: "ready",
+        warnings: [{ type: "changeover", severity: "info", message: "5 changeover minute(s) are included for cleaning or setup." }],
+        predecessorOperationId: null,
+        dispatchRank: 1,
+        readyAt: "2026-06-26T08:00:00.000Z",
+        constraintSummary: "5 changeover minute(s) are included for cleaning or setup."
+      },
+      {
+        id: "run-po-001-fill",
+        productionOrderId: "po-lm-bottle-001",
+        orderNumber: "PO-2026-001",
+        operationCode: "FILL",
+        description: "Fill bottles",
+        workCenterId: "wc-bottling",
+        workCenterName: "Bottling line",
+        equipmentId: "equip-filler-01",
+        equipmentName: "Piston filler",
+        laborRoleId: "labor-operator",
+        laborRoleName: "Production operator",
+        sequence: 20,
+        requiredMinutes: 80,
+        scheduledStartAt: "2026-06-26T08:45:00.000Z",
+        scheduledEndAt: "2026-06-26T10:05:00.000Z",
+        finiteStartAt: "2026-06-27T08:00:00.000Z",
+        finiteEndAt: "2026-06-27T09:35:00.000Z",
+        dueAt,
+        dispatchPriority: 2,
+        constraintDate: dueAt,
+        materialConstraintAt: "2026-06-27T08:00:00.000Z",
+        constrainedByMaterialUntil: "2026-06-27T08:00:00.000Z",
+        minBlockMinutes: 80,
+        changeoverMinutes: 15,
+        blockMinutes: 95,
+        status: "pending",
+        warnings: [
+          { type: "material_shortage", severity: "critical", message: "Material availability holds this operation until 2026-06-27." },
+          { type: "changeover", severity: "info", message: "15 changeover minute(s) are included for cleaning or setup." },
+          { type: "capacity_wait", severity: "warning", message: "Finite capacity moves FILL to the next available resource block." }
+        ],
+        predecessorOperationId: "run-po-001-stage",
+        dispatchRank: 2,
+        readyAt: "2026-06-27T08:00:00.000Z",
+        constraintSummary: "Material availability holds this operation until 2026-06-27. Finite capacity moves FILL to the next available resource block."
+      }
+    ],
+    materialConstraints: [
+      {
+        id: "material:production:po-lm-bottle-001:component:bom-line-bottle",
+        productionOrderId: "po-lm-bottle-001",
+        sourceDemandId: "production:po-lm-bottle-001:component:bom-line-bottle",
+        itemType: "packaging_component",
+        itemId: "pkg-amber-50",
+        name: "Amber dropper bottle 50 ml",
+        sku: "PKG-BOTTLE-50",
+        uom: "each",
+        locationId: loc,
+        shortageQuantity: 295.44,
+        constrainedStartAt: "2026-06-27T08:00:00.000Z",
+        explanation: "PO-2026-001 component demand is short 295.44 each; production can start after replenishment and QC release."
+      }
+    ],
+    scheduleAudits: [
+      {
+        id: "audit:schedule:demo",
+        eventType: "schedule.regenerated",
+        subjectId: "schedule:demo",
+        actorUserId: null,
+        occurredAt: now,
+        beforeJson: null,
+        afterJson: { operationCount: 2, overloadCount: 1, materialConstraintCount: 1, lateOperationCount: 1 }
       }
     ],
     capableToPromise: [
@@ -9987,6 +14461,261 @@ function demoMrpPlan(horizonEnd: string, locationId?: string): MrpPlan {
   };
 }
 
+let demoForecastApproved = false;
+let demoPlanningScenarios: PlanningScenario[] = [];
+
+function demoDemandForecasts(): DemandForecast[] {
+  const now = "2026-06-26T11:00:00.000Z";
+  return [{
+    id: "forecast-july-boost",
+    organizationId: "org-mc",
+    name: "July reseller and Shopify lift",
+    scenarioId: "scenario-july-boost",
+    status: demoForecastApproved ? "approved" : "draft",
+    bucket: "week",
+    horizonStart: "2026-07-01T00:00:00.000Z",
+    horizonEnd: "2026-07-31T23:59:59.000Z",
+    notes: "Seasonal summer demand with Lisbon reseller commitment and Shopify promotion.",
+    approvedAt: demoForecastApproved ? "2026-06-26T12:00:00.000Z" : null,
+    approvedBy: demoForecastApproved ? "user-owner" : null,
+    createdBy: "user-owner",
+    createdAt: now,
+    updatedAt: now,
+    version: demoForecastApproved ? 2 : 1,
+    lines: [{
+      id: "forecast-line-july-lm-week1",
+      organizationId: "org-mc",
+      forecastId: "forecast-july-boost",
+      productVariantId: "var-lions-mane-50",
+      sku: "LM-TINC-50",
+      productName: "Lion's Mane Tincture 50 ml",
+      productFamily: "tincture",
+      customerId: null,
+      resellerId: "reseller-lisbon-apothecary",
+      shopifyChannel: "shopify_online",
+      region: "PT-LIS",
+      periodStart: "2026-07-06T00:00:00.000Z",
+      periodEnd: "2026-07-12T23:59:59.000Z",
+      scenarioId: "scenario-july-boost",
+      quantity: 180,
+      uom: "bottle",
+      manualOverrideQuantity: 210,
+      manualOverrideReason: "Lisbon Apothecary committed to a larger July campaign order.",
+      createdAt: now,
+      updatedAt: now,
+      version: 1
+    }],
+    drivers: [
+      {
+        id: "forecast-driver-history-july-lm",
+        organizationId: "org-mc",
+        forecastLineId: "forecast-line-july-lm-week1",
+        driverType: "historical_sales",
+        quantityImpact: 24,
+        confidence: 0.78,
+        reason: "Four-week sales velocity is trending above the June baseline.",
+        createdAt: now
+      },
+      {
+        id: "forecast-driver-promo-july-lm",
+        organizationId: "org-mc",
+        forecastLineId: "forecast-line-july-lm-week1",
+        driverType: "promotion",
+        quantityImpact: 36,
+        confidence: 0.65,
+        reason: "Shopify summer bundle promotion is planned for July week one.",
+        createdAt: now
+      }
+    ],
+    aggregatedLines: [{
+      key: "forecast-july-boost:scenario-july-boost:var-lions-mane-50:all-customers:reseller-lisbon-apothecary:shopify_online:PT-LIS:bottle:2026-07-06T00:00:00.000Z",
+      forecastId: "forecast-july-boost",
+      productVariantId: "var-lions-mane-50",
+      sku: "LM-TINC-50",
+      productName: "Lion's Mane Tincture 50 ml",
+      productFamily: "tincture",
+      customerId: null,
+      resellerId: "reseller-lisbon-apothecary",
+      shopifyChannel: "shopify_online",
+      region: "PT-LIS",
+      periodStart: "2026-07-06T00:00:00.000Z",
+      periodEnd: "2026-07-12T23:59:59.000Z",
+      scenarioId: "scenario-july-boost",
+      quantity: 210,
+      uom: "bottle",
+      manualOverrideReason: "Lisbon Apothecary committed to a larger July campaign order.",
+      driverBreakdown: {
+        historical_sales: 24,
+        open_orders: 0,
+        minimum_stock: 0,
+        promotion: 36,
+        seasonality: 0,
+        reseller_commitment: 0,
+        manual_override: 0
+      }
+    }]
+  }];
+}
+
+function demoScenario(input: {
+  name: string;
+  forecastId?: string | null;
+  horizonStart: string;
+  horizonEnd: string;
+  notes?: string | null;
+}): PlanningScenario {
+  const id = `scenario-${Date.now()}`;
+  const scenario: PlanningScenario = {
+    id,
+    organizationId: "org-mc",
+    name: input.name,
+    status: "review",
+    forecastId: input.forecastId ?? null,
+    horizonStart: input.horizonStart,
+    horizonEnd: input.horizonEnd,
+    notes: input.notes ?? null,
+    createdBy: "user-owner",
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    version: 1,
+    supplyDemandLines: [
+      {
+        id: `${id}-demand-lm`,
+        scenarioId: id,
+        itemType: "product_variant",
+        itemId: "var-lions-mane-50",
+        sku: "LM-TINC-50",
+        name: "Lion's Mane Tincture 50 ml",
+        periodStart: "2026-07-06T00:00:00.000Z",
+        demandQuantity: 478,
+        supplyQuantity: 120,
+        shortageQuantity: 358,
+        uom: "bottle",
+        sourceIds: ["forecast-july-boost", "so-wholesale-2002"]
+      }
+    ],
+    capacityLines: [
+      {
+        id: `${id}-capacity-bottling`,
+        scenarioId: id,
+        resourceType: "work_center",
+        resourceId: "wc-bottling",
+        resourceName: "Bottling line",
+        bucketStart: "2026-06-26T00:00:00.000Z",
+        availableMinutes: 60,
+        scheduledMinutes: 100,
+        overloadMinutes: 40,
+        loadPercent: 166.666667
+      }
+    ],
+    riskItems: [
+      {
+        id: `${id}-risk-shortage`,
+        scenarioId: id,
+        riskType: "shortage",
+        severity: "critical",
+        title: "Lion's Mane Tincture 50 ml shortage",
+        impact: "358 bottle short when forecast demand is included.",
+        quantity: 358,
+        value: null,
+        dueAt: "2026-07-12T23:59:59.000Z",
+        sourceType: "mrp_shortage",
+        sourceId: "product_variant:var-lions-mane-50:bottle:loc-pack",
+        managementHorizon: "now"
+      },
+      {
+        id: `${id}-risk-capacity`,
+        scenarioId: id,
+        riskType: "capacity_overload",
+        severity: "critical",
+        title: "Bottling line overload",
+        impact: "40 minutes over capacity at 166.67% load.",
+        quantity: 40,
+        value: null,
+        dueAt: "2026-06-26T00:00:00.000Z",
+        sourceType: "work_center",
+        sourceId: "wc-bottling",
+        managementHorizon: "now"
+      },
+      {
+        id: `${id}-risk-expiry`,
+        scenarioId: id,
+        riskType: "expiring_stock",
+        severity: "warning",
+        title: "June finished lot expires before late summer",
+        impact: "24 bottle should be prioritized before newer stock.",
+        quantity: 24,
+        value: null,
+        dueAt: "2026-07-10T00:00:00.000Z",
+        sourceType: "lot",
+        sourceId: "lot-lm-2026-06",
+        managementHorizon: "now"
+      },
+      {
+        id: `${id}-risk-spend`,
+        scenarioId: id,
+        riskType: "purchase_spend",
+        severity: "info",
+        title: "Glassworks purchase spend",
+        impact: "420.00 EUR committed or proposed in the scenario.",
+        quantity: null,
+        value: 420,
+        dueAt: "2026-07-03T12:00:00.000Z",
+        sourceType: "purchase_order",
+        sourceId: "purchase-order-packaging-001",
+        managementHorizon: "now"
+      },
+      {
+        id: `${id}-risk-service`,
+        scenarioId: id,
+        riskType: "service_level",
+        severity: "warning",
+        title: "Service-level risk",
+        impact: "Forecast plan needs a production decision to protect reseller commitments.",
+        quantity: 1,
+        value: 0.82,
+        dueAt: input.horizonEnd,
+        sourceType: "ctp",
+        sourceId: id,
+        managementHorizon: "next"
+      }
+    ]
+  };
+  demoPlanningScenarios = [scenario, ...demoPlanningScenarios];
+  return scenario;
+}
+
+function demoSopDashboard(): SopDashboard {
+  const scenarios = demoPlanningScenarios;
+  const risks = scenarios.flatMap((scenario) => scenario.riskItems);
+  return {
+    generatedAt: new Date().toISOString(),
+    forecasts: demoDemandForecasts(),
+    scenarios,
+    comparisons: scenarios.length > 1
+      ? [{
+          baselineScenarioId: scenarios[1]!.id,
+          compareScenarioId: scenarios[0]!.id,
+          shortageDelta: 0,
+          capacityOverloadDelta: 0,
+          expiringStockDelta: 0,
+          purchaseSpendDelta: 0,
+          serviceRiskDelta: 0,
+          summary: `${scenarios[0]!.name} vs ${scenarios[1]!.name}: 0 shortage risks, 0 capacity overloads, 0 expiry risks, 0 purchase spend, 0 service risks`
+        }]
+      : [],
+    managementReview: (["now", "next", "later"] as const).map((horizon) => {
+      const topRisks = risks.filter((risk) => risk.managementHorizon === horizon);
+      return {
+        horizon,
+        decisionCount: topRisks.length,
+        criticalCount: topRisks.filter((risk) => risk.severity === "critical").length,
+        topRisks: topRisks.slice(0, 5)
+      };
+    })
+  };
+}
+
 export async function runMrp(
   token: string,
   input: { horizonEnd: string; locationId?: string; bucket?: "day" | "week" }
@@ -10005,6 +14734,44 @@ export async function runMrp(
       return { plan: demoMrpPlan(input.horizonEnd, input.locationId) };
     }
 
+    throw error;
+  }
+}
+
+export async function regenerateFiniteSchedule(
+  token: string,
+  input: { horizonEnd: string; locationId?: string; bucket?: "day" | "week" }
+): Promise<{ plan: MrpPlan }> {
+  try {
+    return await request("/api/mrp/schedule/regenerate", token, {
+      method: "POST",
+      body: JSON.stringify({
+        horizonEnd: input.horizonEnd,
+        locationIds: input.locationId ? [input.locationId] : undefined,
+        bucket: input.bucket
+      })
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      return { plan: demoMrpPlan(input.horizonEnd, input.locationId) };
+    }
+    throw error;
+  }
+}
+
+export async function resequenceScheduleOperation(
+  token: string,
+  input: { operationId: string; afterOperationId?: string | null; reason?: string; horizonEnd: string }
+): Promise<{ plan: MrpPlan }> {
+  try {
+    return await request("/api/mrp/schedule/resequence", token, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      return { plan: demoMrpPlan(input.horizonEnd) };
+    }
     throw error;
   }
 }
@@ -10061,6 +14828,83 @@ export async function convertMrpSuggestion(
       };
     }
 
+    throw error;
+  }
+}
+
+export async function listDemandForecasts(token: string): Promise<{ forecasts: DemandForecast[] }> {
+  try {
+    return await request("/api/planning/forecasts", token);
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      return { forecasts: demoDemandForecasts() };
+    }
+    throw error;
+  }
+}
+
+export async function approveDemandForecast(
+  token: string,
+  forecastId: string,
+  approvalNote: string
+): Promise<{ forecast: DemandForecast }> {
+  try {
+    return await request(`/api/planning/forecasts/${forecastId}/approve`, token, {
+      method: "POST",
+      body: JSON.stringify({ approvalNote })
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      demoForecastApproved = true;
+      const forecast = demoDemandForecasts().find((candidate) => candidate.id === forecastId) ?? demoDemandForecasts()[0]!;
+      return { forecast };
+    }
+    throw error;
+  }
+}
+
+export async function listPlanningScenarios(token: string): Promise<{ scenarios: PlanningScenario[] }> {
+  try {
+    return await request("/api/planning/scenarios", token);
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      return { scenarios: demoPlanningScenarios };
+    }
+    throw error;
+  }
+}
+
+export async function createPlanningScenario(
+  token: string,
+  input: {
+    name: string;
+    forecastId?: string | null;
+    horizonStart: string;
+    horizonEnd: string;
+    notes?: string | null;
+    serviceLevelTarget?: number;
+  }
+): Promise<{ scenario: PlanningScenario }> {
+  try {
+    return await request("/api/planning/scenarios", token, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      return { scenario: demoScenario(input) };
+    }
+    throw error;
+  }
+}
+
+export async function getSopDashboard(token: string): Promise<{ dashboard: SopDashboard }> {
+  try {
+    return await request("/api/planning/dashboard", token);
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      return { dashboard: demoSopDashboard() };
+    }
     throw error;
   }
 }
@@ -10231,6 +15075,120 @@ function completeDemoEbrStep(
   execution.execution.updatedAt = now;
   execution.execution.version += 1;
   return execution;
+}
+
+function completeDemoWeighDispenseLine(
+  sessionId: string,
+  lineId: string,
+  input: WeighDispenseLineCompletionInput
+): WeighDispenseSessionDetail {
+  const detail = demoWeighDispenseSessions.find((candidate) => candidate.session.id === sessionId);
+  if (!detail) {
+    throw new ApiRequestError("Weigh/dispense session not found", 404);
+  }
+  const line = detail.lines.find((candidate) => candidate.id === lineId);
+  if (!line) {
+    throw new ApiRequestError("Weigh/dispense line not found", 404);
+  }
+  if (line.status === "complete") {
+    throw new ApiRequestError("Weigh/dispense line already completed", 409);
+  }
+  const lot = demoLots.get(input.lotId);
+  if (!lot || lot.itemType !== line.componentType || lot.itemId !== line.componentId) {
+    throw new ApiRequestError("Selected lot does not match the dispense line material.", 409);
+  }
+  if (lot.qcStatus !== "released" || lot.status !== "active") {
+    throw new ApiRequestError("Critical materials cannot be dispensed from unreleased, held, rejected, or expired lots.", 409);
+  }
+  const balance = demoInventoryBalances.find(
+    (candidate) => candidate.lotId === lot.id && candidate.locationId === input.locationId
+  );
+  if (!balance) {
+    throw new ApiRequestError("Dispense quantity is not available at the scanned location.", 409);
+  }
+  const netQuantity = Number((input.netQuantity ?? input.grossQuantity - input.tareQuantity).toFixed(6));
+  const toleranceQuantity = line.toleranceQuantity ?? line.targetQuantity * (line.tolerancePercent / 100);
+  const varianceQuantity = Number((netQuantity - line.targetQuantity).toFixed(6));
+  const withinTolerance =
+    Math.abs(varianceQuantity) <= toleranceQuantity &&
+    (line.minQuantity === null || netQuantity >= line.minQuantity) &&
+    (line.maxQuantity === null || netQuantity <= line.maxQuantity);
+  if (!withinTolerance && !input.overrideReason) {
+    throw new ApiRequestError("Out-of-tolerance dispense requires a permitted override and reason.", 409);
+  }
+  if ((line.isCritical || !withinTolerance) && !input.verifierUserId) {
+    throw new ApiRequestError("Critical or exception dispense requires dual verification.", 400);
+  }
+  if (input.verifierUserId === "user-owner") {
+    throw new ApiRequestError("Dual verification requires a different verifier.", 409);
+  }
+  if (balance.availableQuantity < netQuantity) {
+    throw new ApiRequestError("Dispense quantity is not available at the scanned location.", 409);
+  }
+
+  const now = new Date().toISOString();
+  balance.availableQuantity = Number((balance.availableQuantity - netQuantity).toFixed(6));
+  const movement: StockMovement = {
+    id: crypto.randomUUID(),
+    organizationId: "org-mc",
+    clientTransactionId: input.clientTransactionId,
+    movementNumber: `SM-DEMO-${demoStockMovements.length + 1}`,
+    movementType: "consumption",
+    itemType: line.componentType,
+    itemId: line.componentId,
+    lotId: lot.id,
+    fromLocationId: input.locationId,
+    toLocationId: null,
+    quantity: netQuantity,
+    uom: line.targetUom,
+    occurredAt: now,
+    recordedBy: "user-owner",
+    sourceType: "weigh_dispense_line",
+    sourceId: line.id,
+    reasonCode: input.overrideReason ? "dispense_override" : "dispense_complete",
+    notes: input.overrideReason ?? null,
+    metadataJson: {
+      sessionId,
+      targetQuantity: line.targetQuantity,
+      tareQuantity: input.tareQuantity,
+      grossQuantity: input.grossQuantity
+    }
+  };
+  demoStockMovements = [movement, ...demoStockMovements];
+
+  Object.assign(line, {
+    status: "complete" as const,
+    lotId: lot.id,
+    locationId: input.locationId,
+    containerId: input.containerId ?? input.scannedContainerId ?? null,
+    scaleAdapterId: input.scaleAdapterId ?? "manual",
+    equipmentId: input.equipmentId ?? line.equipmentId,
+    calibrationStatus: "current",
+    tareQuantity: input.tareQuantity,
+    grossQuantity: input.grossQuantity,
+    netQuantity,
+    varianceQuantity,
+    variancePercent: Number(((varianceQuantity / line.targetQuantity) * 100).toFixed(3)),
+    withinTolerance,
+    overrideReason: input.overrideReason ?? null,
+    overrideBy: input.overrideReason ? "user-owner" : null,
+    overrideAt: input.overrideReason ? now : null,
+    verifiedBy: input.verifierUserId ?? null,
+    verifiedAt: input.verifierUserId ? now : null,
+    stockMovementId: movement.id,
+    completedBy: "user-owner",
+    completedAt: now,
+    updatedAt: now,
+    version: line.version + 1
+  });
+  detail.history = detail.lines.filter((candidate) => candidate.status !== "pending");
+  if (detail.lines.every((candidate) => candidate.status === "complete")) {
+    detail.session.status = "completed";
+    detail.session.completedAt = now;
+  }
+  detail.session.updatedAt = now;
+  detail.session.version += 1;
+  return detail;
 }
 
 function demoEbrPacket(executionId: string): EbrPacket | null {
@@ -10565,6 +15523,343 @@ function demoCostingDashboard(): CostingDashboard {
   })) as CostingDashboard;
 }
 
+const demoFinanceMappingTemplates: ExportMappingTemplate[] = [
+  {
+    id: "mapping-xero-finance-bridge",
+    name: "Xero finance bridge CSV",
+    accountingSystem: "Xero",
+    version: 1,
+    sourceType: "purchase",
+    fieldMap: {
+      sourceType: "Source",
+      sourceId: "Source ID",
+      occurredAt: "Date",
+      amount: "Amount",
+      currency: "Currency",
+      documentNumber: "Document Number",
+      accountCode: "Account"
+    },
+    defaults: { taxType: "No Tax" }
+  }
+];
+
+let demoFinanceLandedCosts: LandedCostAllocationRecord[] = [
+  {
+    id: "lc-inbound-june-001",
+    landedCostId: "lc-inbound-june-001",
+    organizationId: "org-mc",
+    landedCostNumber: "LC-2026-06-001",
+    supplierId: "supplier-bio-farms",
+    sourceDocumentNumber: "DHL-IMPORT-4421",
+    receiptIds: ["receipt-alcohol-001"],
+    currency: "EUR",
+    totalAmount: 118,
+    allocations: [
+      {
+        landedCostId: "lc-inbound-june-001",
+        componentId: "freight-001",
+        category: "freight",
+        receiptLineId: "receipt-line-alcohol-001",
+        receiptId: "receipt-alcohol-001",
+        itemType: "material",
+        itemId: "mat-organic-cane-alcohol",
+        lotId: "lot-alcohol-2026-06",
+        allocatedAmount: 92,
+        allocatedUnitCost: 0.31,
+        totalUnitCost: 2.31,
+        quantity: 300,
+        uom: "l",
+        currency: "EUR",
+        allocationBasis: "weight"
+      },
+      {
+        landedCostId: "lc-inbound-june-001",
+        componentId: "duty-001",
+        category: "duty",
+        receiptLineId: "receipt-line-alcohol-001",
+        receiptId: "receipt-alcohol-001",
+        itemType: "material",
+        itemId: "mat-organic-cane-alcohol",
+        lotId: "lot-alcohol-2026-06",
+        allocatedAmount: 26,
+        allocatedUnitCost: 0.09,
+        totalUnitCost: 2.09,
+        quantity: 300,
+        uom: "l",
+        currency: "EUR",
+        allocationBasis: "value"
+      }
+    ],
+    status: "allocated",
+    allocatedAt: "2026-06-20T10:30:00.000Z"
+  }
+];
+
+let demoFinanceSnapshots: InventoryValuationSnapshotRecord[] = [
+  {
+    id: "val-2026-05",
+    organizationId: "org-mc",
+    snapshotNumber: "VAL-2026-05",
+    period: "2026-05",
+    asOf: "2026-05-31T23:59:00.000Z",
+    currency: "EUR",
+    valuationMethod: "standard_plus_landed",
+    lines: [
+      {
+        id: "val-2026-05:product_variant:var-lions-mane-50:lot-lm-2026-06:loc-pack:available",
+        itemType: "product_variant",
+        itemId: "var-lions-mane-50",
+        lotId: "lot-lm-2026-06",
+        locationId: "loc-pack",
+        status: "available",
+        quantity: 48,
+        uom: "bottle",
+        unitCost: 2.96,
+        currency: "EUR",
+        value: 142.08,
+        valuationMethod: "standard_plus_landed",
+        costSource: "batch_actual",
+        metadata: { methodVersion: "2026.06" }
+      }
+    ],
+    totalValue: 142.08,
+    generatedAt: "2026-06-01T08:00:00.000Z",
+    metadata: { generatedBy: "finance_bridge" },
+    status: "final"
+  }
+];
+
+let demoFinancePeriodCloseRuns: PeriodCloseRunRecord[] = [];
+let demoFinanceExportBatches: FinanceExportBatchRecord[] = [];
+
+const demoFinanceReconciliations: ReconciliationResult[] = [
+  {
+    id: "inventory_ledger_to_balances",
+    title: "Inventory ledger to balances",
+    status: "variance",
+    rows: [
+      { recordId: "lot-lm-2026-06", reference: "product_variant:var-lions-mane-50:loc-pack", expected: 120, actual: 118, variance: -2, message: "Ledger and balance differ by -2" }
+    ]
+  },
+  {
+    id: "receipts_to_pos",
+    title: "Receipts to purchase orders",
+    status: "matched",
+    rows: []
+  },
+  {
+    id: "shipments_to_orders",
+    title: "Shipments to sales orders",
+    status: "matched",
+    rows: []
+  }
+];
+
+function demoFinanceDashboard(): FinanceDashboard {
+  const snapshots = [...demoFinanceSnapshots].sort((left, right) => Date.parse(right.asOf) - Date.parse(left.asOf));
+  return {
+    landedCosts: demoFinanceLandedCosts,
+    valuationSnapshots: snapshots,
+    latestValuationComparison: snapshots.length >= 2 ? demoValuationComparison(snapshots[1]!, snapshots[0]!) : null,
+    latestPeriodClose: demoFinancePeriodCloseRuns[0] ?? demoPeriodClose("2026-06"),
+    exportBatches: demoFinanceExportBatches,
+    mappingTemplates: demoFinanceMappingTemplates,
+    reconciliations: demoFinanceReconciliations
+  };
+}
+
+function demoAllocateLandedCost(input: LandedCostAllocationInput): LandedCostAllocationRecord {
+  const landedCostId = crypto.randomUUID();
+  const allocations = input.components.flatMap((component) => {
+    const weights = input.receiptLines.map((line) =>
+      component.allocationBasis === "value"
+        ? line.quantity * line.unitCost
+        : component.allocationBasis === "weight"
+          ? line.weight ?? 0
+          : component.allocationBasis === "manual"
+            ? line.manualBasis ?? 0
+            : line.quantity
+    );
+    const totalWeight = weights.reduce((total, weight) => total + weight, 0) || 1;
+    return input.receiptLines.map((line, index) => {
+      const allocatedAmount = financeRound((component.amount * weights[index]!) / totalWeight);
+      const allocatedUnitCost = financeRound(allocatedAmount / line.quantity);
+      return {
+        landedCostId,
+        componentId: component.id,
+        category: component.category,
+        receiptLineId: line.receiptLineId,
+        receiptId: line.receiptId,
+        itemType: line.itemType,
+        itemId: line.itemId,
+        lotId: line.lotId,
+        allocatedAmount,
+        allocatedUnitCost,
+        totalUnitCost: financeRound(line.unitCost + allocatedUnitCost),
+        quantity: line.quantity,
+        uom: line.uom,
+        currency: component.currency,
+        allocationBasis: component.allocationBasis
+      };
+    });
+  });
+  const allocation: LandedCostAllocationRecord = {
+    id: landedCostId,
+    landedCostId,
+    organizationId: "org-mc",
+    landedCostNumber: input.landedCostNumber ?? `LC-DEMO-${String(demoFinanceLandedCosts.length + 1).padStart(3, "0")}`,
+    supplierId: input.supplierId ?? null,
+    sourceDocumentNumber: input.sourceDocumentNumber ?? null,
+    receiptIds: [...new Set(input.receiptLines.map((line) => line.receiptId))],
+    currency: input.components[0]?.currency ?? "EUR",
+    totalAmount: financeRound(input.components.reduce((total, component) => total + component.amount, 0)),
+    allocations,
+    status: "allocated",
+    allocatedAt: new Date().toISOString()
+  };
+  demoFinanceLandedCosts = [allocation, ...demoFinanceLandedCosts];
+  return allocation;
+}
+
+function demoCreateValuationSnapshot(input: { snapshotNumber?: string; period: string; asOf?: string | null; currency?: string; valuationMethod?: string }): InventoryValuationSnapshotRecord {
+  const availableQuantity = 118 + demoFinanceSnapshots.length * 4;
+  const snapshot: InventoryValuationSnapshotRecord = {
+    id: crypto.randomUUID(),
+    organizationId: "org-mc",
+    snapshotNumber: input.snapshotNumber ?? `VAL-${input.period}-${demoFinanceSnapshots.length + 1}`,
+    period: input.period,
+    asOf: input.asOf ?? new Date().toISOString(),
+    currency: input.currency ?? "EUR",
+    valuationMethod: input.valuationMethod ?? "standard_plus_landed",
+    lines: [
+      {
+        id: `val:${input.period}:product_variant:var-lions-mane-50:loc-pack:available`,
+        itemType: "product_variant",
+        itemId: "var-lions-mane-50",
+        lotId: "lot-lm-2026-06",
+        locationId: "loc-pack",
+        status: "available",
+        quantity: availableQuantity,
+        uom: "bottle",
+        unitCost: 3.08,
+        currency: input.currency ?? "EUR",
+        value: financeRound(availableQuantity * 3.08),
+        valuationMethod: input.valuationMethod ?? "standard_plus_landed",
+        costSource: "batch_actual_plus_landed",
+        metadata: { landedCostIncluded: true }
+      }
+    ],
+    totalValue: financeRound(availableQuantity * 3.08),
+    generatedAt: new Date().toISOString(),
+    metadata: { generatedBy: "finance_bridge" },
+    status: "final"
+  };
+  demoFinanceSnapshots = [snapshot, ...demoFinanceSnapshots];
+  return snapshot;
+}
+
+function demoPeriodClose(period: string): PeriodCloseRunRecord {
+  return {
+    id: crypto.randomUUID(),
+    organizationId: "org-mc",
+    period,
+    status: "blocked",
+    checkedAt: new Date().toISOString(),
+    results: [
+      { code: "unposted_corrections", status: "blocked", severity: "blocker", count: 1, message: "Unposted corrections must be posted or voided before close.", records: [{ id: "sm-draft-001", label: "Draft correction SM-DRAFT-001" }] },
+      { code: "negative_balances", status: "blocked", severity: "blocker", count: 1, message: "Negative inventory balances must be resolved before close.", records: [{ id: "pkg-amber-50", label: "Amber dropper bottle 50 ml" }] },
+      { code: "unreleased_receipts", status: "passed", severity: "info", count: 0, message: "No unreleased receipts found.", records: [] },
+      { code: "open_counts", status: "blocked", severity: "blocker", count: 1, message: "Open stock counts must be closed, cancelled, or posted.", records: [{ id: "count-june", label: "June cycle count" }] },
+      { code: "unresolved_holds", status: "passed", severity: "info", count: 0, message: "No unresolved holds found.", records: [] },
+      { code: "incomplete_production", status: "passed", severity: "info", count: 0, message: "No incomplete production found.", records: [] },
+      { code: "missing_cost_records", status: "blocked", severity: "blocker", count: 1, message: "Items with inventory value need an active cost record.", records: [{ id: "wip-new-extract", label: "New extract WIP" }] }
+    ]
+  };
+}
+
+function demoCreateFinanceExportBatch(input: {
+  format?: "csv" | "json";
+  mappingTemplateId?: string | null;
+  sourceTypes?: FinanceExportSourceType[];
+  repeatedFromBatchId?: string | null;
+}): FinanceExportBatchRecord {
+  const sourceTypes = input.sourceTypes && input.sourceTypes.length > 0
+    ? input.sourceTypes
+    : ["purchase", "receipt", "sale", "shipment", "inventory_adjustment", "production_variance", "landed_cost"] as FinanceExportSourceType[];
+  const rows = sourceTypes.map((sourceType, index) => ({
+    Source: sourceType,
+    "Source ID": `${sourceType}-demo-${index + 1}`,
+    Date: new Date().toISOString(),
+    Amount: sourceType === "shipment" ? 0 : financeRound(42 + index * 17.25),
+    Currency: "EUR",
+    "Document Number": `${sourceType.toUpperCase()}-DEMO-${index + 1}`,
+    Account: sourceType === "sale" ? "4000" : sourceType === "receipt" ? "1400" : "5000",
+    taxType: "No Tax"
+  }));
+  const format = input.format ?? "csv";
+  const content = format === "json" ? JSON.stringify(rows, null, 2) : demoRowsToCsv(rows);
+  const batch: FinanceExportBatchRecord = {
+    id: crypto.randomUUID(),
+    organizationId: "org-mc",
+    batchNumber: `FIN-DEMO-${String(demoFinanceExportBatches.length + 1).padStart(3, "0")}`,
+    version: demoFinanceExportBatches.length + 1,
+    status: "generated",
+    format,
+    generatedAt: new Date().toISOString(),
+    generatedBy: "user-owner",
+    mappingTemplateId: input.mappingTemplateId ?? demoFinanceMappingTemplates[0]!.id,
+    sourceTypes,
+    rowCount: rows.length,
+    rows,
+    content,
+    audit: {
+      checksum: String([...content].reduce((total, character) => total + character.charCodeAt(0), 0)),
+      sourceRecordIds: rows.map((row) => `${row.Source}:${row["Source ID"]}`),
+      repeatedFromBatchId: input.repeatedFromBatchId ?? null
+    }
+  };
+  demoFinanceExportBatches = [batch, ...demoFinanceExportBatches];
+  return batch;
+}
+
+function demoValuationComparison(previous: InventoryValuationSnapshotRecord, current: InventoryValuationSnapshotRecord) {
+  return {
+    previousSnapshotId: previous.id,
+    currentSnapshotId: current.id,
+    previousTotalValue: previous.totalValue,
+    currentTotalValue: current.totalValue,
+    totalValueChange: financeRound(current.totalValue - previous.totalValue),
+    lines: current.lines.map((line) => {
+      const previousLine = previous.lines.find((candidate) => candidate.itemType === line.itemType && candidate.itemId === line.itemId && candidate.locationId === line.locationId);
+      return {
+        key: `${line.itemType}:${line.itemId}:${line.lotId ?? "none"}:${line.locationId}`,
+        itemType: line.itemType,
+        itemId: line.itemId,
+        lotId: line.lotId,
+        locationId: line.locationId,
+        previousQuantity: previousLine?.quantity ?? 0,
+        currentQuantity: line.quantity,
+        quantityChange: financeRound(line.quantity - (previousLine?.quantity ?? 0)),
+        previousValue: previousLine?.value ?? 0,
+        currentValue: line.value,
+        valueChange: financeRound(line.value - (previousLine?.value ?? 0))
+      };
+    })
+  };
+}
+
+function demoRowsToCsv(rows: Array<Record<string, string | number | boolean | null>>): string {
+  const headers = Object.keys(rows[0] ?? {});
+  return [
+    headers.join(","),
+    ...rows.map((row) => headers.map((header) => JSON.stringify(row[header] ?? "")).join(","))
+  ].join("\n");
+}
+
+function financeRound(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
 function demoActualCosts() {
   const completed = demoProcessingBatches.filter((detail) => detail.batch.status === "completed");
   if (completed.length > 0) {
@@ -10766,6 +16061,26 @@ function transitionDemoOperationRun(
   }
 
   const now = input.occurredAt ?? new Date().toISOString();
+  const priorRequired = demoOperationRuns
+    .filter((candidate) => candidate.run.productionOrderId === detail.run.productionOrderId && candidate.run.sequence < detail.run.sequence)
+    .filter((candidate) => candidate.run.status !== "completed" && candidate.controlPoints.some((point) => point.required));
+  if (priorRequired.length > 0 && !detail.run.allowNonsequentialReporting && !input.allowNonsequentialReporting) {
+    throw new ApiRequestError("Required prior operations must be completed before reporting this operation", 409);
+  }
+  if (priorRequired.length > 0) {
+    detail.run.skippedOperationIds = priorRequired.map((candidate) => candidate.run.id);
+    detail.run.supervisorApprovalStatus = "pending";
+    detail.reportingWarnings = priorRequired.map(
+      (candidate) => `Operation ${candidate.run.sequence} has required control points that were skipped by nonsequential reporting.`
+    );
+  }
+  if (input.completeControlPointPurposes) {
+    detail.controlPoints = detail.controlPoints.map((point) =>
+      input.completeControlPointPurposes?.includes(point.purpose)
+        ? { ...point, completedAt: now, completedBy: "user-owner", updatedAt: now, version: point.version + 1 }
+        : point
+    );
+  }
   if ((input.action === "start" || input.action === "resume") && !["ready", "pending", "paused"].includes(detail.run.status)) {
     throw new ApiRequestError("Operation cannot be started from its current status", 409);
   }
@@ -10786,10 +16101,17 @@ function transitionDemoOperationRun(
       operationRunId,
       userId: "user-owner",
       laborRoleId: detail.run.laborRoleId,
+      entryType: "direct",
+      crewName: null,
+      crewSize: 1,
+      indirectCode: null,
       startedAt: now,
       endedAt: null,
       durationMinutes: 0,
-      sourceAction: input.action
+      sourceAction: input.action,
+      approvalStatus: "not_required",
+      approvedBy: null,
+      approvedAt: null
     });
     if (detail.run.equipmentId) {
       detail.machineTimeEntries.push({
@@ -10827,6 +16149,9 @@ function transitionDemoOperationRun(
     detail.run.pausedAt = now;
   }
   if (input.action === "complete") {
+    if (detail.controlPoints.some((point) => point.purpose === "final_completion" && point.required && !point.completedAt)) {
+      throw new ApiRequestError("Required control points prevent this production action", 409);
+    }
     const outputQuantity = input.outputQuantity ?? detail.run.outputQuantity;
     const scrapQuantity = input.scrapQuantity ?? detail.run.scrapQuantity;
     const reworkQuantity = input.reworkQuantity ?? detail.run.reworkQuantity;
@@ -10870,6 +16195,213 @@ function transitionDemoOperationRun(
     demoProductionOrders.find((orderDetail) => orderDetail.order.id === detail.run.productionOrderId)?.order ??
     detail.productionOrder;
   return detail;
+}
+
+function buildDemoProductionControlDashboard(): ProductionControlDashboard {
+  const wipSummaries = demoProductionOrders.map((orderDetail) => {
+    const runs = demoOperationRuns.filter((detail) => detail.run.productionOrderId === orderDetail.order.id);
+    const outputQuantity = runs.reduce((total, detail) => total + detail.run.outputQuantity, 0);
+    const scrapQuantity = runs.reduce((total, detail) => total + detail.run.scrapQuantity, 0);
+    const reworkQuantity = runs.reduce((total, detail) => total + detail.run.reworkQuantity, 0);
+    const plannedOutput = orderDetail.order.plannedQuantity ?? 0;
+    return {
+      productionOrderId: orderDetail.order.id,
+      orderNumber: orderDetail.order.orderNumber,
+      planned: { material: 100, labor: 42, machine: 9, overhead: 6, scrapQuantity: 0, outputQuantity: plannedOutput },
+      actual: { material: 0, labor: runs.reduce((total, detail) => total + detail.laborTimeEntries.reduce((sum, entry) => sum + entry.durationMinutes / 60 * 16, 0), 0), machine: 0, overhead: 0, scrapQuantity, outputQuantity, reworkQuantity },
+      variance: { material: -100, labor: -42, machine: -9, overhead: -6, scrapQuantity, outputQuantity: outputQuantity - plannedOutput, reworkQuantity },
+      yieldPercent: plannedOutput > 0 ? Math.round((outputQuantity / plannedOutput) * 10000) / 100 : null,
+      generatedAt: new Date().toISOString()
+    };
+  });
+  const supervisorQueue = [
+    ...demoOperationRuns
+      .filter((detail) => detail.run.supervisorApprovalStatus === "pending")
+      .map((detail) => ({
+        subjectType: "operation_run" as const,
+        subjectId: detail.run.id,
+        productionOrderId: detail.run.productionOrderId,
+        operationRunId: detail.run.id,
+        label: `Operation ${detail.run.sequence} nonsequential reporting`,
+        reason: detail.reportingWarnings[0] ?? "Operation requires approval.",
+        requestedAt: detail.run.updatedAt
+      })),
+    ...demoOperationRuns.flatMap((detail) =>
+      detail.scrapEvents
+        .filter((event) => event.approvalStatus === "pending")
+        .map((event) => ({
+          subjectType: "scrap_event" as const,
+          subjectId: event.id,
+          productionOrderId: event.productionOrderId,
+          operationRunId: event.operationRunId,
+          label: `${event.dispositionType.replaceAll("_", " ")} ${event.quantity} ${event.uom}`,
+          reason: event.reasonCode,
+          requestedAt: event.occurredAt
+        }))
+    )
+  ];
+  return { runs: demoOperationRuns, wipSummaries, supervisorQueue };
+}
+
+function recordDemoProductionLabor(input: Parameters<typeof recordProductionLabor>[1]): OperationRunDetail {
+  const detail = demoOperationRuns.find((candidate) => candidate.run.id === input.operationRunId);
+  if (!detail) {
+    throw new ApiRequestError("Operation run not found", 404);
+  }
+  const startedAt = input.startedAt ?? new Date().toISOString();
+  const endedAt = input.endedAt ?? null;
+  const durationMinutes = endedAt ? minutesBetween(startedAt, endedAt) : 0;
+  const approvalStatus = input.requiresSupervisorApproval || input.entryType === "indirect" ? "pending" : "not_required";
+  detail.laborTimeEntries.push({
+    id: crypto.randomUUID(),
+    organizationId: "org-mc",
+    operationRunId: detail.run.id,
+    userId: "user-owner",
+    laborRoleId: input.laborRoleId ?? detail.run.laborRoleId,
+    entryType: input.entryType ?? "direct",
+    crewName: input.crewName ?? null,
+    crewSize: input.crewSize ?? 1,
+    indirectCode: input.indirectCode ?? null,
+    startedAt,
+    endedAt,
+    durationMinutes,
+    sourceAction: "start",
+    approvalStatus,
+    approvedBy: null,
+    approvedAt: null
+  });
+  if (input.crewName || (input.crewSize ?? 1) > 1) {
+    detail.crewTimeEntries.push({
+      id: crypto.randomUUID(),
+      organizationId: "org-mc",
+      operationRunId: detail.run.id,
+      crewName: input.crewName ?? "Crew",
+      laborRoleId: input.laborRoleId ?? detail.run.laborRoleId,
+      crewSize: input.crewSize ?? 1,
+      startedAt,
+      endedAt,
+      durationMinutes,
+      approvalStatus,
+      approvedBy: null,
+      approvedAt: null
+    });
+  }
+  if (input.downtimeReasonCode) {
+    detail.downtimeEvents.push({
+      id: crypto.randomUUID(),
+      organizationId: "org-mc",
+      operationRunId: detail.run.id,
+      reasonCode: input.downtimeReasonCode,
+      startedAt,
+      endedAt,
+      durationMinutes,
+      notes: input.notes ?? null,
+      approvalStatus: "pending",
+      approvedBy: null,
+      approvedAt: null
+    });
+  }
+  return detail;
+}
+
+function recordDemoProductionDisposition(input: Parameters<typeof recordProductionDisposition>[1]): OperationRunDetail {
+  const detail = demoOperationRuns.find((candidate) => candidate.run.id === input.operationRunId);
+  if (!detail) {
+    throw new ApiRequestError("Operation run not found", 404);
+  }
+  const occurredAt = input.occurredAt ?? new Date().toISOString();
+  const movement: StockMovement = {
+    id: crypto.randomUUID(),
+    organizationId: "org-mc",
+    clientTransactionId: `demo-prod-${crypto.randomUUID()}`,
+    movementNumber: `SM-DEMO-${String(demoStockMovements.length + 1).padStart(4, "0")}`,
+    movementType: input.dispositionType === "return_to_stock" ? "return" : input.dispositionType === "rework" ? "consumption" : "adjustment",
+    itemType: input.itemType,
+    itemId: input.itemId,
+    lotId: input.lotId ?? null,
+    fromLocationId: input.dispositionType === "return_to_stock" ? null : input.locationId ?? "loc-pack",
+    toLocationId: input.dispositionType === "return_to_stock" ? input.locationId ?? "loc-pack" : null,
+    quantity: input.quantity,
+    uom: input.uom,
+    occurredAt,
+    recordedBy: "user-owner",
+    sourceType: "production_operation_run",
+    sourceId: detail.run.id,
+    reasonCode: input.reasonCode,
+    notes: input.notes ?? null,
+    metadataJson: { productionDisposition: input.dispositionType }
+  };
+  demoStockMovements = [movement, ...demoStockMovements];
+  detail.generatedMovements = [movement, ...detail.generatedMovements];
+  const event = {
+    id: crypto.randomUUID(),
+    organizationId: "org-mc",
+    operationRunId: detail.run.id,
+    productionOrderId: detail.run.productionOrderId,
+    dispositionType: input.dispositionType,
+    itemType: input.itemType,
+    itemId: input.itemId,
+    lotId: input.lotId ?? null,
+    locationId: input.locationId ?? "loc-pack",
+    quantity: input.quantity,
+    uom: input.uom,
+    reasonCode: input.reasonCode,
+    stockMovementId: movement.id,
+    qualityEventId: input.dispositionType === "rework" ? `qe-${crypto.randomUUID()}` : input.qualityEventId ?? null,
+    requiresSupervisorApproval: input.dispositionType === "scrap" || input.dispositionType === "waste" || input.dispositionType === "rework",
+    approvalStatus: input.dispositionType === "scrap" || input.dispositionType === "waste" || input.dispositionType === "rework" ? "pending" as const : "not_required" as const,
+    approvedBy: null,
+    approvedAt: null,
+    notes: input.notes ?? null,
+    occurredAt,
+    recordedBy: "user-owner"
+  };
+  detail.scrapEvents = [event, ...detail.scrapEvents];
+  if (input.dispositionType === "scrap" || input.dispositionType === "waste") {
+    detail.run.scrapQuantity += input.quantity;
+  }
+  if (input.dispositionType === "rework") {
+    detail.run.reworkQuantity += input.quantity;
+    detail.reworkOrders = [
+      {
+        id: crypto.randomUUID(),
+        organizationId: "org-mc",
+        reworkOrderNumber: `RW-DEMO-${detail.reworkOrders.length + 1}`,
+        originalLotId: input.lotId ?? null,
+        qualityEventId: event.qualityEventId,
+        productionOrderId: detail.run.productionOrderId,
+        sourceOperationRunId: detail.run.id,
+        status: "open",
+        quantity: input.quantity,
+        uom: input.uom,
+        reasonCode: input.reasonCode,
+        notes: input.notes ?? null,
+        createdAt: occurredAt,
+        updatedAt: occurredAt,
+        version: 1
+      },
+      ...detail.reworkOrders
+    ];
+  }
+  return detail;
+}
+
+function approveDemoProductionException(input: Parameters<typeof approveProductionException>[1]): ProductionControlDashboard {
+  for (const detail of demoOperationRuns) {
+    if (input.subjectType === "operation_run" && detail.run.id === input.subjectId) {
+      detail.run.supervisorApprovalStatus = input.decision;
+      detail.run.supervisorApprovedBy = "user-owner";
+      detail.run.supervisorApprovedAt = new Date().toISOString();
+    }
+    for (const event of detail.scrapEvents) {
+      if (input.subjectType === "scrap_event" && event.id === input.subjectId) {
+        event.approvalStatus = input.decision;
+        event.approvedBy = "user-owner";
+        event.approvedAt = new Date().toISOString();
+      }
+    }
+  }
+  return buildDemoProductionControlDashboard();
 }
 
 function buildDemoWorkCenterProgress(): WorkCenterProgress[] {
@@ -10957,6 +16489,29 @@ function buildDemoEquipmentDashboard(): EquipmentDashboard {
         });
       }
     }
+    const latestCleaning = [...demoEquipmentCleaningLogs]
+      .filter((log) => log.equipmentId === equipment.id)
+      .sort((left, right) => new Date(right.cleanedAt).getTime() - new Date(left.cleanedAt).getTime())[0];
+    const sanitationStatus =
+      equipment.equipmentType === "scale" || equipment.equipmentType === "printer"
+        ? "not_required"
+        : !latestCleaning
+          ? "unknown"
+          : latestCleaning.status === "clean" && latestCleaning.expiresAt && new Date(latestCleaning.expiresAt).getTime() <= now.getTime()
+            ? "expired"
+            : latestCleaning.status;
+    if (sanitationStatus !== "clean" && sanitationStatus !== "not_required") {
+      rows.push({
+        id: `sanitation-${equipment.id}`,
+        equipmentId: equipment.id,
+        equipmentCode: equipment.code,
+        equipmentName: equipment.name,
+        alertType: "sanitation_not_clean",
+        severity: "warning",
+        dueAt: null,
+        message: `${equipment.code} sanitation is ${sanitationStatus}.`
+      });
+    }
     return rows;
   });
 
@@ -10965,8 +16520,78 @@ function buildDemoEquipmentDashboard(): EquipmentDashboard {
     calibrations: demoEquipmentCalibrations,
     maintenance: demoEquipmentMaintenance,
     events: [...demoEquipmentEvents].sort((left, right) => new Date(right.occurredAt).getTime() - new Date(left.occurredAt).getTime()),
+    readings: [...demoEquipmentReadings].sort((left, right) => new Date(right.recordedAt).getTime() - new Date(left.recordedAt).getTime()),
+    preUseChecks: [...demoEquipmentPreUseChecks].sort((left, right) => new Date(right.completedAt).getTime() - new Date(left.completedAt).getTime()),
+    cleaningLogs: [...demoEquipmentCleaningLogs].sort((left, right) => new Date(right.cleanedAt).getTime() - new Date(left.cleanedAt).getTime()),
     alerts
   };
+}
+
+function createDemoEquipment(input: {
+  code: string;
+  name: string;
+  workCenterId: string;
+  equipmentType: EquipmentDashboard["equipment"][number]["equipmentType"];
+  status?: EquipmentDashboard["equipment"][number]["status"];
+  serialNumber?: string | null;
+  locationId?: string | null;
+  calibrationRequired?: boolean;
+  calibrationIntervalDays?: number | null;
+  maintenanceIntervalDays?: number | null;
+  nextCalibrationDueAt?: string | null;
+  nextMaintenanceDueAt?: string | null;
+  metadataJson?: Record<string, unknown>;
+}): EquipmentDashboard["equipment"][number] {
+  const workCenter = demoRoutingMasterData.workCenters.find((candidate) => candidate.id === input.workCenterId);
+  if (!workCenter) {
+    throw new ApiRequestError("Work center not found", 404);
+  }
+  const duplicate = demoRoutingMasterData.equipment.some(
+    (equipment) => equipment.code.toLocaleLowerCase() === input.code.trim().toLocaleLowerCase()
+  );
+  if (duplicate) {
+    throw new ApiRequestError("Equipment code already exists", 409);
+  }
+  const now = new Date().toISOString();
+  const equipment: EquipmentDashboard["equipment"][number] = {
+    id: crypto.randomUUID(),
+    organizationId: "org-mc",
+    code: input.code.trim(),
+    name: input.name.trim(),
+    workCenterId: input.workCenterId,
+    equipmentType: input.equipmentType,
+    status: input.status ?? "available",
+    serialNumber: input.serialNumber?.trim() || null,
+    locationId: input.locationId ?? workCenter.locationId ?? null,
+    calibrationRequired: input.calibrationRequired ?? input.equipmentType === "scale",
+    calibrationIntervalDays: input.calibrationIntervalDays ?? (input.equipmentType === "scale" ? 30 : null),
+    maintenanceIntervalDays: input.maintenanceIntervalDays ?? null,
+    lastCalibrationAt: null,
+    nextCalibrationDueAt: input.nextCalibrationDueAt ?? null,
+    lastMaintenanceAt: null,
+    nextMaintenanceDueAt: input.nextMaintenanceDueAt ?? null,
+    metadataJson: input.metadataJson ?? {},
+    createdAt: now,
+    updatedAt: now,
+    version: 1
+  };
+  demoRoutingMasterData.equipment = [equipment, ...demoRoutingMasterData.equipment];
+  demoEquipmentEvents = [
+    {
+      id: crypto.randomUUID(),
+      organizationId: "org-mc",
+      equipmentId: equipment.id,
+      eventType: "status_changed",
+      severity: "info",
+      title: `${equipment.code} created`,
+      details: { workCenterId: equipment.workCenterId },
+      actorUserId: "user-owner",
+      occurredAt: now,
+      createdAt: now
+    },
+    ...demoEquipmentEvents
+  ];
+  return equipment;
 }
 
 function recordDemoEquipmentCalibration(input: {
@@ -11080,6 +16705,223 @@ function recordDemoEquipmentMaintenance(input: {
       details: { dueAt },
       actorUserId: "user-owner",
       occurredAt: now,
+      createdAt: now
+    },
+    ...demoEquipmentEvents
+  ];
+  return buildDemoEquipmentDashboard();
+}
+
+function recordDemoEquipmentReading(input: {
+  equipmentId: string;
+  productionOrderId?: string | null;
+  processingBatchId?: string | null;
+  ebrExecutionId?: string | null;
+  ebrStepResultId?: string | null;
+  routingOperationId?: string | null;
+  parameterType: EquipmentDashboard["readings"][number]["parameterType"];
+  parameterName?: string | null;
+  value: number;
+  unit: string;
+  source?: EquipmentDashboard["readings"][number]["source"];
+  recordedAt?: string | null;
+  minValue?: number | null;
+  maxValue?: number | null;
+  warningMinValue?: number | null;
+  warningMaxValue?: number | null;
+  rawPayload?: Record<string, unknown>;
+}): EquipmentDashboard {
+  const equipment = demoRoutingMasterData.equipment.find((candidate) => candidate.id === input.equipmentId);
+  if (!equipment) {
+    throw new ApiRequestError("Equipment not found", 404);
+  }
+  const now = new Date().toISOString();
+  const recordedAt = input.recordedAt ?? now;
+  const outOfLimit =
+    (typeof input.minValue === "number" && input.value < input.minValue) ||
+    (typeof input.maxValue === "number" && input.value > input.maxValue);
+  const warning =
+    !outOfLimit &&
+    ((typeof input.warningMinValue === "number" && input.value < input.warningMinValue) ||
+      (typeof input.warningMaxValue === "number" && input.value > input.warningMaxValue));
+  const reading: EquipmentDashboard["readings"][number] = {
+    id: crypto.randomUUID(),
+    organizationId: "org-mc",
+    equipmentId: input.equipmentId,
+    productionOrderId: input.productionOrderId ?? null,
+    processingBatchId: input.processingBatchId ?? null,
+    ebrExecutionId: input.ebrExecutionId ?? null,
+    ebrStepResultId: input.ebrStepResultId ?? null,
+    routingOperationId: input.routingOperationId ?? null,
+    parameterType: input.parameterType,
+    parameterName: input.parameterName ?? null,
+    value: input.value,
+    unit: input.unit,
+    source: input.source ?? "manual",
+    actorUserId: input.source === "mock_plc" ? null : "user-owner",
+    recordedAt,
+    minValue: input.minValue ?? null,
+    maxValue: input.maxValue ?? null,
+    warningMinValue: input.warningMinValue ?? null,
+    warningMaxValue: input.warningMaxValue ?? null,
+    limitStatus: outOfLimit ? "out_of_limit" : warning ? "warning" : "in_limit",
+    qualityEventId: outOfLimit ? crypto.randomUUID() : null,
+    rawPayload: input.rawPayload ?? {},
+    createdAt: now
+  };
+  demoEquipmentReadings = [reading, ...demoEquipmentReadings];
+  demoEquipmentEvents = [
+    {
+      id: crypto.randomUUID(),
+      organizationId: "org-mc",
+      equipmentId: equipment.id,
+      eventType: reading.source === "mock_plc" ? "mock_plc_reading" : "manual_reading",
+      severity: outOfLimit ? "critical" : warning ? "warning" : "info",
+      title: `${equipment.code} ${reading.parameterName ?? reading.parameterType} reading ${reading.limitStatus.replaceAll("_", " ")}`,
+      details: { readingId: reading.id, value: reading.value, unit: reading.unit, qualityEventId: reading.qualityEventId },
+      actorUserId: "user-owner",
+      occurredAt: recordedAt,
+      createdAt: now
+    },
+    ...demoEquipmentEvents
+  ];
+  return buildDemoEquipmentDashboard();
+}
+
+function recordDemoPreUseCheck(input: {
+  equipmentId: string;
+  templateId: string;
+  routingOperationId?: string | null;
+  productionOrderId?: string | null;
+  ebrExecutionId?: string | null;
+  checkedItems: Array<{ itemId: string; label: string; passed: boolean; required?: boolean }>;
+  completedAt?: string | null;
+  notes?: string | null;
+}): EquipmentDashboard {
+  const equipment = demoRoutingMasterData.equipment.find((candidate) => candidate.id === input.equipmentId);
+  if (!equipment) {
+    throw new ApiRequestError("Equipment not found", 404);
+  }
+  const now = new Date().toISOString();
+  const completedAt = input.completedAt ?? now;
+  demoEquipmentPreUseChecks = [
+    {
+      id: crypto.randomUUID(),
+      organizationId: "org-mc",
+      equipmentId: equipment.id,
+      templateId: input.templateId,
+      routingOperationId: input.routingOperationId ?? null,
+      productionOrderId: input.productionOrderId ?? null,
+      ebrExecutionId: input.ebrExecutionId ?? null,
+      status: "completed",
+      checkedItems: input.checkedItems.map((item) => ({ ...item, required: item.required ?? true })),
+      performedBy: "user-owner",
+      completedAt,
+      notes: input.notes ?? null,
+      createdAt: now
+    },
+    ...demoEquipmentPreUseChecks
+  ];
+  demoEquipmentEvents = [
+    {
+      id: crypto.randomUUID(),
+      organizationId: "org-mc",
+      equipmentId: equipment.id,
+      eventType: "inspection_recorded",
+      severity: "info",
+      title: `${equipment.code} pre-use check completed`,
+      details: { templateId: input.templateId },
+      actorUserId: "user-owner",
+      occurredAt: completedAt,
+      createdAt: now
+    },
+    ...demoEquipmentEvents
+  ];
+  return buildDemoEquipmentDashboard();
+}
+
+function recordDemoEquipmentCleaning(input: {
+  equipmentId: string;
+  cleaningType: EquipmentDashboard["cleaningLogs"][number]["cleaningType"];
+  status?: EquipmentDashboard["cleaningLogs"][number]["status"];
+  cleanedAt?: string | null;
+  expiresAt?: string | null;
+  productionOrderId?: string | null;
+  ebrExecutionId?: string | null;
+  procedureId?: string | null;
+  notes?: string | null;
+}): EquipmentDashboard {
+  const equipment = demoRoutingMasterData.equipment.find((candidate) => candidate.id === input.equipmentId);
+  if (!equipment) {
+    throw new ApiRequestError("Equipment not found", 404);
+  }
+  const now = new Date().toISOString();
+  const cleanedAt = input.cleanedAt ?? now;
+  const status = input.status ?? "clean";
+  demoEquipmentCleaningLogs = [
+    {
+      id: crypto.randomUUID(),
+      organizationId: "org-mc",
+      equipmentId: equipment.id,
+      cleaningType: input.cleaningType,
+      status,
+      cleanedBy: "user-owner",
+      cleanedAt,
+      expiresAt: input.expiresAt ?? null,
+      productionOrderId: input.productionOrderId ?? null,
+      ebrExecutionId: input.ebrExecutionId ?? null,
+      procedureId: input.procedureId ?? null,
+      notes: input.notes ?? null,
+      createdAt: now
+    },
+    ...demoEquipmentCleaningLogs
+  ];
+  demoEquipmentEvents = [
+    {
+      id: crypto.randomUUID(),
+      organizationId: "org-mc",
+      equipmentId: equipment.id,
+      eventType: "cleaning_recorded",
+      severity: status === "clean" ? "info" : "warning",
+      title: `${equipment.code} cleaning ${status}`,
+      details: { cleaningType: input.cleaningType, expiresAt: input.expiresAt ?? null },
+      actorUserId: "user-owner",
+      occurredAt: cleanedAt,
+      createdAt: now
+    },
+    ...demoEquipmentEvents
+  ];
+  return buildDemoEquipmentDashboard();
+}
+
+function recordDemoEquipmentDowntime(input: {
+  equipmentId: string;
+  reasonCode: string;
+  startedAt: string;
+  endedAt?: string | null;
+  productionOrderId?: string | null;
+  routingOperationId?: string | null;
+  notes?: string | null;
+}): EquipmentDashboard {
+  const equipment = demoRoutingMasterData.equipment.find((candidate) => candidate.id === input.equipmentId);
+  if (!equipment) {
+    throw new ApiRequestError("Equipment not found", 404);
+  }
+  const now = new Date().toISOString();
+  equipment.status = input.endedAt ? "available" : "offline";
+  equipment.updatedAt = now;
+  equipment.version += 1;
+  demoEquipmentEvents = [
+    {
+      id: crypto.randomUUID(),
+      organizationId: "org-mc",
+      equipmentId: equipment.id,
+      eventType: "downtime_recorded",
+      severity: input.endedAt ? "warning" : "critical",
+      title: `${equipment.code} downtime ${input.endedAt ? "closed" : "started"}`,
+      details: input,
+      actorUserId: "user-owner",
+      occurredAt: input.endedAt ?? input.startedAt,
       createdAt: now
     },
     ...demoEquipmentEvents
@@ -11414,6 +17256,34 @@ export async function exportMockRecallPacketJson(token: string, runId: string): 
         throw error;
       }
       return { packet: detail.packet };
+    }
+    throw error;
+  }
+}
+
+export async function getWmsDashboard(token: string): Promise<{ dashboard: WmsDashboard }> {
+  try {
+    return await request("/api/wms", token);
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      return { dashboard: demoWmsDashboard() };
+    }
+    throw error;
+  }
+}
+
+export async function executeWmsScanCommand(
+  token: string,
+  input: WmsScanCommandInput
+): Promise<{ result: WmsScanCommandResult }> {
+  try {
+    return await request("/api/wms/scan-commands", token, {
+      method: "POST",
+      body: JSON.stringify(input)
+    });
+  } catch (error) {
+    if (canUseDemoApi(token, error)) {
+      return { result: postDemoWmsCommand(input) };
     }
     throw error;
   }

@@ -7,22 +7,29 @@ import { requireUserContext, createSupabaseJwtVerifier, type AuthVerifier } from
 import { createMemoryDataStore } from "./datastore.js";
 import { healthRoutes } from "./routes/health.js";
 import { adminRoutes } from "./routes/admin.js";
+import { configurationRoutes } from "./routes/configuration.js";
 import { inventoryRoutes } from "./routes/inventory.js";
+import { wmsRoutes } from "./routes/wms.js";
 import { farmRoutes } from "./routes/farm.js";
 import { productionRoutes } from "./routes/production.js";
 import { changeControlRoutes } from "./routes/change-control.js";
 import { costingRoutes } from "./routes/costing.js";
+import { financeRoutes } from "./routes/finance.js";
 import { routingRoutes } from "./routes/routings.js";
 import { equipmentRoutes } from "./routes/equipment.js";
 import { ebrRoutes } from "./routes/ebr.js";
+import { weighDispenseRoutes } from "./routes/weigh-dispense.js";
 import { purchasingRoutes } from "./routes/purchasing.js";
+import { ediRoutes } from "./routes/edi.js";
 import { masterDataRoutes } from "./routes/master-data.js";
 import { importCenterRoutes } from "./routes/import-center.js";
 import { productConfiguratorRoutes } from "./routes/product-configurator.js";
 import { sampleRoutes } from "./routes/sample.js";
 import { lotRoutes } from "./routes/lots.js";
 import { qcRoutes } from "./routes/qc.js";
+import { limsRoutes } from "./routes/lims.js";
 import { documentRoutes } from "./routes/documents.js";
+import { complianceRoutes } from "./routes/compliance.js";
 import { qualityRoutes } from "./routes/quality.js";
 import { traceabilityRoutes } from "./routes/traceability.js";
 import { mockRecallRoutes } from "./routes/mock-recalls.js";
@@ -32,9 +39,12 @@ import { powerSyncRoutes } from "./routes/powersync.js";
 import { shopifyRoutes } from "./routes/shopify.js";
 import { crmRoutes } from "./routes/crm.js";
 import { mrpRoutes } from "./routes/mrp.js";
+import { planningRoutes } from "./routes/planning.js";
 import { wholesaleRoutes } from "./routes/wholesale.js";
 import { feedbackRoutes } from "./routes/feedback.js";
 import { dashboardRoutes } from "./routes/dashboards.js";
+import { workspaceRoutes } from "./routes/workspace.js";
+import { workflowRoutes } from "./routes/workflows.js";
 import { createMemoryWebhookJobQueue, type WebhookJobQueue } from "./jobs.js";
 import { createMemoryCoaStorageService, type CoaStorageService } from "./storage.js";
 import type { ApiDataStore } from "./types.js";
@@ -130,6 +140,10 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     dataStore,
     requireUserContext: userContextGuard
   });
+  await app.register(configurationRoutes, {
+    dataStore,
+    requireUserContext: userContextGuard
+  });
   await app.register(masterDataRoutes, {
     dataStore,
     requireUserContext: userContextGuard
@@ -143,6 +157,10 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     requireUserContext: userContextGuard
   });
   await app.register(inventoryRoutes, {
+    dataStore,
+    requireUserContext: userContextGuard
+  });
+  await app.register(wmsRoutes, {
     dataStore,
     requireUserContext: userContextGuard
   });
@@ -166,6 +184,10 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     dataStore,
     requireUserContext: userContextGuard
   });
+  await app.register(financeRoutes, {
+    dataStore,
+    requireUserContext: userContextGuard
+  });
   await app.register(routingRoutes, {
     dataStore,
     requireUserContext: userContextGuard
@@ -178,7 +200,15 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     dataStore,
     requireUserContext: userContextGuard
   });
+  await app.register(weighDispenseRoutes, {
+    dataStore,
+    requireUserContext: userContextGuard
+  });
   await app.register(purchasingRoutes, {
+    dataStore,
+    requireUserContext: userContextGuard
+  });
+  await app.register(ediRoutes, {
     dataStore,
     requireUserContext: userContextGuard
   });
@@ -195,7 +225,15 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     dataStore,
     requireUserContext: userContextGuard
   });
+  await app.register(limsRoutes, {
+    dataStore,
+    requireUserContext: userContextGuard
+  });
   await app.register(documentRoutes, {
+    dataStore,
+    requireUserContext: userContextGuard
+  });
+  await app.register(complianceRoutes, {
     dataStore,
     requireUserContext: userContextGuard
   });
@@ -233,6 +271,10 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     dataStore,
     requireUserContext: userContextGuard
   });
+  await app.register(planningRoutes, {
+    dataStore,
+    requireUserContext: userContextGuard
+  });
   await app.register(wholesaleRoutes, {
     dataStore,
     requireUserContext: userContextGuard
@@ -242,6 +284,14 @@ export async function buildApp(options: BuildAppOptions): Promise<FastifyInstanc
     requireUserContext: userContextGuard
   });
   await app.register(dashboardRoutes, {
+    dataStore,
+    requireUserContext: userContextGuard
+  });
+  await app.register(workspaceRoutes, {
+    dataStore,
+    requireUserContext: userContextGuard
+  });
+  await app.register(workflowRoutes, {
     dataStore,
     requireUserContext: userContextGuard
   });

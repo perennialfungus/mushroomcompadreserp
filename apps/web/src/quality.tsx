@@ -164,7 +164,7 @@ export function QualityScreen() {
         </article>
       </div>
 
-      <form className="table-panel compact-form-grid" onSubmit={submitEvent}>
+      <form className="table-panel compact-form-grid" onSubmit={submitEvent} data-guide="quality.create-hold">
         <div className="panel-heading">
           <h3>Open event and hold stock</h3>
           <Badge tone="warning"><FileWarning aria-hidden="true" size={16} /> Complaint</Badge>
@@ -187,7 +187,7 @@ export function QualityScreen() {
         </Button>
       </form>
 
-      <div className="table-panel">
+      <div className="table-panel" data-guide="quality.hold-table">
         <div className="panel-heading">
           <h3>Quality event list</h3>
           <Button type="button" size="sm" variant="secondary" onClick={() => void load()}>
@@ -284,7 +284,7 @@ export function QualityScreen() {
                 <td>{formatDateTime(new Date(hold.heldAt))}</td>
                 <td><Badge tone="warning">{hold.status}</Badge></td>
                 <td>
-                  <Button type="button" size="sm" onClick={() => void releaseHold()}>
+                  <Button type="button" size="sm" onClick={() => void releaseHold()} data-guide="quality.approve-release">
                     <Gavel aria-hidden="true" size={16} />
                     Approve release
                   </Button>

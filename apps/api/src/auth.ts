@@ -115,6 +115,11 @@ export function requireUserContext(deps: {
       return;
     }
 
-    request.userContext = toUserContext(loaded);
+    const userContext = toUserContext(loaded);
+    userContext.effectivePermissions = await deps.dataStore.getEffectivePermissionsForUser(
+      userContext.organizationId,
+      userContext.userId
+    );
+    request.userContext = userContext;
   };
 }

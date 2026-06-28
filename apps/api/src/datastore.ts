@@ -8,33 +8,66 @@ import {
   assertEbrExecutionEditable,
   assertProductionInputLotUsable,
   buildEbrPacket,
+  buildAuditPacket,
+  assertBomRevisionEditable,
   buildBomProductionPlan,
   buildBalanceDeltas,
   buildOperationalReport,
+  createDefaultInquiry,
+  createReportExport,
   buildRecallAuditPacket,
   documentWatermark,
+  evaluateComplianceGate as evaluateComplianceGateDomain,
+  allocateLandedCost,
+  buildFinanceExportBatch,
   calculateBatchActualCost,
   calculateCostVarianceReport,
   calculateFormulaCostRollup,
   calculateOperationDurationMinutes,
+  compareBomDefinitions,
+  aggregateForecastLines,
   calculateMrpPlan,
+  compareScenarioRiskSets,
+  forecastLinesToMrpDemands,
   calculateProductionOrderEstimatedCost,
+  calculateProductionWipSummary,
   calculateYieldVariance,
+  compareInventoryValuationSnapshots,
   compareFormulaRevisions as compareFormulaRevisionLines,
+  createInventoryValuationSnapshot,
   dashboardRoleFromRoleCode,
   defaultAlertRules,
   defaultAlertSubscriptions,
+  defaultColorRules,
   defaultDashboardWidgets,
+  defaultFieldPermissionRules,
+  defaultPermissionSets,
+  defaultRolePermissionSetCodes,
+  permissionCatalog,
+  defaultWorkspacePreferences,
   defaultProductTemplates,
   defaultSkuRule,
+  executeGenericInquiry,
+  assertControlPointsSatisfied,
+  evaluateBomReadiness,
   evaluateOperationalAlerts,
+  evaluateOperationReporting,
   evaluateChangeApprovals,
   evaluateLotReleaseGate,
+  assertRetestAllowed,
+  buildStabilityPullSchedule,
+  evaluateLabResult,
   evaluateQcResult,
   generateProductPackage,
+  runConfiguratorRuleTests,
   buildSkuReadiness,
+  generateDocumentNumber,
+  generateProductionInventoryTransaction,
+  requiredAttributeDefinitionsForContext,
   parseImportFileAsync,
+  resolveFieldBehavior,
   scaleFormulaRevision as scaleFormulaRevisionDomain,
+  validateConfiguredRecord as validateConfiguredRecordDomain,
   assertCapaReadyForClosure,
   assertValidHoldDecision,
   assertSupplierApprovalGate,
@@ -47,12 +80,27 @@ import {
   movementRequiresAudit,
   normalizeInventoryMovement,
   qualityEventFromQcFailure,
+  retainedSampleInventory,
+  selectSamplingPlan,
+  stabilityPullStatus,
+  summarizeQcTrends,
+  normalizeReceiptDisposition,
   renderCoa,
   renderReleasePacket,
+  reconcileExpectedActual,
+  reconcileInventoryLedgerToBalances,
+  quantityCountsAgainstPurchaseOrder,
+  receivingLabelStatus,
   requiredChangeReviewerCategories,
   resolveB2BPrice,
+  resolveEffectivePermissions,
   shouldAutoHoldFromQcFailure,
+  visibleReportDatasets,
   isAlertVisible,
+  explainPermission,
+  ensureAccessibleColorRule,
+  filterNavigationForRole,
+  mergeWorkspacePreferences,
   buildRecallReport,
   buildTraceabilityGraph,
   calculateBacklogPriority,
@@ -60,23 +108,54 @@ import {
   codexBuildPromptForBacklog,
   searchTraceability,
   simulateBatchMargins,
+  runPeriodCloseChecks,
+  scoreScenarioRisks,
+  supervisorApprovalRequired,
   transitionChangeRequestStatus,
   transitionGrowBatchStatus as assertGrowBatchTransition,
   transitionProductionOperationRun as transitionOperationRunState,
   transitionPurchaseOrderStatus,
+  assertPreUseCheckComplete,
+  evaluateProcessReading,
   validateEbrStepResult,
+  defaultWorkflowDefinitions,
+  defaultWorkflowGuides,
+  parseAsnCsv,
+  resolveMappedAsnLine,
+  validateAsnMappings,
+  evaluateApprovalEscalations,
+  evaluateBlockedActionEscalations,
+  executeWorkflowTransition,
+  explodeBom,
+  resolveWorkflow,
+  workflowDefinitionToDiagram,
+  workflowAvailabilityForRoles,
+  buildWeighDispenseTargets,
+  completeWeighDispenseLine as completeWeighDispenseLineDomain,
   validateManualWeighCapture,
   validateInventoryMovement,
+  assertContainerLinesTraceable,
+  assertPutAwayAllowed,
+  normalizeWmsScanCommand,
+  suggestPick,
+  suggestPutAway,
   type EbrStepDefinition,
+  type EquipmentPreUseCheckTemplate,
+  type AttributeSetDefinition,
   type BomOperationDefinition,
   type BomOperationEquipmentDefinition,
+  type BomOperationCostDefinition,
+  type BomOperationOutputDefinition,
   type BomOperationMaterialDefinition,
+  type BomComponentReplacementDefinition,
   type FormulaRevision as DomainFormulaRevision,
   type ShopifyAvailableQuantity,
   type InventoryBalance,
+  type InventoryItemType,
   type InventoryMovementType,
   type ProductConfigurationInput,
   type ProductTemplate,
+  type ConfiguratorRuleTestResult,
   type MarginPricePoint,
   type MarginSimulation,
   type ProductionCostUsage,
@@ -87,12 +166,25 @@ import {
   type MrpSupply,
   type PlanningCapacityCalendar,
   type PlanningLeadTime,
+  type PlanningScenario,
   type PlanningScenarioSnapshot,
+  type WeighDispenseSourceLine,
+  type ParsedAsnLine,
+  type ScenarioRiskItem,
   type ProductionOperationPlan,
   type OperationalDashboardRole,
+  type WorkspaceNavigationItem,
   type ReportFilters,
   type ReportId,
-  type ReportPreset
+  type ReportPreset,
+  type GenericInquiry,
+  type ReportSchedule,
+  type ReportExportRecord,
+  type ExportFormat,
+  type ExportMappingTemplate,
+  type FinanceExportRecord,
+  type InventoryValuationCost,
+  type ReconciliationResult
 } from "@mushroom-compadres/domain";
 import { mapShopifyOrder } from "@mushroom-compadres/shopify";
 import type {
@@ -106,10 +198,16 @@ import type {
   AllocationInput,
   ApiDataStore,
   AppUserRecord,
+  ConfiguratorRuleInput,
   AlertEventRecord,
   AlertRuleRecord,
   AlertSubscriptionRecord,
   AlertSubscriptionUpdateInput,
+  AccessPreview,
+  AccessScopeRule,
+  AllergenControlRecord,
+  AuditPacketInputRecord,
+  AuditPacketRecord,
   AuditEventInsert,
   AuditEventRecord,
   BatchCompletionInput,
@@ -132,11 +230,18 @@ import type {
   BomOperationEquipmentInput,
   BomOperationEquipmentRecord,
   BomOperationInput,
+  BomOperationCostInput,
+  BomOperationCostRecord,
   BomOperationMaterialInput,
   BomOperationMaterialRecord,
+  BomOperationOutputInput,
+  BomOperationOutputRecord,
   BomOperationRecord,
   BomOperationStepInput,
   BomOperationStepRecord,
+  BomSubstituteInput,
+  BomSubstituteRecord,
+  BomAlternateRecord,
   CapaActionRecord,
   CapaActionUpdateInput,
   CapaClosureInputRecord,
@@ -152,29 +257,56 @@ import type {
   ChangeRequestRecord,
   CoaAttachmentCreateInput,
   CoaAttachmentRecord,
+  ColorRuleInput,
+  ColorRuleRecord,
+  ComplianceDashboardRecord,
+  ComplianceGateEvaluationInput,
+  ComplianceRequirementRecord,
   CostingDashboardRecord,
   CostingSettingsRecord,
   CostRollupRecord,
   CostVarianceRecord,
+  ControlledDocumentRecord,
   CustomerRecord,
+  CustomerDocumentPortalPreviewRecord,
+  CustomerPortalAccessRecord,
   DashboardWidgetRecord,
   DashboardWidgetUpdateInput,
+  DemandForecastInput,
+  DemandForecastRecord,
+  FinanceDashboardRecord,
+  FinanceExportBatchInput,
+  FinanceExportBatchRecord,
   DocumentApprovalInput,
   DocumentApprovalRecord,
   DocumentTemplateInput,
   DocumentTemplateRecord,
+  DocumentNumberPreviewInput,
+  DocumentTypeInput,
+  DocumentTypeRecord,
   CrmInteractionInput,
   CrmInteractionRecord,
   DryingRunInput,
   DryingRunRecord,
   EquipmentCalibrationInput,
   EquipmentCalibrationRecord,
+  EquipmentCleaningLogInput,
+  EquipmentCleaningLogRecord,
   EquipmentDashboardRecord,
+  EquipmentDowntimeInput,
   EquipmentEventRecord,
   EquipmentInput,
   EquipmentMaintenanceInput,
   EquipmentMaintenanceRecord,
+  EquipmentPreUseCheckInput,
+  EquipmentPreUseCheckRecord,
+  EquipmentReadingInput,
+  EquipmentReadingRecord,
   EquipmentRecord,
+  EdiDocumentBatchRecord,
+  EdiDocumentRecord,
+  EdiPartnerInput,
+  EdiPartnerRecord,
   EbrExecutionDetailRecord,
   EbrExecutionInput,
   EbrExecutionRecord,
@@ -191,6 +323,9 @@ import type {
   FeedbackItemRecord,
   FeedbackListFilters,
   FeedbackUpdateInput,
+  FieldBehaviorRuleInput,
+  FieldBehaviorRuleRecord,
+  FieldPermissionRule,
   FormulaAlternateInput,
   FormulaAlternateRecord,
   FormulaApprovalInput,
@@ -210,13 +345,31 @@ import type {
   HarvestRecord,
   GeneratedDocumentRecord,
   GenerateDocumentInput,
+  AsnConversionInput,
+  AsnHeaderRecord,
+  AsnLineRecord,
+  AttributeDefinitionInput,
+  AttributeDefinitionRecord,
+  AttributeSetInput,
+  AttributeSetRecord,
+  AttributeValueRecord,
   BulkEditInput,
   CreateImportBatchInput,
   ImportedEntityRef,
+  ImportAsnInput,
   ImportBatchRecord,
+  GenerateSamplesInput,
+  InventoryValuationSnapshotInput,
+  InventoryValuationSnapshotRecord,
   LeadInput,
   LeadRecord,
+  LabInstrumentRecord,
+  LabResultInput,
+  LabResultRecord,
+  LimsDashboardRecord,
   InventoryBalanceRecord,
+  LandedCostAllocationInput,
+  LandedCostAllocationRecord,
   LabelRecord,
   LaborRoleInput,
   LaborRoleRecord,
@@ -231,15 +384,30 @@ import type {
   MaterialInput,
   MaterialRecord,
   MinimumStockTargetRecord,
+  ForecastApprovalInput,
+  ForecastDriverRecord,
+  ForecastLineRecord,
   MachineTimeEntryRecord,
   OperationCodeInput,
   OperationCodeRecord,
+  OperationControlPointRecord,
   OperationRunDetailRecord,
   OperationRunTransitionInput,
   OrganizationRecord,
   OperationalDashboardRecord,
+  ConfigurationSnapshotRecord,
+  ConfigurationValidationInput,
   PackagingComponentInput,
   PackagingComponentRecord,
+  PartnerItemMappingInput,
+  PartnerItemMappingRecord,
+  PeriodCloseInputRecord,
+  PeriodCloseRunRecord,
+  PermissionMatrixRecord,
+  PermissionPreviewInput,
+  PermissionSet,
+  PinnedItemInput,
+  PinnedItemRecord,
   ProductConfigurationRecord,
   ProcessingBatchDetailRecord,
   ProcessingBatchInput,
@@ -249,6 +417,8 @@ import type {
   ProductRecord,
   ProductVariantInput,
   ProductVariantRecord,
+  PlanningScenarioInput,
+  PlanningScenarioRecord,
   PurchaseOrderDetailRecord,
   PurchaseOrderInput,
   PurchaseOrderLineInput,
@@ -259,11 +429,21 @@ import type {
   ProductionOrderDetailRecord,
   ProductionOrderInput,
   ProductionOperationRunRecord,
+  ProductionControlDashboardRecord,
+  ProductionDispositionInputRecord,
+  ProductionLaborCaptureInput,
   ProductionOrderRecord,
+  ProductionWipSummaryRecord,
   QualityDashboardRecord,
+  NumberingSequenceInput,
+  NumberingSequenceRecord,
   QualityEventCreateInput,
   QualityEventLinkRecord,
   QualityEventRecord,
+  RetainedSampleInput,
+  RetainedSamplePullInput,
+  RetainedSamplePullRecord,
+  RetainedSampleRecord,
   MockRecallDashboardRecord,
   MockRecallFindingRecord,
   MockRecallRunDetailRecord,
@@ -287,10 +467,17 @@ import type {
   QcTestMethodInput,
   QcTestMethodRecord,
   RoleRecord,
+  RolePermissionSetAssignmentRecord,
   ReleaseNoteInput,
   ReleaseNoteRecord,
   RoadmapReleaseInput,
   RoadmapReleaseRecord,
+  SavedViewInput,
+  SavedViewRecord,
+  SanitationCheckInput,
+  SanitationCheckRecord,
+  ScenarioCapacityLineRecord,
+  ScenarioSupplyDemandLineRecord,
   ShopifyIntegrationStatus,
   ShopifyInventoryDriftRow,
   ShopifyInventoryPushRow,
@@ -311,6 +498,17 @@ import type {
   StockCountPostResult,
   StockCountSessionRecord,
   StockMovementRecord,
+  WeighDispenseLineCompletionInput,
+  WeighDispenseLineRecord,
+  WeighDispenseSessionDetailRecord,
+  WeighDispenseSessionInput,
+  WeighDispenseSessionRecord,
+  SopDashboardRecord,
+  SupervisorApprovalInputRecord,
+  ScrapEventRecord,
+  ReworkOrderRecord,
+  CrewTimeEntryRecord,
+  DowntimeEventRecord,
   StockMovementType,
   ResellerRecord,
   ResellerDetailRecord,
@@ -322,14 +520,22 @@ import type {
   SalesQuoteInput,
   SalesQuoteLineRecord,
   SalesQuoteRecord,
+  SampleDetailRecord,
+  SampleRecord,
+  SampleTestRecord,
+  SamplingPlanInput,
+  SamplingPlanRecord,
   QuoteConversionInput,
   QuoteConversionResult,
   ShipmentRecord,
   ReceiptCorrectionInput,
   ReceiptDetailRecord,
   ReceiptInput,
+  ReceiptLineInput,
   ReceiptLineRecord,
   ReceiptRecord,
+  ReasonCodeInput,
+  ReasonCodeRecord,
   RoutingMasterDataRecord,
   RoutingOperationInput,
   RoutingOperationRecord,
@@ -345,14 +551,47 @@ import type {
   SupplierDocumentAlertRecord,
   SupplierDocumentRecord,
   SupplierScorecardRecord,
+  SupplierPortalUserRecord,
   SupplierRecord,
+  StabilityPullPointRecord,
+  StabilityStudyInput,
+  StabilityStudyRecord,
   SkuRuleRecord,
   TransactionClient,
+  TrainingRecordInput,
+  TrainingRecordRecord,
+  TrainingRequirementRecord,
   UserContext,
+  UserPermissionOverride,
+  UserPermissionOverrideInput,
+  UserPreferenceRecord,
+  UserPreferenceUpdateInput,
   UserRoleAssignment,
   WorkCenterInput,
   WorkCenterProgressRecord,
-  WorkCenterRecord
+  WorkCenterRecord,
+  WorkflowActionAvailabilityRecord,
+  WorkflowApprovalRequestRecord,
+  WorkflowDefinitionRecord,
+  WorkflowGuideRecord,
+  WorkflowRunDetailRecord,
+  WorkflowRunEventInput,
+  WorkflowRunEventRecord,
+  WorkflowRunRecord,
+  WorkflowTransitionCommand,
+  WorkflowTransitionRecord,
+  PackSessionRecord,
+  PickTaskRecord,
+  PutAwayTaskRecord,
+  StagingLocationRecord,
+  StorageRuleRecord,
+  WarehouseZoneRecord,
+  WaveBatchRecord,
+  WmsContainerLineRecord,
+  WmsContainerRecord,
+  WmsDashboardRecord,
+  WmsScanCommandInputRecord,
+  WmsScanCommandResultRecord
 } from "./types.js";
 
 const importTemplateDescriptors = [
@@ -469,6 +708,54 @@ export function createUnavailableDataStore(): ApiDataStore {
     async listLocations() {
       throw new Error("No ApiDataStore configured");
     },
+    async getEffectivePermissionsForUser() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async listPermissionMatrix() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async updateRolePermissionSets() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async upsertUserPermissionOverride() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async previewUserAccess() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async listPermissionChangeHistory() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async getConfigurationSnapshot() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async upsertDocumentType() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async upsertNumberingSequence() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async upsertReasonCode() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async upsertAttributeDefinition() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async upsertAttributeSet() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async upsertFieldBehaviorRule() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async generateConfiguredDocumentNumber() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async resolveConfiguredFieldBehavior() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async validateConfiguredRecord() {
+      throw new Error("No ApiDataStore configured");
+    },
     async listMasterData() {
       throw new Error("No ApiDataStore configured");
     },
@@ -512,6 +799,12 @@ export function createUnavailableDataStore(): ApiDataStore {
       throw new Error("No ApiDataStore configured");
     },
     async generateProductConfiguration() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async runProductConfiguratorRuleTests() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async upsertConfiguratorRule() {
       throw new Error("No ApiDataStore configured");
     },
     async getProduct() {
@@ -566,6 +859,12 @@ export function createUnavailableDataStore(): ApiDataStore {
       throw new Error("No ApiDataStore configured");
     },
     async postStockCountSession() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async getWmsDashboard() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async executeWmsScanCommand() {
       throw new Error("No ApiDataStore configured");
     },
     async createProduct() {
@@ -637,6 +936,27 @@ export function createUnavailableDataStore(): ApiDataStore {
     async getSupplierQualityDashboard() {
       throw new Error("No ApiDataStore configured");
     },
+    async listEdiStagingCenter() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async createEdiPartner() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async upsertPartnerItemMapping() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async importAsnDocument() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async approveAsnDocument() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async convertAsnToReceipt() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async listCustomerDocumentPortalPreview() {
+      throw new Error("No ApiDataStore configured");
+    },
     async listPurchaseOrders() {
       throw new Error("No ApiDataStore configured");
     },
@@ -668,6 +988,24 @@ export function createUnavailableDataStore(): ApiDataStore {
       throw new Error("No ApiDataStore configured");
     },
     async runMrp() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async listDemandForecasts() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async createDemandForecast() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async approveDemandForecast() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async listPlanningScenarios() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async createPlanningScenario() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async getSopDashboard() {
       throw new Error("No ApiDataStore configured");
     },
     async convertMrpSuggestion() {
@@ -724,6 +1062,45 @@ export function createUnavailableDataStore(): ApiDataStore {
     async getLotReleaseChecklist() {
       throw new Error("No ApiDataStore configured");
     },
+    async getLimsDashboard() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async listSamples() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async getSample() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async createSamplingPlan() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async listSamplingPlans() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async generateSamplesFromPlan() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async enterLabResult() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async reviewLabResult() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async invalidateLabResult() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async createRetainedSample() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async pullRetainedSample() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async createStabilityStudy() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async pullStabilityPoint() {
+      throw new Error("No ApiDataStore configured");
+    },
     async listDocumentTemplates() {
       throw new Error("No ApiDataStore configured");
     },
@@ -749,6 +1126,21 @@ export function createUnavailableDataStore(): ApiDataStore {
       throw new Error("No ApiDataStore configured");
     },
     async downloadGeneratedDocument() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async getComplianceDashboard() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async recordSanitationCheck() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async recordTrainingCompletion() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async evaluateComplianceGate() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async generateAuditPacket() {
       throw new Error("No ApiDataStore configured");
     },
     async listQualityEvents() {
@@ -808,6 +1200,18 @@ export function createUnavailableDataStore(): ApiDataStore {
     async recordEquipmentMaintenance() {
       throw new Error("No ApiDataStore configured");
     },
+    async recordEquipmentReading() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async completeEquipmentPreUseCheck() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async recordEquipmentCleaning() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async recordEquipmentDowntime() {
+      throw new Error("No ApiDataStore configured");
+    },
     async createLaborRole() {
       throw new Error("No ApiDataStore configured");
     },
@@ -829,7 +1233,19 @@ export function createUnavailableDataStore(): ApiDataStore {
     async listProductionOperationRuns() {
       throw new Error("No ApiDataStore configured");
     },
+    async getProductionControlDashboard() {
+      throw new Error("No ApiDataStore configured");
+    },
     async transitionProductionOperationRun() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async recordProductionLabor() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async recordProductionDisposition() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async approveProductionException() {
       throw new Error("No ApiDataStore configured");
     },
     async getProductionProgressByWorkCenter() {
@@ -844,6 +1260,18 @@ export function createUnavailableDataStore(): ApiDataStore {
     async updateBillOfMaterials() {
       throw new Error("No ApiDataStore configured");
     },
+    async copyBillOfMaterialsRevision() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async compareBillOfMaterials() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async explodeBillOfMaterials() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async getBillOfMaterialsReadiness() {
+      throw new Error("No ApiDataStore configured");
+    },
     async createBomLine() {
       throw new Error("No ApiDataStore configured");
     },
@@ -854,6 +1282,15 @@ export function createUnavailableDataStore(): ApiDataStore {
       throw new Error("No ApiDataStore configured");
     },
     async createBomOperationMaterial() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async createBomOperationOutput() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async createBomSubstitute() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async createBomOperationCost() {
       throw new Error("No ApiDataStore configured");
     },
     async createBomOperationEquipment() {
@@ -928,6 +1365,27 @@ export function createUnavailableDataStore(): ApiDataStore {
     async getMarginSimulation() {
       throw new Error("No ApiDataStore configured");
     },
+    async getFinanceDashboard() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async allocateLandedCost() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async createInventoryValuationSnapshot() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async runPeriodClose() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async createFinanceExportBatch() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async listExportMappingTemplates() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async listFinanceReconciliations() {
+      throw new Error("No ApiDataStore configured");
+    },
     async listChangeRequests() {
       throw new Error("No ApiDataStore configured");
     },
@@ -974,6 +1432,15 @@ export function createUnavailableDataStore(): ApiDataStore {
       throw new Error("No ApiDataStore configured");
     },
     async exportEbrPacket() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async listWeighDispenseSessions() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async createWeighDispenseSession() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async completeWeighDispenseLine() {
       throw new Error("No ApiDataStore configured");
     },
     async searchTraceability() {
@@ -1159,6 +1626,66 @@ export function createUnavailableDataStore(): ApiDataStore {
     async updateDashboardWidgets() {
       throw new Error("No ApiDataStore configured");
     },
+    async getWorkspaceSnapshot() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async updateUserPreferences() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async pinWorkspaceItem() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async unpinWorkspaceItem() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async saveGridView() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async deleteGridView() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async saveColorRule() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async deleteColorRule() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async listWorkflowGuides() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async getWorkflowGuide() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async listWorkflowDefinitions() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async getWorkflowDefinition() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async resolveWorkflowActions() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async requestWorkflowTransition() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async listApprovalInbox() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async startWorkflowRun() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async getWorkflowRun() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async listWorkflowRuns() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async recordWorkflowRunEvent() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async completeWorkflowRun() {
+      throw new Error("No ApiDataStore configured");
+    },
     async getFeedbackInsights() {
       throw new Error("No ApiDataStore configured");
     },
@@ -1201,6 +1728,33 @@ export function createUnavailableDataStore(): ApiDataStore {
     async getOperationalReport() {
       throw new Error("No ApiDataStore configured");
     },
+    async listReportDatasets() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async listGenericInquiries() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async saveGenericInquiry() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async getGenericInquiry() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async runGenericInquiry() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async exportGenericInquiry() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async listReportSchedules() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async saveReportSchedule() {
+      throw new Error("No ApiDataStore configured");
+    },
+    async listReportExports() {
+      throw new Error("No ApiDataStore configured");
+    },
     async listReportPresets() {
       throw new Error("No ApiDataStore configured");
     },
@@ -1231,6 +1785,18 @@ export type MemoryDataStoreSeed = {
   users: AppUserRecord[];
   roles: RoleRecord[];
   userRoles: UserRoleRow[];
+  permissionSets: PermissionSet[];
+  rolePermissionSets: RolePermissionSetAssignmentRecord[];
+  userPermissionOverrides: UserPermissionOverride[];
+  fieldPermissionRules: FieldPermissionRule[];
+  accessScopeRules: AccessScopeRule[];
+  documentTypes: DocumentTypeRecord[];
+  numberingSequences: NumberingSequenceRecord[];
+  reasonCodes: ReasonCodeRecord[];
+  attributeDefinitions: AttributeDefinitionRecord[];
+  attributeSets: AttributeSetRecord[];
+  attributeValues: AttributeValueRecord[];
+  fieldBehaviorRules: FieldBehaviorRuleRecord[];
   locations: LocationRecord[];
   growBatches: GrowBatchRecord[];
   harvests: HarvestRecord[];
@@ -1251,30 +1817,67 @@ export type MemoryDataStoreSeed = {
   alertRules: AlertRuleRecord[];
   alertEvents: AlertEventRecord[];
   alertSubscriptions: AlertSubscriptionRecord[];
+  userPreferences: UserPreferenceRecord[];
+  pinnedItems: PinnedItemRecord[];
+  savedViews: SavedViewRecord[];
+  colorRules: ColorRuleRecord[];
+  workflowGuides: WorkflowGuideRecord[];
+  workflowDefinitions: WorkflowDefinitionRecord[];
+  approvalRequests: WorkflowApprovalRequestRecord[];
+  workflowRuns: WorkflowRunRecord[];
+  workflowRunEvents: WorkflowRunEventRecord[];
   purchaseOrders: PurchaseOrderRecord[];
   purchaseOrderLines: PurchaseOrderLineRecord[];
   receipts: ReceiptRecord[];
   receiptLines: ReceiptLineRecord[];
+  ediPartners: EdiPartnerRecord[];
+  ediDocumentBatches: EdiDocumentBatchRecord[];
+  ediDocuments: EdiDocumentRecord[];
+  asnHeaders: AsnHeaderRecord[];
+  asnLines: AsnLineRecord[];
+  partnerItemMappings: PartnerItemMappingRecord[];
+  supplierPortalUsers: SupplierPortalUserRecord[];
+  customerPortalAccess: CustomerPortalAccessRecord[];
   minimumStockTargets: MinimumStockTargetRecord[];
+  demandForecasts: DemandForecastRecord[];
+  forecastLines: ForecastLineRecord[];
+  forecastDrivers: ForecastDriverRecord[];
+  planningScenarios: PlanningScenarioRecord[];
+  scenarioSupplyDemandLines: ScenarioSupplyDemandLineRecord[];
+  scenarioCapacityLines: ScenarioCapacityLineRecord[];
+  scenarioRiskItems: ScenarioRiskItem[];
   productionOrders: ProductionOrderRecord[];
   workCenters: WorkCenterRecord[];
   equipment: EquipmentRecord[];
   equipmentCalibrations: EquipmentCalibrationRecord[];
   equipmentMaintenance: EquipmentMaintenanceRecord[];
   equipmentEvents: EquipmentEventRecord[];
+  equipmentReadings: EquipmentReadingRecord[];
+  equipmentPreUseChecks: EquipmentPreUseCheckRecord[];
+  equipmentCleaningLogs: EquipmentCleaningLogRecord[];
   laborRoles: LaborRoleRecord[];
   operationCodes: OperationCodeRecord[];
   routingTemplates: RoutingTemplateRecord[];
   routingOperations: RoutingOperationRecord[];
   productionOperationRuns: ProductionOperationRunRecord[];
+  operationControlPoints: OperationControlPointRecord[];
   laborTimeEntries: LaborTimeEntryRecord[];
   machineTimeEntries: MachineTimeEntryRecord[];
+  crewTimeEntries: CrewTimeEntryRecord[];
+  downtimeEvents: DowntimeEventRecord[];
+  scrapEvents: ScrapEventRecord[];
+  reworkOrders: ReworkOrderRecord[];
   standardCosts: StandardCostRecord[];
+  costRollups: CostRollupRecord[];
   billOfMaterials: BillOfMaterialsRecord[];
   bomLines: BomLineRecord[];
   bomOperations: BomOperationRecord[];
   bomOperationSteps: BomOperationStepRecord[];
   bomOperationMaterials: BomOperationMaterialRecord[];
+  bomOperationOutputs: BomOperationOutputRecord[];
+  bomSubstitutes: BomSubstituteRecord[];
+  bomAlternates: BomAlternateRecord[];
+  bomOperationCosts: BomOperationCostRecord[];
   bomOperationEquipment: BomOperationEquipmentRecord[];
   formulaFamilies: FormulaFamilyRecord[];
   formulaRevisions: FormulaRevisionRecord[];
@@ -1293,6 +1896,8 @@ export type MemoryDataStoreSeed = {
   ebrExecutions: EbrExecutionRecord[];
   ebrStepResults: EbrStepResultRecord[];
   eSignatures: ESignatureRecord[];
+  weighDispenseSessions: WeighDispenseSessionRecord[];
+  weighDispenseLines: WeighDispenseLineRecord[];
   lots: LotRecord[];
   inventoryBalances: InventoryBalanceRecord[];
   qcRecords: QcRecordRecord[];
@@ -1301,6 +1906,15 @@ export type MemoryDataStoreSeed = {
   qcSpecLines: QcSpecLineRecord[];
   qcTasks: QcTaskRecord[];
   qcResults: QcResultRecord[];
+  labInstruments: LabInstrumentRecord[];
+  samplingPlans: SamplingPlanRecord[];
+  samples: SampleRecord[];
+  sampleTests: SampleTestRecord[];
+  labResults: LabResultRecord[];
+  retainedSamples: RetainedSampleRecord[];
+  retainedSamplePulls: RetainedSamplePullRecord[];
+  stabilityStudies: StabilityStudyRecord[];
+  stabilityPullPoints: StabilityPullPointRecord[];
   qualityEvents: QualityEventRecord[];
   qualityEventLinks: QualityEventLinkRecord[];
   capaRecords: CapaRecord[];
@@ -1310,9 +1924,25 @@ export type MemoryDataStoreSeed = {
   documentTemplates: DocumentTemplateRecord[];
   generatedDocuments: GeneratedDocumentRecord[];
   documentApprovals: DocumentApprovalRecord[];
+  controlledDocuments: ControlledDocumentRecord[];
+  complianceRequirements: ComplianceRequirementRecord[];
+  sanitationChecks: SanitationCheckRecord[];
+  allergenControls: AllergenControlRecord[];
+  trainingRequirements: TrainingRequirementRecord[];
+  trainingRecords: TrainingRecordRecord[];
+  auditPackets: AuditPacketRecord[];
   stockMovements: StockMovementRecord[];
   stockCountSessions: StockCountSessionRecord[];
   stockCountLines: StockCountLineRecord[];
+  warehouseZones: WarehouseZoneRecord[];
+  storageRules: StorageRuleRecord[];
+  stagingLocations: StagingLocationRecord[];
+  containers: WmsContainerRecord[];
+  containerLines: WmsContainerLineRecord[];
+  putawayTasks: PutAwayTaskRecord[];
+  pickTasks: PickTaskRecord[];
+  packSessions: PackSessionRecord[];
+  waveBatches: WaveBatchRecord[];
   customers: CustomerRecord[];
   resellers: ResellerRecord[];
   b2bPriceLists: B2BPriceListRecord[];
@@ -1345,6 +1975,14 @@ export type MemoryDataStoreSeed = {
   shopifyOutboundSyncLogs: ShopifyOutboundSyncLogRecord[];
   importBatches: ImportBatchRecord[];
   reportPresets: ReportPreset[];
+  genericInquiries: GenericInquiry[];
+  reportSchedules: ReportSchedule[];
+  reportExports: ReportExportRecord[];
+  landedCosts: LandedCostAllocationRecord[];
+  inventoryValuationSnapshots: InventoryValuationSnapshotRecord[];
+  periodCloseRuns: PeriodCloseRunRecord[];
+  financeExportBatches: FinanceExportBatchRecord[];
+  exportMappingTemplates: ExportMappingTemplate[];
   mockRecallRuns: MockRecallRunRecord[];
   mockRecallFindings: MockRecallFindingRecord[];
   recallActions: RecallActionRecord[];
@@ -1466,6 +2104,230 @@ export const defaultMemorySeed: MemoryDataStoreSeed = {
       locationId: null
     }
   ],
+  permissionSets: defaultPermissionSets("org-mc"),
+  rolePermissionSets: [
+    { id: "rps-owner", roleId: "role-owner", permissionSetId: "ps-owner-admin" },
+    { id: "rps-production", roleId: "role-production", permissionSetId: "ps-production" },
+    { id: "rps-qc", roleId: "role-qc", permissionSetId: "ps-qc" },
+    { id: "rps-packing", roleId: "role-packing", permissionSetId: "ps-packing" },
+    { id: "rps-sales", roleId: "role-sales", permissionSetId: "ps-sales" },
+    { id: "rps-purchasing", roleId: "role-purchasing", permissionSetId: "ps-purchasing" },
+    { id: "rps-auditor", roleId: "role-auditor", permissionSetId: "ps-auditor" }
+  ],
+  userPermissionOverrides: [],
+  fieldPermissionRules: defaultFieldPermissionRules.map((rule) => ({ ...rule, organizationId: "org-mc" })),
+  accessScopeRules: [],
+  documentTypes: [
+    {
+      id: "doc-type-standard-receipt",
+      organizationId: "org-mc",
+      category: "receipt",
+      code: "STD-RCPT",
+      name: "Standard supplier receipt",
+      status: "active",
+      description: "Default receiving type for supplier deliveries with quarantine-aware QC.",
+      numberingSequenceId: "num-std-receipt",
+      defaultStatus: "posted",
+      defaultLocationId: "loc-pack",
+      defaultReasonCodeId: "reason-receipt-accepted",
+      requireAttributes: true,
+      settingsJson: { defaultDisposition: "quarantine", operationalForm: "purchasing.receipt" },
+      createdAt: new Date("2026-06-27T08:00:00+01:00"),
+      updatedAt: new Date("2026-06-27T08:00:00+01:00"),
+      version: 1
+    },
+    {
+      id: "doc-type-extraction-po",
+      organizationId: "org-mc",
+      category: "production_order",
+      code: "EXT-PO",
+      name: "Extraction production order",
+      status: "active",
+      description: "Production order type for tincture extraction batches.",
+      numberingSequenceId: "num-extraction-production",
+      defaultStatus: "planned",
+      defaultLocationId: "loc-pack",
+      defaultReasonCodeId: null,
+      requireAttributes: false,
+      settingsJson: { productionOrderType: "extraction", priority: "normal" },
+      createdAt: new Date("2026-06-27T08:00:00+01:00"),
+      updatedAt: new Date("2026-06-27T08:00:00+01:00"),
+      version: 1
+    }
+  ],
+  numberingSequences: [
+    {
+      id: "num-std-receipt",
+      organizationId: "org-mc",
+      documentTypeId: "doc-type-standard-receipt",
+      code: "RCPT-YM-LOC",
+      description: "Receipt numbers by month and receiving location.",
+      prefix: "RCPT-{YYYY}{MM}-{LOC}-",
+      suffix: "",
+      padLength: 4,
+      nextNumber: 1,
+      incrementBy: 1,
+      scopeOrganization: true,
+      scopeYear: true,
+      scopeMonth: true,
+      scopeLocation: true,
+      resetPolicy: "monthly",
+      lastScopeKey: null,
+      active: true,
+      createdAt: new Date("2026-06-27T08:00:00+01:00"),
+      updatedAt: new Date("2026-06-27T08:00:00+01:00"),
+      version: 1
+    },
+    {
+      id: "num-extraction-production",
+      organizationId: "org-mc",
+      documentTypeId: "doc-type-extraction-po",
+      code: "PROD-YEAR",
+      description: "Production order numbers by year.",
+      prefix: "PROD-{YYYY}-",
+      suffix: "",
+      padLength: 5,
+      nextNumber: 12,
+      incrementBy: 1,
+      scopeOrganization: true,
+      scopeYear: true,
+      scopeMonth: false,
+      scopeLocation: false,
+      resetPolicy: "yearly",
+      lastScopeKey: "org-mc:doc-type-extraction-po:2026",
+      active: true,
+      createdAt: new Date("2026-06-27T08:00:00+01:00"),
+      updatedAt: new Date("2026-06-27T08:00:00+01:00"),
+      version: 1
+    }
+  ],
+  reasonCodes: [
+    {
+      id: "reason-receipt-accepted",
+      organizationId: "org-mc",
+      catalog: "receipt_disposition",
+      code: "ACCEPT",
+      label: "Accepted at receiving",
+      description: "Material was accepted directly into available inventory.",
+      requiresComment: false,
+      active: true,
+      createdAt: new Date("2026-06-27T08:00:00+01:00"),
+      updatedAt: new Date("2026-06-27T08:00:00+01:00"),
+      version: 1
+    },
+    {
+      id: "reason-receipt-quarantine",
+      organizationId: "org-mc",
+      catalog: "receipt_disposition",
+      code: "QUARANTINE",
+      label: "Quarantine pending QC",
+      description: "Hold received material until incoming QC is complete.",
+      requiresComment: false,
+      active: true,
+      createdAt: new Date("2026-06-27T08:00:00+01:00"),
+      updatedAt: new Date("2026-06-27T08:00:00+01:00"),
+      version: 1
+    },
+    {
+      id: "reason-admin-override",
+      organizationId: "org-mc",
+      catalog: "admin_override",
+      code: "SUPERVISOR",
+      label: "Supervisor override",
+      description: "Controlled override with supervisor justification.",
+      requiresComment: true,
+      active: true,
+      createdAt: new Date("2026-06-27T08:00:00+01:00"),
+      updatedAt: new Date("2026-06-27T08:00:00+01:00"),
+      version: 1
+    }
+  ],
+  attributeDefinitions: [
+    {
+      id: "attr-supplier-lot",
+      organizationId: "org-mc",
+      code: "supplier_lot",
+      label: "Supplier lot",
+      dataType: "text",
+      required: true,
+      options: [],
+      validationExpression: "^[A-Za-z0-9][A-Za-z0-9._-]{2,79}$",
+      active: true,
+      createdAt: new Date("2026-06-27T08:00:00+01:00"),
+      updatedAt: new Date("2026-06-27T08:00:00+01:00"),
+      version: 1
+    },
+    {
+      id: "attr-coa-reference",
+      organizationId: "org-mc",
+      code: "coa_reference",
+      label: "COA reference",
+      dataType: "text",
+      required: false,
+      options: [],
+      validationExpression: null,
+      active: true,
+      createdAt: new Date("2026-06-27T08:00:00+01:00"),
+      updatedAt: new Date("2026-06-27T08:00:00+01:00"),
+      version: 1
+    }
+  ],
+  attributeSets: [
+    {
+      id: "attr-set-receipt-standard",
+      organizationId: "org-mc",
+      code: "RECEIPT-STD-ATTRS",
+      name: "Standard receipt attributes",
+      appliesTo: "document_type",
+      appliesToValue: "doc-type-standard-receipt",
+      attributeDefinitionIds: ["attr-supplier-lot", "attr-coa-reference"],
+      active: true,
+      createdAt: new Date("2026-06-27T08:00:00+01:00"),
+      updatedAt: new Date("2026-06-27T08:00:00+01:00"),
+      version: 1
+    }
+  ],
+  attributeValues: [],
+  fieldBehaviorRules: [
+    {
+      id: "field-rule-receipt-supplier-lot",
+      organizationId: "org-mc",
+      documentTypeId: "doc-type-standard-receipt",
+      targetEntity: "receipt",
+      fieldName: "supplierLotNumber",
+      workflowState: "draft",
+      visible: true,
+      readOnly: false,
+      required: true,
+      defaultValue: null,
+      validationExpression: "^[A-Za-z0-9][A-Za-z0-9._-]{2,79}$",
+      permissionCode: null,
+      priority: 10,
+      active: true,
+      createdAt: new Date("2026-06-27T08:00:00+01:00"),
+      updatedAt: new Date("2026-06-27T08:00:00+01:00"),
+      version: 1
+    },
+    {
+      id: "field-rule-receipt-number-readonly",
+      organizationId: "org-mc",
+      documentTypeId: "doc-type-standard-receipt",
+      targetEntity: "receipt",
+      fieldName: "receiptNumber",
+      workflowState: "posted",
+      visible: true,
+      readOnly: true,
+      required: true,
+      defaultValue: null,
+      validationExpression: "^RCPT-[0-9]{6}-[A-Z0-9]+-[0-9]{4}$",
+      permissionCode: null,
+      priority: 20,
+      active: true,
+      createdAt: new Date("2026-06-27T08:00:00+01:00"),
+      updatedAt: new Date("2026-06-27T08:00:00+01:00"),
+      version: 1
+    }
+  ],
   locations: [
     {
       id: "loc-farm",
@@ -1483,6 +2345,33 @@ export const defaultMemorySeed: MemoryDataStoreSeed = {
       name: "Packing Room",
       type: "packing",
       shopifyLocationGid: "gid://shopify/Location/1000",
+      countryCode: "PT",
+      isActive: true
+    },
+    {
+      id: "loc-warehouse-a",
+      organizationId: "org-mc",
+      code: "WH-A",
+      name: "Warehouse A",
+      type: "warehouse",
+      countryCode: "PT",
+      isActive: true
+    },
+    {
+      id: "loc-quarantine",
+      organizationId: "org-mc",
+      code: "QTN",
+      name: "Quarantine Cage",
+      type: "quarantine",
+      countryCode: "PT",
+      isActive: true
+    },
+    {
+      id: "loc-stage-1",
+      organizationId: "org-mc",
+      code: "STAGE-1",
+      name: "Outbound Stage 1",
+      type: "warehouse",
       countryCode: "PT",
       isActive: true
     },
@@ -1584,6 +2473,30 @@ export const defaultMemorySeed: MemoryDataStoreSeed = {
       status: "active",
       shopifyVariantGid: "gid://shopify/ProductVariant/1000",
       shopifyInventoryItemGid: "gid://shopify/InventoryItem/1000"
+    },
+    {
+      id: "var-lm-bottling-kit",
+      organizationId: "org-mc",
+      productId: "prod-lions-mane",
+      sku: "LM-BOT-KIT",
+      barcode: null,
+      nameI18n: {
+        en: "Lion's Mane bottling phantom kit",
+        pt: "Kit fantasma de engarrafamento Juba de Leao"
+      },
+      localizedNames: {
+        en: "Lion's Mane bottling phantom kit",
+        pt: "Kit fantasma de engarrafamento Juba de Leao"
+      },
+      form: "other",
+      trackLots: false,
+      trackExpiry: false,
+      inventoryUom: "kit",
+      sellableUom: "kit",
+      netQuantity: null,
+      status: "active",
+      shopifyVariantGid: null,
+      shopifyInventoryItemGid: null
     }
   ],
   skuRules: [
@@ -1636,6 +2549,23 @@ export const defaultMemorySeed: MemoryDataStoreSeed = {
       localizedDescriptions: {
         en: "Glass bottle with dropper closure.",
         pt: "Frasco de vidro com conta-gotas."
+      }
+    },
+    {
+      id: "pkg-amber-50-alt",
+      organizationId: "org-mc",
+      name: "Amber dropper bottle 50 ml alternate",
+      uom: "each",
+      sku: "PKG-BOTTLE-50-ALT",
+      barcode: null,
+      trackLots: true,
+      localizedNames: {
+        en: "Amber dropper bottle 50 ml alternate",
+        pt: "Frasco alternativo ambar 50 ml"
+      },
+      localizedDescriptions: {
+        en: "Approved alternate glass bottle for constrained supply.",
+        pt: "Frasco alternativo aprovado para falta de fornecimento."
       }
     }
   ],
@@ -1780,6 +2710,141 @@ export const defaultMemorySeed: MemoryDataStoreSeed = {
   })),
   alertEvents: [],
   alertSubscriptions: [],
+  userPreferences: [
+    {
+      id: "pref-owner",
+      organizationId: "org-mc",
+      userId: "user-owner",
+      ...defaultWorkspacePreferences,
+      pinnedScreens: ["/", "/purchasing", "/production", "/qc", "/traceability"],
+      pinnedRecords: ["po-demo-lions-mane", "lot-lm-tincture-001"],
+      favoriteReports: ["lot-recall", "inventory-aging", "supplier-scorecard"],
+      dashboardWidgetOrder: ["widget-owner-exceptions", "widget-owner-shopify", "widget-owner-sku"],
+      savedFilters: {
+        lots: { qcStatus: ["hold", "released"], expiresWithinDays: 45 }
+      },
+      createdAt: new Date("2026-06-27T08:00:00+01:00"),
+      updatedAt: new Date("2026-06-27T08:00:00+01:00"),
+      version: 1
+    }
+  ],
+  pinnedItems: [
+    {
+      id: "pin-owner-purchasing",
+      organizationId: "org-mc",
+      userId: "user-owner",
+      pinKind: "module",
+      targetType: "module",
+      targetId: "purchasing",
+      label: "Purchasing",
+      href: "/purchasing",
+      metadataJson: { quickActions: ["receive_po", "create_supplier"] },
+      sortOrder: 1,
+      createdAt: new Date("2026-06-27T08:00:00+01:00"),
+      updatedAt: new Date("2026-06-27T08:00:00+01:00"),
+      version: 1
+    },
+    {
+      id: "pin-owner-lot",
+      organizationId: "org-mc",
+      userId: "user-owner",
+      pinKind: "record",
+      targetType: "lot",
+      targetId: "lot-lm-tincture-001",
+      label: "LM-2026-06 tincture lot with a wonderfully long label",
+      href: "/lots/lot-lm-tincture-001",
+      metadataJson: { quickActions: ["open_traceability", "start_qc_task"] },
+      sortOrder: 2,
+      createdAt: new Date("2026-06-27T08:00:00+01:00"),
+      updatedAt: new Date("2026-06-27T08:00:00+01:00"),
+      version: 1
+    },
+    {
+      id: "pin-owner-report",
+      organizationId: "org-mc",
+      userId: "user-owner",
+      pinKind: "report",
+      targetType: "report",
+      targetId: "lot-recall",
+      label: "Lot recall report",
+      href: "/reports?reportId=lot-recall",
+      metadataJson: { quickActions: ["open_traceability"] },
+      sortOrder: 3,
+      createdAt: new Date("2026-06-27T08:00:00+01:00"),
+      updatedAt: new Date("2026-06-27T08:00:00+01:00"),
+      version: 1
+    }
+  ],
+  savedViews: [
+    {
+      id: "saved-view-lots-release",
+      organizationId: "org-mc",
+      ownerUserId: "user-owner",
+      gridKey: "lots",
+      name: "Lots needing release review",
+      scope: "role_shared",
+      sharedRoleCodes: ["owner_admin", "qc", "packing_fulfillment"],
+      filters: { qcStatus: ["pending", "hold"], status: "active" },
+      sort: [{ field: "expiresAt", direction: "asc" }],
+      grouping: ["qcStatus"],
+      columns: [
+        { key: "lotCode", label: "Lot", visible: true, order: 1, width: 160 },
+        { key: "itemName", label: "Item", visible: true, order: 2, width: 260 },
+        { key: "qcStatus", label: "QC", visible: true, order: 3, width: 110 },
+        { key: "expiresAt", label: "Expiry", visible: true, order: 4, width: 120 }
+      ],
+      colorRuleIds: ["color-lot-hold", "color-lot-released"],
+      isDefault: true,
+      createdAt: new Date("2026-06-27T08:00:00+01:00"),
+      updatedAt: new Date("2026-06-27T08:00:00+01:00"),
+      version: 1
+    }
+  ],
+  colorRules: defaultColorRules.map((rule) => ({
+    ...rule,
+    organizationId: "org-mc",
+    userId: null,
+    createdAt: new Date("2026-06-27T08:00:00+01:00"),
+    updatedAt: new Date("2026-06-27T08:00:00+01:00"),
+    version: 1
+  })),
+  workflowGuides: defaultWorkflowGuides.map((guide) => ({
+    ...guide,
+    organizationId: "org-mc",
+    status: "active" as const,
+    createdAt: new Date("2026-06-27T08:00:00+01:00"),
+    updatedAt: new Date("2026-06-27T08:00:00+01:00"),
+    version: 1
+  })),
+  workflowDefinitions: defaultWorkflowDefinitions.map((definition) => ({
+    ...definition,
+    organizationId: "org-mc"
+  })),
+  approvalRequests: [
+    {
+      id: "approval-receipt-release-qc",
+      organizationId: "org-mc",
+      workflowDefinitionId: "wf-receipt",
+      recordType: "receipt",
+      recordId: "receipt-raw-001",
+      actionId: "release",
+      fromStateId: "quarantined",
+      toStateId: "released",
+      stepId: "qc-approval",
+      sequence: 10,
+      roleCode: "qc",
+      permissionCode: "quality.release.approve",
+      requestedBy: "user-staff",
+      status: "pending",
+      dueAt: "2026-06-26T10:00:00.000Z",
+      reason: "Incoming QC passed; release evidence is attached.",
+      evidence: { fileName: "incoming-qc-review.pdf" },
+      requestedAt: new Date("2026-06-25T10:00:00.000Z"),
+      updatedAt: new Date("2026-06-25T10:00:00.000Z")
+    }
+  ],
+  workflowRuns: [],
+  workflowRunEvents: [],
   incomingInspectionPlans: [
     {
       id: "incoming-plan-alcohol-high",
@@ -1899,6 +2964,107 @@ export const defaultMemorySeed: MemoryDataStoreSeed = {
   ],
   receipts: [],
   receiptLines: [],
+  ediPartners: [
+    {
+      id: "edi-partner-bio-farms",
+      organizationId: "org-mc",
+      partnerCode: "BIOFARMS",
+      name: "Bio Farms Portugal EDI",
+      partnerType: "supplier",
+      supplierId: "supplier-bio-farms",
+      customerId: null,
+      status: "active",
+      defaultDocumentFormat: "csv",
+      settingsJson: { intakeMode: "file_upload", portalDraft: true },
+      createdAt: new Date("2026-06-27T09:00:00+01:00"),
+      updatedAt: new Date("2026-06-27T09:00:00+01:00"),
+      version: 1
+    }
+  ],
+  ediDocumentBatches: [],
+  ediDocuments: [],
+  asnHeaders: [],
+  asnLines: [],
+  partnerItemMappings: [
+    {
+      id: "mapping-bio-alcohol-item",
+      organizationId: "org-mc",
+      partnerId: "edi-partner-bio-farms",
+      mappingType: "item",
+      externalCode: "ALC-96",
+      externalDescription: "Food-grade ethanol 96 percent",
+      internalType: "material",
+      internalId: "mat-alcohol",
+      internalCode: "ALC-96",
+      active: true,
+      createdAt: new Date("2026-06-27T09:00:00+01:00"),
+      updatedAt: new Date("2026-06-27T09:00:00+01:00"),
+      version: 1
+    },
+    {
+      id: "mapping-bio-l-unit",
+      organizationId: "org-mc",
+      partnerId: "edi-partner-bio-farms",
+      mappingType: "unit",
+      externalCode: "L",
+      externalDescription: "Litres",
+      internalType: "unit",
+      internalId: "l",
+      internalCode: "l",
+      active: true,
+      createdAt: new Date("2026-06-27T09:00:00+01:00"),
+      updatedAt: new Date("2026-06-27T09:00:00+01:00"),
+      version: 1
+    },
+    {
+      id: "mapping-bio-dhl-carrier",
+      organizationId: "org-mc",
+      partnerId: "edi-partner-bio-farms",
+      mappingType: "carrier",
+      externalCode: "DHL",
+      externalDescription: "DHL Freight",
+      internalType: "carrier",
+      internalId: "DHL Freight",
+      internalCode: "DHL Freight",
+      active: true,
+      createdAt: new Date("2026-06-27T09:00:00+01:00"),
+      updatedAt: new Date("2026-06-27T09:00:00+01:00"),
+      version: 1
+    }
+  ],
+  supplierPortalUsers: [
+    {
+      id: "supplier-portal-bio-marta",
+      organizationId: "org-mc",
+      supplierId: "supplier-bio-farms",
+      email: "orders@biofarms.example.test",
+      displayName: "Marta Costa",
+      status: "active",
+      permissions: ["upload_documents", "submit_asn", "respond_capa"],
+      lastAccessAt: null,
+      createdAt: new Date("2026-06-27T09:00:00+01:00"),
+      updatedAt: new Date("2026-06-27T09:00:00+01:00"),
+      version: 1
+    }
+  ],
+  customerPortalAccess: [
+    {
+      id: "customer-access-lisbon-demo",
+      organizationId: "org-mc",
+      customerId: "customer-lisbon-apothecary",
+      salesOrderId: "sales-order-wholesale-001",
+      shipmentId: "shipment-wholesale-001",
+      accessTokenLabel: "Lisbon Apothecary shipment packet",
+      status: "active",
+      allowedDocumentTypes: ["finished_good_coa", "lot_release_packet", "sds", "shipment_document"],
+      expiresAt: new Date("2026-09-30T23:59:59+00:00"),
+      createdBy: "user-owner",
+      lastAccessAt: null,
+      createdAt: new Date("2026-06-27T09:00:00+01:00"),
+      updatedAt: new Date("2026-06-27T09:00:00+01:00"),
+      version: 1
+    }
+  ],
   minimumStockTargets: [
     {
       id: "minstock-lm-tincture-pack",
@@ -1919,6 +3085,79 @@ export const defaultMemorySeed: MemoryDataStoreSeed = {
       uom: "each"
     }
   ],
+  demandForecasts: [
+    {
+      id: "forecast-july-boost",
+      organizationId: "org-mc",
+      name: "July reseller and Shopify lift",
+      scenarioId: "scenario-july-boost",
+      status: "draft",
+      bucket: "week",
+      horizonStart: new Date("2026-07-01T00:00:00.000Z"),
+      horizonEnd: new Date("2026-07-31T23:59:59.000Z"),
+      notes: "Seasonal summer demand with Lisbon reseller commitment and Shopify promotion.",
+      approvedAt: null,
+      approvedBy: null,
+      createdBy: "user-owner",
+      createdAt: new Date("2026-06-26T11:00:00.000Z"),
+      updatedAt: new Date("2026-06-26T11:00:00.000Z"),
+      version: 1,
+      lines: [],
+      drivers: [],
+      aggregatedLines: []
+    }
+  ],
+  forecastLines: [
+    {
+      id: "forecast-line-july-lm-week1",
+      organizationId: "org-mc",
+      forecastId: "forecast-july-boost",
+      productVariantId: "var-lions-mane-50",
+      sku: "LM-TINC-50",
+      productName: "Lion's Mane Tincture 50 ml",
+      productFamily: "tincture",
+      customerId: null,
+      resellerId: "reseller-lisbon-apothecary",
+      shopifyChannel: "shopify_online",
+      region: "PT-LIS",
+      periodStart: new Date("2026-07-06T00:00:00.000Z"),
+      periodEnd: new Date("2026-07-12T23:59:59.000Z"),
+      scenarioId: "scenario-july-boost",
+      quantity: 180,
+      uom: "bottle",
+      manualOverrideQuantity: 210,
+      manualOverrideReason: "Lisbon Apothecary committed to a larger July campaign order.",
+      createdAt: new Date("2026-06-26T11:05:00.000Z"),
+      updatedAt: new Date("2026-06-26T11:05:00.000Z"),
+      version: 1
+    }
+  ],
+  forecastDrivers: [
+    {
+      id: "forecast-driver-history-july-lm",
+      organizationId: "org-mc",
+      forecastLineId: "forecast-line-july-lm-week1",
+      driverType: "historical_sales",
+      quantityImpact: 24,
+      confidence: 0.78,
+      reason: "Four-week sales velocity is trending above the June baseline.",
+      createdAt: new Date("2026-06-26T11:05:00.000Z")
+    },
+    {
+      id: "forecast-driver-promo-july-lm",
+      organizationId: "org-mc",
+      forecastLineId: "forecast-line-july-lm-week1",
+      driverType: "promotion",
+      quantityImpact: 36,
+      confidence: 0.65,
+      reason: "Shopify summer bundle promotion is planned for July week one.",
+      createdAt: new Date("2026-06-26T11:05:00.000Z")
+    }
+  ],
+  planningScenarios: [],
+  scenarioSupplyDemandLines: [],
+  scenarioCapacityLines: [],
+  scenarioRiskItems: [],
   productionOrders: [
     {
       id: "po-lm-bottle-001",
@@ -2005,6 +3244,22 @@ export const defaultMemorySeed: MemoryDataStoreSeed = {
       nextCalibrationDueAt: new Date("2026-07-05T09:00:00+01:00"),
       lastMaintenanceAt: new Date("2026-06-01T09:00:00+01:00"),
       nextMaintenanceDueAt: new Date("2026-12-01T09:00:00+01:00"),
+      metadataJson: {
+        manufacturer: "Ohaus",
+        model: "Explorer EX224",
+        assetTag: "MC-ASSET-001",
+        oemContact: {
+          name: "Ohaus Service",
+          email: "service@example-oem.com",
+          phone: "555-0101",
+          url: "https://example.com/ohaus-service"
+        },
+        maintenanceReminderDays: 14,
+        power: { requirements: "120 V, standard bench outlet" },
+        documents: [
+          { documentType: "manual", fileName: "SCALE-01-manual.pdf", contentType: "application/pdf" }
+        ]
+      },
       createdAt: new Date("2026-06-01T09:00:00+01:00"),
       updatedAt: new Date("2026-06-05T09:00:00+01:00"),
       version: 2
@@ -2026,6 +3281,12 @@ export const defaultMemorySeed: MemoryDataStoreSeed = {
       nextCalibrationDueAt: null,
       lastMaintenanceAt: new Date("2026-06-01T09:00:00+01:00"),
       nextMaintenanceDueAt: new Date("2026-08-30T09:00:00+01:00"),
+      metadataJson: {
+        manufacturer: "Accutek",
+        model: "Mini-Pinch",
+        power: { requirements: "120 V, 6 A" },
+        maintenanceReminderDays: 10
+      },
       createdAt: new Date("2026-06-01T09:00:00+01:00"),
       updatedAt: new Date("2026-06-01T09:00:00+01:00"),
       version: 1
@@ -2047,6 +3308,12 @@ export const defaultMemorySeed: MemoryDataStoreSeed = {
       nextCalibrationDueAt: null,
       lastMaintenanceAt: new Date("2026-04-01T09:00:00+01:00"),
       nextMaintenanceDueAt: new Date("2026-05-31T09:00:00+01:00"),
+      metadataJson: {
+        manufacturer: "Harvest Right",
+        model: "Pharma Cabinet",
+        filter: { name: "HEPA H13 prefilter", url: "https://example.com/hepa-h13" },
+        maintenanceReminderDays: 7
+      },
       createdAt: new Date("2026-06-01T09:00:00+01:00"),
       updatedAt: new Date("2026-06-01T09:00:00+01:00"),
       version: 1
@@ -2088,7 +3355,84 @@ export const defaultMemorySeed: MemoryDataStoreSeed = {
       version: 1
     }
   ],
-  equipmentEvents: [],
+  equipmentEvents: [
+    {
+      id: "equip-event-filler-clean",
+      organizationId: "org-mc",
+      equipmentId: "equip-filler-01",
+      eventType: "cleaning_recorded",
+      severity: "info",
+      title: "FILL-01 changeover cleaning recorded",
+      details: { cleaningLogId: "clean-filler-preuse-001", status: "clean" },
+      actorUserId: "user-production",
+      occurredAt: new Date("2026-06-26T08:45:00+01:00"),
+      createdAt: new Date("2026-06-26T08:45:00+01:00")
+    }
+  ],
+  equipmentReadings: [
+    {
+      id: "reading-filler-volume-001",
+      organizationId: "org-mc",
+      equipmentId: "equip-filler-01",
+      productionOrderId: "po-001",
+      processingBatchId: "batch-lm-bot-001",
+      ebrExecutionId: "ebr-exec-lm-bot-001",
+      ebrStepResultId: null,
+      routingOperationId: "routing-op-fill",
+      parameterType: "pressure",
+      parameterName: "Fill head pressure",
+      value: 1.8,
+      unit: "bar",
+      source: "mock_plc",
+      actorUserId: null,
+      recordedAt: new Date("2026-06-26T09:55:00+01:00"),
+      minValue: 1.4,
+      maxValue: 2.2,
+      warningMinValue: 1.5,
+      warningMaxValue: 2,
+      limitStatus: "in_limit",
+      qualityEventId: null,
+      rawPayload: { adapter: "mock-plc", stable: true },
+      createdAt: new Date("2026-06-26T09:55:00+01:00")
+    }
+  ],
+  equipmentPreUseChecks: [
+    {
+      id: "preuse-filler-001",
+      organizationId: "org-mc",
+      equipmentId: "equip-filler-01",
+      templateId: "preuse-bottling-filler",
+      routingOperationId: "routing-op-fill",
+      productionOrderId: "po-001",
+      ebrExecutionId: "ebr-exec-lm-bot-001",
+      status: "completed",
+      checkedItems: [
+        { itemId: "line-clear", label: "Line clearance complete", passed: true, required: true },
+        { itemId: "guards", label: "Guards and hoses inspected", passed: true, required: true }
+      ],
+      performedBy: "user-production",
+      completedAt: new Date("2026-06-26T08:50:00+01:00"),
+      notes: "Ready for tincture fill run.",
+      createdAt: new Date("2026-06-26T08:50:00+01:00")
+    }
+  ],
+  equipmentCleaningLogs: [
+    {
+      id: "clean-filler-preuse-001",
+      organizationId: "org-mc",
+      equipmentId: "equip-filler-01",
+      cleaningType: "changeover",
+      status: "clean",
+      cleanedBy: "user-production",
+      cleanedAt: new Date("2026-06-26T08:45:00+01:00"),
+      expiresAt: new Date("2026-06-27T08:45:00+01:00"),
+      productionOrderId: "po-001",
+      ebrExecutionId: "ebr-exec-lm-bot-001",
+      procedureId: "SOP-CLEAN-FILLER",
+      notes: "Changeover from previous lot completed.",
+      createdAt: new Date("2026-06-26T08:45:00+01:00")
+    }
+  ],
   laborRoles: [
     {
       id: "labor-operator",
@@ -2202,6 +3546,11 @@ export const defaultMemorySeed: MemoryDataStoreSeed = {
       laborRoleId: "labor-lead",
       ebrExecutionId: "ebr-exec-lm-bot-001",
       status: "ready",
+      allowNonsequentialReporting: false,
+      supervisorApprovalStatus: "not_required",
+      supervisorApprovedBy: null,
+      supervisorApprovedAt: null,
+      skippedOperationIds: [],
       scheduledStartAt: new Date("2026-06-26T09:00:00+01:00"),
       scheduledEndAt: new Date("2026-06-26T09:40:00+01:00"),
       startedAt: null,
@@ -2228,6 +3577,11 @@ export const defaultMemorySeed: MemoryDataStoreSeed = {
       laborRoleId: "labor-operator",
       ebrExecutionId: "ebr-exec-lm-bot-001",
       status: "pending",
+      allowNonsequentialReporting: true,
+      supervisorApprovalStatus: "not_required",
+      supervisorApprovedBy: null,
+      supervisorApprovedAt: null,
+      skippedOperationIds: [],
       scheduledStartAt: new Date("2026-06-26T09:45:00+01:00"),
       scheduledEndAt: new Date("2026-06-26T11:05:00+01:00"),
       startedAt: null,
@@ -2243,8 +3597,84 @@ export const defaultMemorySeed: MemoryDataStoreSeed = {
       version: 1
     }
   ],
+  operationControlPoints: [
+    {
+      id: "cp-run-stage-reporting",
+      organizationId: "org-mc",
+      operationRunId: "run-po-001-stage",
+      sequence: 10,
+      purpose: "reporting",
+      required: true,
+      completedAt: null,
+      completedBy: null,
+      notes: "Stage and line-clearance reporting must be recorded before downstream completion.",
+      createdAt: new Date("2026-06-25T09:00:00+01:00"),
+      updatedAt: new Date("2026-06-25T09:00:00+01:00"),
+      version: 1
+    },
+    {
+      id: "cp-run-stage-material",
+      organizationId: "org-mc",
+      operationRunId: "run-po-001-stage",
+      sequence: 10,
+      purpose: "material_issue",
+      required: true,
+      completedAt: null,
+      completedBy: null,
+      notes: "Released input lots must be issued before batch completion.",
+      createdAt: new Date("2026-06-25T09:00:00+01:00"),
+      updatedAt: new Date("2026-06-25T09:00:00+01:00"),
+      version: 1
+    },
+    {
+      id: "cp-run-fill-backflush",
+      organizationId: "org-mc",
+      operationRunId: "run-po-001-fill",
+      sequence: 20,
+      purpose: "backflush",
+      required: true,
+      completedAt: new Date("2026-06-26T09:45:00+01:00"),
+      completedBy: "user-owner",
+      notes: "Packaging backflush is configured for fill completion.",
+      createdAt: new Date("2026-06-25T09:00:00+01:00"),
+      updatedAt: new Date("2026-06-26T09:45:00+01:00"),
+      version: 2
+    },
+    {
+      id: "cp-run-fill-qc",
+      organizationId: "org-mc",
+      operationRunId: "run-po-001-fill",
+      sequence: 20,
+      purpose: "qc_check",
+      required: true,
+      completedAt: new Date("2026-06-26T10:05:00+01:00"),
+      completedBy: "user-owner",
+      notes: "Fill-volume QC check passed.",
+      createdAt: new Date("2026-06-25T09:00:00+01:00"),
+      updatedAt: new Date("2026-06-26T10:05:00+01:00"),
+      version: 2
+    },
+    {
+      id: "cp-run-fill-final",
+      organizationId: "org-mc",
+      operationRunId: "run-po-001-fill",
+      sequence: 20,
+      purpose: "final_completion",
+      required: true,
+      completedAt: null,
+      completedBy: null,
+      notes: "Supervisor releases final completion after output, scrap, and rework are reconciled.",
+      createdAt: new Date("2026-06-25T09:00:00+01:00"),
+      updatedAt: new Date("2026-06-25T09:00:00+01:00"),
+      version: 1
+    }
+  ],
   laborTimeEntries: [],
   machineTimeEntries: [],
+  crewTimeEntries: [],
+  downtimeEvents: [],
+  scrapEvents: [],
+  reworkOrders: [],
   standardCosts: [
     {
       id: "std-mat-alcohol",
@@ -2360,6 +3790,7 @@ export const defaultMemorySeed: MemoryDataStoreSeed = {
       metadataJson: { allocationBasis: "purchase receipt", posting: "external_accounting_export" }
     }
   ],
+  costRollups: [],
   billOfMaterials: [
     {
       id: "bom-lm-tincture-v1",
@@ -2368,8 +3799,31 @@ export const defaultMemorySeed: MemoryDataStoreSeed = {
       formulaRevisionId: "formula-lm-tincture-v1",
       versionCode: "v1",
       status: "active",
+      bomKind: "standard",
+      activeRevisionLocked: true,
+      alternateGroupCode: "LM-TINC",
+      planningPercent: 100,
       yieldQuantity: 48,
       yieldUom: "bottle",
+      effectiveFrom: new Date("2026-01-01T00:00:00+00:00"),
+      effectiveTo: null,
+      createdAt: new Date("2026-01-01T00:00:00+00:00"),
+      updatedAt: new Date("2026-01-01T00:00:00+00:00"),
+      version: 1
+    },
+    {
+      id: "bom-lm-bottling-kit-phantom",
+      organizationId: "org-mc",
+      productVariantId: "var-lm-bottling-kit",
+      formulaRevisionId: null,
+      versionCode: "phantom-v1",
+      status: "active",
+      bomKind: "phantom",
+      activeRevisionLocked: true,
+      alternateGroupCode: "LM-TINC",
+      planningPercent: 100,
+      yieldQuantity: 48,
+      yieldUom: "kit",
       effectiveFrom: new Date("2026-01-01T00:00:00+00:00"),
       effectiveTo: null,
       createdAt: new Date("2026-01-01T00:00:00+00:00"),
@@ -2459,6 +3913,32 @@ export const defaultMemorySeed: MemoryDataStoreSeed = {
       createdAt: new Date("2026-01-01T00:00:00+00:00"),
       updatedAt: new Date("2026-01-01T00:00:00+00:00"),
       version: 1
+    },
+    {
+      id: "bom-op-kit-010",
+      bomId: "bom-lm-bottling-kit-phantom",
+      sequence: 10,
+      operationId: "010",
+      operationCodeId: "op-stage",
+      workCenterId: "wc-prep",
+      setupTimeMinutes: 0,
+      runUnits: 48,
+      runTimeMinutes: 0,
+      machineUnits: null,
+      machineTimeMinutes: null,
+      queueTimeMinutes: 0,
+      moveTimeMinutes: 0,
+      finishTimeMinutes: 0,
+      laborRoleId: null,
+      laborCrewSize: 1,
+      runtimeBasis: "manual",
+      backflushLabor: false,
+      controlPoint: true,
+      scrapAction: "write_off",
+      instructions: "Planning-only phantom assembly for bottling materials.",
+      createdAt: new Date("2026-01-01T00:00:00+00:00"),
+      updatedAt: new Date("2026-01-01T00:00:00+00:00"),
+      version: 1
     }
   ],
   bomOperationSteps: [
@@ -2522,6 +4002,146 @@ export const defaultMemorySeed: MemoryDataStoreSeed = {
       effectiveTo: null,
       isCritical: true,
       lotTraceRequired: true,
+      createdAt: new Date("2026-01-01T00:00:00+00:00"),
+      updatedAt: new Date("2026-01-01T00:00:00+00:00"),
+      version: 1
+    },
+    {
+      id: "bom-op-mat-kit",
+      bomOperationId: "bom-op-lm-020",
+      lineType: "wip",
+      componentType: "product_variant",
+      componentId: "var-lm-bottling-kit",
+      quantity: 48,
+      uom: "kit",
+      wastePercent: 0,
+      issueMethod: "manual",
+      effectiveFrom: new Date("2026-01-01T00:00:00+00:00"),
+      effectiveTo: null,
+      isCritical: false,
+      lotTraceRequired: false,
+      createdAt: new Date("2026-01-01T00:00:00+00:00"),
+      updatedAt: new Date("2026-01-01T00:00:00+00:00"),
+      version: 1
+    },
+    {
+      id: "bom-op-mat-kit-bottle",
+      bomOperationId: "bom-op-kit-010",
+      lineType: "packaging",
+      componentType: "packaging_component",
+      componentId: "pkg-amber-50",
+      quantity: 48,
+      uom: "each",
+      wastePercent: 1,
+      issueMethod: "backflush",
+      effectiveFrom: new Date("2026-01-01T00:00:00+00:00"),
+      effectiveTo: null,
+      isCritical: true,
+      lotTraceRequired: true,
+      createdAt: new Date("2026-01-01T00:00:00+00:00"),
+      updatedAt: new Date("2026-01-01T00:00:00+00:00"),
+      version: 1
+    }
+  ],
+  bomOperationOutputs: [
+    {
+      id: "bom-output-primary",
+      bomOperationId: "bom-op-lm-020",
+      outputType: "primary",
+      itemType: "product_variant",
+      itemId: "var-lions-mane-50",
+      quantity: 48,
+      uom: "bottle",
+      scrapReasonCode: null,
+      traceInventory: true,
+      costCreditPercent: 0,
+      reworkRequired: false,
+      createdAt: new Date("2026-01-01T00:00:00+00:00"),
+      updatedAt: new Date("2026-01-01T00:00:00+00:00"),
+      version: 1
+    },
+    {
+      id: "bom-output-reclaim",
+      bomOperationId: "bom-op-lm-020",
+      outputType: "by_product",
+      itemType: "material",
+      itemId: "mat-alcohol",
+      quantity: 0.1,
+      uom: "l",
+      scrapReasonCode: null,
+      traceInventory: true,
+      costCreditPercent: 2,
+      reworkRequired: false,
+      createdAt: new Date("2026-01-01T00:00:00+00:00"),
+      updatedAt: new Date("2026-01-01T00:00:00+00:00"),
+      version: 1
+    },
+    {
+      id: "bom-output-scrap",
+      bomOperationId: "bom-op-lm-020",
+      outputType: "scrap",
+      itemType: "packaging_component",
+      itemId: "pkg-amber-50",
+      quantity: 1,
+      uom: "each",
+      scrapReasonCode: "damaged_glass",
+      traceInventory: false,
+      costCreditPercent: 0,
+      reworkRequired: false,
+      createdAt: new Date("2026-01-01T00:00:00+00:00"),
+      updatedAt: new Date("2026-01-01T00:00:00+00:00"),
+      version: 1
+    }
+  ],
+  bomSubstitutes: [
+    {
+      id: "bom-sub-bottle-alt",
+      bomOperationMaterialId: "bom-op-mat-bottle",
+      replacementType: "approved_replacement",
+      componentType: "packaging_component",
+      componentId: "pkg-amber-50-alt",
+      quantity: 48,
+      uom: "each",
+      conversionFactor: 1,
+      effectiveFrom: new Date("2026-06-01T00:00:00+00:00"),
+      effectiveTo: null,
+      priority: 1,
+      approved: true,
+      approvalReference: "CR-BOM-2026-001",
+      notes: "Approved when primary bottle supply is constrained.",
+      createdAt: new Date("2026-06-01T00:00:00+00:00"),
+      updatedAt: new Date("2026-06-01T00:00:00+00:00"),
+      version: 1
+    }
+  ],
+  bomAlternates: [],
+  bomOperationCosts: [
+    {
+      id: "bom-cost-setup",
+      bomOperationId: "bom-op-lm-010",
+      costType: "setup",
+      costCode: "SETUP-PREP",
+      description: "Prep setup time",
+      quantity: 1,
+      uom: "flat",
+      unitCost: 12,
+      currency: "EUR",
+      backflush: true,
+      createdAt: new Date("2026-01-01T00:00:00+00:00"),
+      updatedAt: new Date("2026-01-01T00:00:00+00:00"),
+      version: 1
+    },
+    {
+      id: "bom-cost-bottling-overhead",
+      bomOperationId: "bom-op-lm-020",
+      costType: "overhead",
+      costCode: "BOTTLING-OH",
+      description: "Bottling overhead",
+      quantity: 1,
+      uom: "batch",
+      unitCost: 6,
+      currency: "EUR",
+      backflush: true,
       createdAt: new Date("2026-01-01T00:00:00+00:00"),
       updatedAt: new Date("2026-01-01T00:00:00+00:00"),
       version: 1
@@ -3029,6 +4649,122 @@ export const defaultMemorySeed: MemoryDataStoreSeed = {
   ],
   ebrStepResults: [],
   eSignatures: [],
+  weighDispenseSessions: [
+    {
+      id: "wd-session-lm-bottle-001",
+      organizationId: "org-mc",
+      sessionCode: "WD-2026-001",
+      status: "open",
+      productionOrderId: "po-lm-bottle-002",
+      processingBatchId: "batch-lm-bottle-001",
+      ebrExecutionId: "ebr-exec-batch-lm-bottle-001",
+      bomId: "bom-lm-tincture-v1",
+      formulaRevisionId: "formula-lm-tincture-v1",
+      locationId: "loc-pack",
+      startedBy: "user-owner",
+      startedAt: new Date("2026-06-26T10:05:00+01:00"),
+      completedAt: null,
+      createdAt: new Date("2026-06-26T10:05:00+01:00"),
+      updatedAt: new Date("2026-06-26T10:05:00+01:00"),
+      version: 1
+    }
+  ],
+  weighDispenseLines: [
+    {
+      id: "wd-line-alcohol",
+      sessionId: "wd-session-lm-bottle-001",
+      sequence: 10,
+      sourceType: "bom_operation_material",
+      sourceId: "bom-op-mat-alcohol",
+      componentType: "material",
+      componentId: "mat-alcohol",
+      componentName: "Organic Cane Alcohol",
+      targetQuantity: 2.04,
+      targetUom: "l",
+      potencyAdjustedTargetQuantity: null,
+      potencyBasis: null,
+      potencyAssay: null,
+      potencyQcResultId: null,
+      tolerancePercent: 2,
+      toleranceQuantity: null,
+      minQuantity: 1.99,
+      maxQuantity: 2.08,
+      isCritical: true,
+      requiresPotencyAdjustment: false,
+      status: "pending",
+      lotId: null,
+      locationId: null,
+      containerId: null,
+      scaleAdapterId: null,
+      equipmentId: "equip-scale-01",
+      calibrationStatus: null,
+      tareQuantity: null,
+      grossQuantity: null,
+      netQuantity: null,
+      varianceQuantity: null,
+      variancePercent: null,
+      withinTolerance: null,
+      overrideReason: null,
+      overrideBy: null,
+      overrideAt: null,
+      verifiedBy: null,
+      verifiedAt: null,
+      stockMovementId: null,
+      ebrStepResultId: null,
+      completedBy: null,
+      completedAt: null,
+      createdAt: new Date("2026-06-26T10:05:00+01:00"),
+      updatedAt: new Date("2026-06-26T10:05:00+01:00"),
+      version: 1
+    },
+    {
+      id: "wd-line-bottles",
+      sessionId: "wd-session-lm-bottle-001",
+      sequence: 20,
+      sourceType: "bom_operation_material",
+      sourceId: "bom-op-mat-bottle",
+      componentType: "packaging_component",
+      componentId: "pkg-amber-50",
+      componentName: "Amber dropper bottle 50 ml",
+      targetQuantity: 48.48,
+      targetUom: "each",
+      potencyAdjustedTargetQuantity: null,
+      potencyBasis: null,
+      potencyAssay: null,
+      potencyQcResultId: null,
+      tolerancePercent: 2,
+      toleranceQuantity: null,
+      minQuantity: null,
+      maxQuantity: null,
+      isCritical: false,
+      requiresPotencyAdjustment: false,
+      status: "pending",
+      lotId: null,
+      locationId: null,
+      containerId: null,
+      scaleAdapterId: null,
+      equipmentId: null,
+      calibrationStatus: null,
+      tareQuantity: null,
+      grossQuantity: null,
+      netQuantity: null,
+      varianceQuantity: null,
+      variancePercent: null,
+      withinTolerance: null,
+      overrideReason: null,
+      overrideBy: null,
+      overrideAt: null,
+      verifiedBy: null,
+      verifiedAt: null,
+      stockMovementId: null,
+      ebrStepResultId: null,
+      completedBy: null,
+      completedAt: null,
+      createdAt: new Date("2026-06-26T10:05:00+01:00"),
+      updatedAt: new Date("2026-06-26T10:05:00+01:00"),
+      version: 1
+    }
+  ],
   lots: [
     {
       id: "lot-lm-harvest-2026-06",
@@ -3433,6 +5169,261 @@ export const defaultMemorySeed: MemoryDataStoreSeed = {
       version: 1
     }
   ],
+  labInstruments: [
+    {
+      id: "lab-inst-moisture-01",
+      organizationId: "org-mc",
+      instrumentCode: "MOIST-01",
+      name: "Moisture analyzer 01",
+      instrumentType: "moisture_analyzer",
+      locationId: "loc-pack",
+      calibrationDueAt: new Date("2026-07-15T09:00:00+01:00"),
+      status: "qualified",
+      metadataJson: { manufacturer: "DemoLab" },
+      createdAt: new Date("2026-06-01T09:00:00+01:00"),
+      updatedAt: new Date("2026-06-01T09:00:00+01:00"),
+      version: 1
+    }
+  ],
+  samplingPlans: [
+    {
+      id: "sampling-plan-alcohol-high",
+      organizationId: "org-mc",
+      planCode: "LIMS-IN-ALC-HIGH",
+      name: "High-risk alcohol incoming release",
+      supplierId: "supplier-bio-farms",
+      itemClass: "raw_material",
+      itemType: "material",
+      itemId: "mat-alcohol",
+      materialId: "mat-alcohol",
+      productVariantId: null,
+      riskLevel: "high",
+      inspectionType: "incoming",
+      batchSizeMin: null,
+      batchSizeMax: null,
+      containerCountMin: 1,
+      containerCountMax: null,
+      sampleSize: 2,
+      containerSampleCount: 1,
+      priority: 100,
+      active: true,
+      instructions: "Sample sealed containers and verify COA, identity, alcohol percentage, and seal condition.",
+      createdAt: new Date("2026-06-01T09:00:00+01:00"),
+      updatedAt: new Date("2026-06-01T09:00:00+01:00"),
+      version: 1
+    },
+    {
+      id: "sampling-plan-fg-lm",
+      organizationId: "org-mc",
+      planCode: "LIMS-FG-REL",
+      name: "Finished goods release sampling",
+      supplierId: null,
+      itemClass: "finished_good",
+      itemType: "product_variant",
+      itemId: "var-lions-mane-50",
+      materialId: null,
+      productVariantId: "var-lions-mane-50",
+      riskLevel: "medium",
+      inspectionType: "finished_good",
+      batchSizeMin: 1,
+      batchSizeMax: null,
+      containerCountMin: null,
+      containerCountMax: null,
+      sampleSize: 3,
+      containerSampleCount: 0,
+      priority: 90,
+      active: true,
+      instructions: "Collect finished bottle, run visual inspection and moisture panel, and retain reserve sample.",
+      createdAt: new Date("2026-06-01T09:00:00+01:00"),
+      updatedAt: new Date("2026-06-01T09:00:00+01:00"),
+      version: 1
+    }
+  ],
+  samples: [
+    {
+      id: "sample-lm-2026-06-release",
+      organizationId: "org-mc",
+      sampleNumber: "SMP-2026-0001",
+      sourceType: "lot",
+      sourceId: "lot-lm-2026-06",
+      inspectionType: "finished_good",
+      samplingPlanId: "sampling-plan-fg-lm",
+      lotId: "lot-lm-2026-06",
+      receiptId: null,
+      supplierId: null,
+      processingBatchId: "proc-lm-2026-06",
+      productionOrderId: null,
+      stabilityStudyId: null,
+      retainedSampleId: null,
+      itemType: "product_variant",
+      itemId: "var-lions-mane-50",
+      status: "awaiting_review",
+      sampleSize: 1,
+      uom: "bottle",
+      containerCount: 1,
+      storageLocationId: "loc-pack",
+      dueAt: new Date("2026-06-20T12:00:00+01:00"),
+      collectedAt: new Date("2026-06-19T09:30:00+01:00"),
+      collectedBy: "user-owner",
+      notes: "Finished goods release sample.",
+      metadataJson: { panel: "release" },
+      createdAt: new Date("2026-06-19T09:30:00+01:00"),
+      updatedAt: new Date("2026-06-19T10:00:00+01:00"),
+      version: 1
+    }
+  ],
+  sampleTests: [
+    {
+      id: "sample-test-lm-moisture",
+      organizationId: "org-mc",
+      sampleId: "sample-lm-2026-06-release",
+      qcTaskId: "qctask-lm-2026-06-visual",
+      testMethodId: "qctm-moisture",
+      instrumentId: "lab-inst-moisture-01",
+      status: "awaiting_review",
+      expectedMin: 4,
+      expectedMax: 12,
+      unit: "%",
+      passFailRule: { type: "numeric_range", min: 4, max: 12 },
+      retestRule: { retestAllowed: true, maxRetests: 1, autoCreateQualityEventOnFail: true, autoHoldOnFail: true },
+      evidenceRequirement: { commentRequiredOnFail: true },
+      dueAt: new Date("2026-06-20T12:00:00+01:00"),
+      createdAt: new Date("2026-06-19T09:30:00+01:00"),
+      updatedAt: new Date("2026-06-19T10:00:00+01:00"),
+      version: 1
+    }
+  ],
+  labResults: [
+    {
+      id: "lab-result-lm-moisture",
+      organizationId: "org-mc",
+      sampleId: "sample-lm-2026-06-release",
+      sampleTestId: "sample-test-lm-moisture",
+      qcResultId: null,
+      testMethodId: "qctm-moisture",
+      retestOfResultId: null,
+      resultNumber: "LAB-2026-0001",
+      valueNumber: 7.8,
+      valueText: null,
+      valueBoolean: null,
+      unit: "%",
+      evaluatedStatus: "pass",
+      reviewStatus: "in_review",
+      reason: null,
+      comments: "Moisture within finished goods range.",
+      evidence: [{ fileName: "moisture-lm-2026-06.csv", filePath: "/demo/moisture-lm-2026-06.csv", contentType: "text/csv" }],
+      enteredBy: "user-owner",
+      enteredAt: new Date("2026-06-19T10:00:00+01:00"),
+      reviewedBy: null,
+      reviewedAt: null,
+      invalidatedBy: null,
+      invalidatedAt: null,
+      invalidationReason: null,
+      qualityEventId: null,
+      createdAt: new Date("2026-06-19T10:00:00+01:00"),
+      updatedAt: new Date("2026-06-19T10:00:00+01:00"),
+      version: 1
+    }
+  ],
+  retainedSamples: [
+    {
+      id: "retained-lm-2026-06",
+      organizationId: "org-mc",
+      retainedSampleNumber: "RET-2026-0001",
+      lotId: "lot-lm-2026-06",
+      sampleId: "sample-lm-2026-06-release",
+      storageLocationId: "loc-warehouse-a",
+      initialQuantity: 6,
+      remainingQuantity: 6,
+      uom: "bottle",
+      expiresAt: new Date("2027-06-18T00:00:00+01:00"),
+      status: "available",
+      metadataJson: { storageCondition: "ambient" },
+      createdAt: new Date("2026-06-19T10:30:00+01:00"),
+      updatedAt: new Date("2026-06-19T10:30:00+01:00"),
+      version: 1
+    }
+  ],
+  retainedSamplePulls: [],
+  stabilityStudies: [
+    {
+      id: "stability-lm-2026-06",
+      organizationId: "org-mc",
+      studyNumber: "STAB-2026-0001",
+      lotId: "lot-lm-2026-06",
+      productVariantId: "var-lions-mane-50",
+      protocolName: "Ambient finished goods stability",
+      storageCondition: "25C ambient",
+      status: "active",
+      startDate: new Date("2026-06-18T09:00:00+01:00"),
+      endDate: null,
+      testPanelJson: { testMethodIds: ["qctm-moisture", "qctm-visual-release"], intervalsDays: [0, 30, 90], windowDays: 7 },
+      ownerUserId: "user-owner",
+      metadataJson: {},
+      createdAt: new Date("2026-06-18T09:00:00+01:00"),
+      updatedAt: new Date("2026-06-18T09:00:00+01:00"),
+      version: 1
+    }
+  ],
+  stabilityPullPoints: [
+    {
+      id: "stability-pull-lm-0d",
+      organizationId: "org-mc",
+      stabilityStudyId: "stability-lm-2026-06",
+      sampleId: null,
+      sequence: 1,
+      intervalDays: 0,
+      scheduledPullAt: new Date("2026-06-18T09:00:00+01:00"),
+      windowStartAt: new Date("2026-06-11T09:00:00+01:00"),
+      windowEndAt: new Date("2026-06-25T09:00:00+01:00"),
+      status: "missed",
+      pulledAt: null,
+      pulledBy: null,
+      alertTaskId: null,
+      metadataJson: { testMethodIds: ["qctm-moisture", "qctm-visual-release"] },
+      createdAt: new Date("2026-06-18T09:00:00+01:00"),
+      updatedAt: new Date("2026-06-18T09:00:00+01:00"),
+      version: 1
+    },
+    {
+      id: "stability-pull-lm-30d",
+      organizationId: "org-mc",
+      stabilityStudyId: "stability-lm-2026-06",
+      sampleId: null,
+      sequence: 2,
+      intervalDays: 30,
+      scheduledPullAt: new Date("2026-07-18T09:00:00+01:00"),
+      windowStartAt: new Date("2026-07-11T09:00:00+01:00"),
+      windowEndAt: new Date("2026-07-25T09:00:00+01:00"),
+      status: "scheduled",
+      pulledAt: null,
+      pulledBy: null,
+      alertTaskId: null,
+      metadataJson: { testMethodIds: ["qctm-moisture", "qctm-visual-release"] },
+      createdAt: new Date("2026-06-18T09:00:00+01:00"),
+      updatedAt: new Date("2026-06-18T09:00:00+01:00"),
+      version: 1
+    },
+    {
+      id: "stability-pull-lm-90d",
+      organizationId: "org-mc",
+      stabilityStudyId: "stability-lm-2026-06",
+      sampleId: null,
+      sequence: 3,
+      intervalDays: 90,
+      scheduledPullAt: new Date("2026-09-16T09:00:00+01:00"),
+      windowStartAt: new Date("2026-09-09T09:00:00+01:00"),
+      windowEndAt: new Date("2026-09-23T09:00:00+01:00"),
+      status: "scheduled",
+      pulledAt: null,
+      pulledBy: null,
+      alertTaskId: null,
+      metadataJson: { testMethodIds: ["qctm-moisture", "qctm-visual-release"] },
+      createdAt: new Date("2026-06-18T09:00:00+01:00"),
+      updatedAt: new Date("2026-06-18T09:00:00+01:00"),
+      version: 1
+    }
+  ],
   qualityEvents: [
     {
       id: "qe-lm-hold-label",
@@ -3592,6 +5583,213 @@ export const defaultMemorySeed: MemoryDataStoreSeed = {
   ],
   generatedDocuments: [],
   documentApprovals: [],
+  controlledDocuments: [
+    {
+      id: "ctrl-doc-sds-lm-v1",
+      organizationId: "org-mc",
+      documentType: "sds",
+      documentNumber: "SDS-LM-2026",
+      title: "Lion's Mane extract SDS",
+      subjectType: "product_family",
+      subjectId: "tincture",
+      filePath: "compliance/sds/lions-mane-extract-2026.pdf",
+      fileName: "lions-mane-extract-2026.pdf",
+      contentType: "application/pdf",
+      status: "current",
+      internalOnly: false,
+      issuedAt: new Date("2026-01-15T00:00:00+00:00"),
+      expiresAt: new Date("2027-01-15T00:00:00+00:00"),
+      ownerUserId: "user-owner",
+      createdAt: new Date("2026-01-15T00:00:00+00:00"),
+      updatedAt: new Date("2026-01-15T00:00:00+00:00"),
+      version: 1
+    },
+    {
+      id: "ctrl-doc-allergen-cacao-v1",
+      organizationId: "org-mc",
+      documentType: "allergen_statement",
+      documentNumber: "ALG-CACAO-2026",
+      title: "Cacao allergen statement",
+      subjectType: "ingredient_class",
+      subjectId: "cacao",
+      filePath: "compliance/allergens/cacao-2026.pdf",
+      fileName: "cacao-allergen-statement.pdf",
+      contentType: "application/pdf",
+      status: "current",
+      internalOnly: false,
+      issuedAt: new Date("2026-02-01T00:00:00+00:00"),
+      expiresAt: new Date("2026-07-15T00:00:00+00:00"),
+      ownerUserId: "user-owner",
+      createdAt: new Date("2026-02-01T00:00:00+00:00"),
+      updatedAt: new Date("2026-02-01T00:00:00+00:00"),
+      version: 1
+    },
+    {
+      id: "ctrl-doc-haccp-tincture-v1",
+      organizationId: "org-mc",
+      documentType: "haccp_plan",
+      documentNumber: "HACCP-TINC-2026",
+      title: "Tincture HACCP plan",
+      subjectType: "product_family",
+      subjectId: "tincture",
+      filePath: "compliance/haccp/tincture-2026.pdf",
+      fileName: "tincture-haccp-plan.pdf",
+      contentType: "application/pdf",
+      status: "current",
+      internalOnly: true,
+      issuedAt: new Date("2026-03-01T00:00:00+00:00"),
+      expiresAt: new Date("2026-09-01T00:00:00+00:00"),
+      ownerUserId: "user-owner",
+      createdAt: new Date("2026-03-01T00:00:00+00:00"),
+      updatedAt: new Date("2026-03-01T00:00:00+00:00"),
+      version: 1
+    }
+  ],
+  complianceRequirements: [
+    {
+      id: "comp-req-sds-production-start",
+      organizationId: "org-mc",
+      requirementType: "document",
+      action: "production.start",
+      label: "Current SDS for tincture production",
+      requiredDocumentType: "sds",
+      trainingRequirementId: null,
+      scopeJson: { productFamily: "tincture" },
+      active: true,
+      createdAt: new Date("2026-06-01T09:00:00+01:00"),
+      updatedAt: new Date("2026-06-01T09:00:00+01:00"),
+      version: 1
+    },
+    {
+      id: "comp-req-training-production-start",
+      organizationId: "org-mc",
+      requirementType: "training",
+      action: "production.start",
+      label: "Bottling SOP training",
+      requiredDocumentType: null,
+      trainingRequirementId: "train-req-bottling-sop",
+      scopeJson: { equipmentId: "equip-filler-01", roleCodes: ["owner_admin", "production_farm"] },
+      active: true,
+      createdAt: new Date("2026-06-01T09:00:00+01:00"),
+      updatedAt: new Date("2026-06-01T09:00:00+01:00"),
+      version: 1
+    },
+    {
+      id: "comp-req-sanitation-production-start",
+      organizationId: "org-mc",
+      requirementType: "sanitation",
+      action: "production.start",
+      label: "Bottling line sanitation",
+      requiredDocumentType: null,
+      trainingRequirementId: null,
+      scopeJson: { equipmentId: "equip-filler-01", roomId: "loc-pack" },
+      active: true,
+      createdAt: new Date("2026-06-01T09:00:00+01:00"),
+      updatedAt: new Date("2026-06-01T09:00:00+01:00"),
+      version: 1
+    },
+    {
+      id: "comp-req-allergen-production-start",
+      organizationId: "org-mc",
+      requirementType: "allergen_control",
+      action: "production.start",
+      label: "Cacao allergen control",
+      requiredDocumentType: null,
+      trainingRequirementId: null,
+      scopeJson: { ingredientClass: "cacao", productionOrderId: "prod-lm-2026-06" },
+      active: true,
+      createdAt: new Date("2026-06-01T09:00:00+01:00"),
+      updatedAt: new Date("2026-06-01T09:00:00+01:00"),
+      version: 1
+    }
+  ],
+  sanitationChecks: [
+    {
+      id: "san-check-filler-open",
+      organizationId: "org-mc",
+      checklistCode: "SAN-FILL-OPEN",
+      equipmentId: "equip-filler-01",
+      equipmentCode: "FILL-01",
+      roomId: "loc-pack",
+      roomName: "Packing Room",
+      productFamily: "tincture",
+      productionOrderId: "prod-lm-2026-06",
+      status: "fail",
+      performedBy: "user-owner",
+      completedAt: new Date("2026-06-27T08:00:00+01:00"),
+      expiresAt: new Date("2026-06-28T08:00:00+01:00"),
+      notes: "Line clearance incomplete before pre-op.",
+      createdAt: new Date("2026-06-27T08:00:00+01:00"),
+      updatedAt: new Date("2026-06-27T08:00:00+01:00"),
+      version: 1
+    }
+  ],
+  allergenControls: [
+    {
+      id: "allergen-cacao-po-001",
+      organizationId: "org-mc",
+      controlCode: "ALG-CACAO-PO-001",
+      productFamily: "tincture",
+      ingredientClass: "cacao",
+      productionOrderId: "prod-lm-2026-06",
+      status: "pass",
+      verifiedBy: "user-owner",
+      verifiedAt: new Date("2026-06-27T08:30:00+01:00"),
+      notes: "No cacao-contact equipment assigned to this run.",
+      createdAt: new Date("2026-06-27T08:30:00+01:00"),
+      updatedAt: new Date("2026-06-27T08:30:00+01:00"),
+      version: 1
+    }
+  ],
+  trainingRequirements: [
+    {
+      id: "train-req-bottling-sop",
+      organizationId: "org-mc",
+      code: "TR-BOTTLE-SOP",
+      title: "Bottling SOP and line clearance",
+      roleCode: "production_farm",
+      equipmentId: "equip-filler-01",
+      workflowId: "production.start",
+      sopDocumentId: "ctrl-doc-haccp-tincture-v1",
+      controlledAction: "production.start",
+      status: "active",
+      retrainCadenceDays: 365,
+      createdAt: new Date("2026-06-01T09:00:00+01:00"),
+      updatedAt: new Date("2026-06-01T09:00:00+01:00"),
+      version: 1
+    }
+  ],
+  trainingRecords: [
+    {
+      id: "train-rec-owner-bottling",
+      organizationId: "org-mc",
+      requirementId: "train-req-bottling-sop",
+      userId: "user-owner",
+      userName: "Owner Admin",
+      status: "current",
+      completedAt: new Date("2026-06-10T09:00:00+01:00"),
+      expiresAt: new Date("2027-06-10T09:00:00+01:00"),
+      evidenceDocumentId: null,
+      createdAt: new Date("2026-06-10T09:00:00+01:00"),
+      updatedAt: new Date("2026-06-10T09:00:00+01:00"),
+      version: 1
+    },
+    {
+      id: "train-rec-staff-bottling-expired",
+      organizationId: "org-mc",
+      requirementId: "train-req-bottling-sop",
+      userId: "user-staff",
+      userName: "Production Staff",
+      status: "expired",
+      completedAt: new Date("2025-03-01T09:00:00+00:00"),
+      expiresAt: new Date("2026-03-01T09:00:00+00:00"),
+      evidenceDocumentId: null,
+      createdAt: new Date("2025-03-01T09:00:00+00:00"),
+      updatedAt: new Date("2026-03-01T09:00:00+00:00"),
+      version: 1
+    }
+  ],
+  auditPackets: [],
   stockMovements: [
     {
       id: "move-lm-2026-06-output",
@@ -3681,6 +5879,282 @@ export const defaultMemorySeed: MemoryDataStoreSeed = {
   shopifySyncEvents: [],
   stockCountSessions: [],
   stockCountLines: [],
+  warehouseZones: [
+    {
+      id: "zone-ambient",
+      organizationId: "org-mc",
+      code: "AMB",
+      name: "Ambient released storage",
+      zoneType: "ambient",
+      temperatureMinC: 16,
+      temperatureMaxC: 24,
+      quarantine: false,
+      createdAt: new Date("2026-06-27T08:00:00+01:00"),
+      updatedAt: new Date("2026-06-27T08:00:00+01:00"),
+      version: 1
+    },
+    {
+      id: "zone-quarantine",
+      organizationId: "org-mc",
+      code: "QTN",
+      name: "Quarantine storage",
+      zoneType: "quarantine",
+      temperatureMinC: 16,
+      temperatureMaxC: 24,
+      quarantine: true,
+      createdAt: new Date("2026-06-27T08:00:00+01:00"),
+      updatedAt: new Date("2026-06-27T08:00:00+01:00"),
+      version: 1
+    },
+    {
+      id: "zone-staging",
+      organizationId: "org-mc",
+      code: "STG",
+      name: "Outbound staging",
+      zoneType: "staging",
+      temperatureMinC: 16,
+      temperatureMaxC: 24,
+      quarantine: false,
+      createdAt: new Date("2026-06-27T08:00:00+01:00"),
+      updatedAt: new Date("2026-06-27T08:00:00+01:00"),
+      version: 1
+    }
+  ],
+  storageRules: [
+    {
+      id: "rule-released-fg-ambient",
+      organizationId: "org-mc",
+      priority: 10,
+      itemClass: "finished_goods",
+      itemType: "product_variant",
+      itemId: null,
+      lotStatus: "released",
+      zoneType: "ambient",
+      requireQuarantine: false,
+      expiryWindowDays: null,
+      createdAt: new Date("2026-06-27T08:00:00+01:00"),
+      updatedAt: new Date("2026-06-27T08:00:00+01:00"),
+      version: 1
+    },
+    {
+      id: "rule-held-quarantine",
+      organizationId: "org-mc",
+      priority: 1,
+      itemClass: null,
+      itemType: null,
+      itemId: null,
+      lotStatus: "hold",
+      zoneType: "quarantine",
+      requireQuarantine: true,
+      expiryWindowDays: null,
+      createdAt: new Date("2026-06-27T08:00:00+01:00"),
+      updatedAt: new Date("2026-06-27T08:00:00+01:00"),
+      version: 1
+    }
+  ],
+  stagingLocations: [
+    {
+      id: "stage-1",
+      organizationId: "org-mc",
+      locationId: "loc-stage-1",
+      locationName: "Outbound Stage 1",
+      zoneId: "zone-staging",
+      stagingCode: "STAGE-1",
+      status: "reserved",
+      currentWaveId: "wave-shopify-am",
+      capacityCartons: 24
+    }
+  ],
+  containers: [
+    {
+      id: "container-pallet-lm-01",
+      organizationId: "org-mc",
+      containerCode: "LP-PAL-LM-001",
+      containerType: "pallet",
+      parentContainerId: null,
+      locationId: "loc-pack",
+      locationName: "Packing Room",
+      zoneId: "zone-ambient",
+      status: "open",
+      tareWeight: 14,
+      weightUom: "kg",
+      createdAt: new Date("2026-06-27T08:00:00+01:00"),
+      updatedAt: new Date("2026-06-27T08:00:00+01:00"),
+      version: 1
+    },
+    {
+      id: "container-tote-pick-01",
+      organizationId: "org-mc",
+      containerCode: "TOTE-001",
+      containerType: "tote",
+      parentContainerId: null,
+      locationId: "loc-stage-1",
+      locationName: "Outbound Stage 1",
+      zoneId: "zone-staging",
+      status: "staged",
+      tareWeight: 1.2,
+      weightUom: "kg",
+      createdAt: new Date("2026-06-27T08:05:00+01:00"),
+      updatedAt: new Date("2026-06-27T08:05:00+01:00"),
+      version: 1
+    },
+    {
+      id: "container-carton-pack-01",
+      organizationId: "org-mc",
+      containerCode: "CTN-ORDER-1001",
+      containerType: "carton",
+      parentContainerId: "container-tote-pick-01",
+      locationId: "loc-stage-1",
+      locationName: "Outbound Stage 1",
+      zoneId: "zone-staging",
+      status: "open",
+      tareWeight: 0.25,
+      weightUom: "kg",
+      createdAt: new Date("2026-06-27T08:10:00+01:00"),
+      updatedAt: new Date("2026-06-27T08:10:00+01:00"),
+      version: 1
+    }
+  ],
+  containerLines: [
+    {
+      id: "container-line-lm-released",
+      organizationId: "org-mc",
+      containerId: "container-pallet-lm-01",
+      itemType: "product_variant",
+      itemId: "var-lions-mane-50",
+      itemName: "Lion's Mane Tincture 50 ml",
+      itemSku: "LM-TINC-50",
+      lotId: "lot-lm-2026-06",
+      lotCode: "LM-2026-06",
+      qcStatus: "released",
+      expiresAt: new Date("2027-06-18T00:00:00+01:00"),
+      quantity: 80,
+      uom: "bottle",
+      receivedAt: new Date("2026-06-18T11:00:00+01:00")
+    },
+    {
+      id: "container-line-lm-hold",
+      organizationId: "org-mc",
+      containerId: "container-pallet-lm-01",
+      itemType: "product_variant",
+      itemId: "var-lions-mane-50",
+      itemName: "Lion's Mane Tincture 50 ml",
+      itemSku: "LM-TINC-50",
+      lotId: "lot-lm-hold",
+      lotCode: "LM-HOLD-01",
+      qcStatus: "hold",
+      expiresAt: new Date("2027-05-10T00:00:00+01:00"),
+      quantity: 36,
+      uom: "bottle",
+      receivedAt: new Date("2026-05-10T09:00:00+01:00")
+    }
+  ],
+  putawayTasks: [
+    {
+      id: "putaway-lm-released",
+      organizationId: "org-mc",
+      taskNumber: "PA-2026-0001",
+      containerId: "container-pallet-lm-01",
+      containerCode: "LP-PAL-LM-001",
+      itemType: "product_variant",
+      itemId: "var-lions-mane-50",
+      lotId: "lot-lm-2026-06",
+      lotCode: "LM-2026-06",
+      fromLocationId: "loc-pack",
+      toLocationId: null,
+      suggestedLocationId: "loc-warehouse-a",
+      status: "open",
+      quantity: 24,
+      uom: "bottle",
+      priority: 5,
+      suggestions: [],
+      exceptionReason: null,
+      createdAt: new Date("2026-06-27T08:15:00+01:00"),
+      completedAt: null
+    },
+    {
+      id: "putaway-lm-hold",
+      organizationId: "org-mc",
+      taskNumber: "PA-2026-0002",
+      containerId: "container-pallet-lm-01",
+      containerCode: "LP-PAL-LM-001",
+      itemType: "product_variant",
+      itemId: "var-lions-mane-50",
+      lotId: "lot-lm-hold",
+      lotCode: "LM-HOLD-01",
+      fromLocationId: "loc-pack",
+      toLocationId: null,
+      suggestedLocationId: "loc-quarantine",
+      status: "open",
+      quantity: 36,
+      uom: "bottle",
+      priority: 1,
+      suggestions: [],
+      exceptionReason: null,
+      createdAt: new Date("2026-06-27T08:16:00+01:00"),
+      completedAt: null
+    }
+  ],
+  waveBatches: [
+    {
+      id: "wave-shopify-am",
+      organizationId: "org-mc",
+      waveNumber: "WAVE-2026-06-27-AM",
+      status: "released",
+      orderIds: ["so-shopify-1001"],
+      stagingLocationId: "stage-1",
+      toteContainerIds: ["container-tote-pick-01"],
+      pickStrategy: "fefo",
+      pickPathSummary: "PACK -> STAGE-1, FEFO released lots first",
+      releasedAt: new Date("2026-06-27T08:20:00+01:00"),
+      completedAt: null,
+      createdAt: new Date("2026-06-27T08:20:00+01:00")
+    }
+  ],
+  pickTasks: [
+    {
+      id: "pick-shopify-1001-line-1",
+      organizationId: "org-mc",
+      taskNumber: "PICK-2026-0001",
+      waveId: "wave-shopify-am",
+      salesOrderLineId: "sol-shopify-1001-1",
+      salesOrderNumber: "#1001",
+      toteContainerId: "container-tote-pick-01",
+      toteCode: "TOTE-001",
+      itemType: "product_variant",
+      itemId: "var-lions-mane-50",
+      lotId: "lot-lm-2026-06",
+      lotCode: "LM-2026-06",
+      fromLocationId: "loc-pack",
+      fromLocationName: "Packing Room",
+      stagingLocationId: "stage-1",
+      sequence: 10,
+      quantity: 2,
+      uom: "bottle",
+      status: "open",
+      strategy: "fefo",
+      suggestionReason: "FEFO by expiry 2027-06-18",
+      overrideReason: null,
+      completedAt: null
+    }
+  ],
+  packSessions: [
+    {
+      id: "pack-shopify-1001",
+      organizationId: "org-mc",
+      sessionNumber: "PACK-2026-0001",
+      salesOrderId: "so-shopify-1001",
+      shipmentId: null,
+      stagingLocationId: "stage-1",
+      cartonContainerId: "container-carton-pack-01",
+      status: "open",
+      verifiedLineCount: 0,
+      exceptionReason: null,
+      startedAt: new Date("2026-06-27T08:30:00+01:00"),
+      packedAt: null,
+      shippedAt: null
+    }
+  ],
   customers: [
     {
       id: "cust-anna-shopify",
@@ -4173,6 +6647,161 @@ export const defaultMemorySeed: MemoryDataStoreSeed = {
       updatedAt: new Date("2026-06-26T12:00:00+01:00").toISOString()
     }
   ],
+  genericInquiries: [
+    {
+      ...createDefaultInquiry({
+        id: "inq-inventory-exposure",
+        organizationId: "org-mc",
+        ownerUserId: "user-owner",
+        name: "Inventory exposure by location",
+        datasetId: "inventory_lot_balances",
+        now: new Date("2026-06-26T12:00:00+01:00"),
+        visibility: "role_shared",
+        sharedRoleCodes: ["owner_admin", "auditor", "packing_fulfillment"]
+      }),
+      description: "On-hand quantity and held quantity grouped by location.",
+      columns: [
+        { fieldKey: "location_name" },
+        { fieldKey: "on_hand_quantity", aggregate: "sum" },
+        { fieldKey: "held_quantity", aggregate: "sum" }
+      ],
+      groupBy: ["location_name"],
+      calculations: [
+        {
+          id: "on_hand_quantity",
+          label: "On hand",
+          expression: "available_quantity + reserved_quantity + held_quantity",
+          type: "number",
+          aggregate: "sum"
+        }
+      ],
+      chart: { kind: "bar", labelField: "location_name", valueField: "sum_on_hand_quantity" },
+      published: true
+    }
+  ],
+  reportSchedules: [
+    {
+      id: "sched-weekly-inventory",
+      organizationId: "org-mc",
+      inquiryId: "inq-inventory-exposure",
+      name: "Weekly inventory exposure CSV",
+      format: "csv",
+      cadence: "weekly",
+      timezone: "Europe/Lisbon",
+      parameters: {},
+      active: true,
+      nextRunAt: new Date("2026-06-29T07:00:00+01:00").toISOString(),
+      createdBy: "user-owner",
+      createdAt: new Date("2026-06-26T12:15:00+01:00").toISOString(),
+      updatedAt: new Date("2026-06-26T12:15:00+01:00").toISOString()
+    }
+  ],
+  reportExports: [],
+  landedCosts: [
+    {
+      id: "lc-inbound-june-001",
+      organizationId: "org-mc",
+      landedCostId: "lc-inbound-june-001",
+      landedCostNumber: "LC-2026-06-001",
+      supplierId: "supplier-bio-farms",
+      sourceDocumentNumber: "DHL-PT-8801",
+      status: "allocated",
+      receiptIds: ["receipt-alcohol-001"],
+      currency: "EUR",
+      totalAmount: 118,
+      allocatedAt: new Date("2026-06-24T11:15:00+01:00"),
+      allocations: [
+        {
+          landedCostId: "lc-inbound-june-001",
+          componentId: "freight",
+          category: "freight",
+          receiptLineId: "receipt-line-alcohol-001",
+          receiptId: "receipt-alcohol-001",
+          itemType: "material",
+          itemId: "mat-alcohol",
+          lotId: "lot-alcohol-2026-06",
+          allocatedAmount: 82,
+          allocatedUnitCost: 0.82,
+          totalUnitCost: 9.57,
+          quantity: 100,
+          uom: "l",
+          currency: "EUR",
+          allocationBasis: "value"
+        },
+        {
+          landedCostId: "lc-inbound-june-001",
+          componentId: "duty",
+          category: "duty",
+          receiptLineId: "receipt-line-alcohol-001",
+          receiptId: "receipt-alcohol-001",
+          itemType: "material",
+          itemId: "mat-alcohol",
+          lotId: "lot-alcohol-2026-06",
+          allocatedAmount: 36,
+          allocatedUnitCost: 0.36,
+          totalUnitCost: 9.93,
+          quantity: 100,
+          uom: "l",
+          currency: "EUR",
+          allocationBasis: "value"
+        }
+      ]
+    }
+  ],
+  inventoryValuationSnapshots: [
+    {
+      id: "val-2026-05",
+      organizationId: "org-mc",
+      snapshotNumber: "VAL-2026-05",
+      period: "2026-05",
+      status: "final",
+      asOf: new Date("2026-05-31T23:59:59+01:00"),
+      currency: "EUR",
+      valuationMethod: "standard_plus_landed",
+      lines: [
+        {
+          id: "val-2026-05:product_variant:var-lions-mane-50:lot-lm-2026-06:loc-pack:available",
+          itemType: "product_variant",
+          itemId: "var-lions-mane-50",
+          lotId: "lot-lm-2026-06",
+          locationId: "loc-pack",
+          status: "available",
+          quantity: 96,
+          uom: "bottle",
+          unitCost: 1.48,
+          currency: "EUR",
+          value: 142.08,
+          valuationMethod: "standard_plus_landed",
+          costSource: "batch_actual:batch-lm-bottle-001",
+          metadata: { itemName: "Lion's Mane Tincture 50 ml" }
+        }
+      ],
+      totalValue: 142.08,
+      generatedAt: new Date("2026-05-31T23:59:59+01:00"),
+      metadata: {}
+    }
+  ],
+  periodCloseRuns: [],
+  financeExportBatches: [],
+  exportMappingTemplates: [
+    {
+      id: "mapping-xero-finance-bridge",
+      name: "Xero finance bridge CSV",
+      accountingSystem: "Xero",
+      version: 1,
+      sourceType: "receipt",
+      fieldMap: {
+        source_type: "sourceType",
+        source_id: "sourceId",
+        document_number: "documentNumber",
+        occurred_at: "occurredAt",
+        amount: "amount",
+        currency: "currency",
+        account_code: "accountCode"
+      },
+      defaults: { export_profile: "mushroom-compadres" }
+    }
+  ],
   mockRecallRuns: [],
   mockRecallFindings: [],
   recallActions: []
@@ -4263,6 +6892,149 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
     return data.suppliers.filter((supplier) => supplier.organizationId === organizationId);
   }
 
+  function configurationSnapshot(organizationId: string): ConfigurationSnapshotRecord {
+    return {
+      documentTypes: data.documentTypes.filter((record) => record.organizationId === organizationId),
+      numberingSequences: data.numberingSequences.filter((record) => record.organizationId === organizationId),
+      reasonCodes: data.reasonCodes.filter((record) => record.organizationId === organizationId),
+      attributeDefinitions: data.attributeDefinitions.filter((record) => record.organizationId === organizationId),
+      attributeSets: data.attributeSets.filter((record) => record.organizationId === organizationId),
+      attributeValues: data.attributeValues.filter((record) => record.organizationId === organizationId),
+      fieldBehaviorRules: data.fieldBehaviorRules.filter((record) => record.organizationId === organizationId)
+    };
+  }
+
+  async function auditConfigurationChange(
+    userContext: UserContext,
+    eventType: string,
+    subjectType: string,
+    subjectId: string,
+    beforeJson: unknown,
+    afterJson: unknown,
+    requestId: string
+  ) {
+    await transactionClient.insertAuditEvent({
+      organizationId: userContext.organizationId,
+      actorUserId: userContext.userId,
+      eventType,
+      subjectType,
+      subjectId,
+      beforeJson,
+      afterJson,
+      requestId
+    });
+  }
+
+  function locationCode(locationId: string | null | undefined): string | null {
+    if (!locationId) {
+      return null;
+    }
+    return data.locations.find((location) => location.id === locationId)?.code ?? null;
+  }
+
+  function permissionCodesForContext(userContext: UserContext): string[] {
+    return (userContext.effectivePermissions ?? effectivePermissionsForUser({
+      id: userContext.userId,
+      authUserId: userContext.authUserId,
+      organizationId: userContext.organizationId,
+      email: userContext.email,
+      displayName: userContext.displayName,
+      status: "active",
+      locale: userContext.locale
+    })).filter((grant) => grant.level !== "deny").map((grant) => grant.permissionCode);
+  }
+
+  function rolePermissionSetCodes(organizationId: string): Record<string, string[]> {
+    const result: Record<string, string[]> = {};
+    for (const role of data.roles.filter((candidate) => candidate.organizationId === organizationId)) {
+      const assignedSetIds = data.rolePermissionSets
+        .filter((assignment) => assignment.roleId === role.id)
+        .map((assignment) => assignment.permissionSetId);
+      const assignedCodes = data.permissionSets
+        .filter((set) => assignedSetIds.includes(set.id))
+        .map((set) => set.code);
+      result[role.code] = assignedCodes.length > 0 ? assignedCodes : defaultRolePermissionSetCodes[role.code] ?? [];
+    }
+    return result;
+  }
+
+  function roleScopeRulesForUser(user: AppUserRecord): AccessScopeRule[] {
+    const scopedLocationIds = data.userRoles
+      .filter((assignment) => assignment.userId === user.id)
+      .map((assignment) => assignment.locationId)
+      .filter((locationId): locationId is string => Boolean(locationId));
+
+    if (scopedLocationIds.length === 0) {
+      return data.accessScopeRules.filter(
+        (rule) => rule.organizationId === user.organizationId && rule.subjectType === "user" && rule.subjectId === user.id
+      );
+    }
+
+    return [
+      ...data.accessScopeRules.filter(
+        (rule) => rule.organizationId === user.organizationId && rule.subjectType === "user" && rule.subjectId === user.id
+      ),
+      {
+        id: `role-location-scope-${user.id}`,
+        organizationId: user.organizationId,
+        subjectType: "user",
+        subjectId: user.id,
+        dimension: "location",
+        allowedIds: [...new Set(scopedLocationIds)]
+      }
+    ];
+  }
+
+  function effectivePermissionsForUser(user: AppUserRecord) {
+    return resolveEffectivePermissions({
+      roleCodes: rolesForUser(user).map((assignment) => assignment.role.code),
+      permissionSets: data.permissionSets.filter((set) => set.organizationId === user.organizationId),
+      rolePermissionSetCodes: rolePermissionSetCodes(user.organizationId),
+      userOverrides: data.userPermissionOverrides.filter(
+        (override) => override.organizationId === user.organizationId && override.userId === user.id
+      ),
+      accessScopeRules: roleScopeRulesForUser(user),
+      userId: user.id
+    });
+  }
+
+  function permissionConflictWarnings(organizationId: string): PermissionMatrixRecord["conflictWarnings"] {
+    return data.userPermissionOverrides
+      .filter((override) => override.organizationId === organizationId)
+      .filter((override) => override.level === "deny")
+      .map((override) => ({
+        subjectType: "user" as const,
+        subjectId: override.userId,
+        permissionCode: override.permissionCode,
+        message: `Explicit deny overrides role grants: ${override.reason}`
+      }));
+  }
+
+  function permissionMatrix(organizationId: string): PermissionMatrixRecord {
+    const roles = data.roles.filter((role) => role.organizationId === organizationId);
+    return {
+      catalog: permissionCatalog,
+      permissionSets: data.permissionSets.filter((set) => set.organizationId === organizationId),
+      rolePermissionSets: data.rolePermissionSets.filter((assignment) =>
+        roles.some((role) => role.id === assignment.roleId)
+      ),
+      userOverrides: data.userPermissionOverrides.filter((override) => override.organizationId === organizationId),
+      fieldRules: data.fieldPermissionRules.filter((rule) => rule.organizationId === organizationId),
+      accessScopeRules: data.accessScopeRules.filter((rule) => rule.organizationId === organizationId),
+      effectiveByRole: Object.fromEntries(
+        roles.map((role) => [
+          role.id,
+          resolveEffectivePermissions({
+            roleCodes: [role.code],
+            permissionSets: data.permissionSets.filter((set) => set.organizationId === organizationId),
+            rolePermissionSetCodes: rolePermissionSetCodes(organizationId)
+          })
+        ])
+      ),
+      conflictWarnings: permissionConflictWarnings(organizationId)
+    };
+  }
+
   function dashboardRolesForUser(userContext: UserContext): OperationalDashboardRole[] {
     const roles = userContext.roles.map((role) => dashboardRoleFromRoleCode(role.code));
     const fallback: OperationalDashboardRole[] = ["owner_admin"];
@@ -4271,6 +7043,77 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
 
   function primaryDashboardRole(userContext: UserContext): OperationalDashboardRole {
     return dashboardRolesForUser(userContext)[0] ?? "owner_admin";
+  }
+
+  const workspaceNavigation: WorkspaceNavigationItem[] = [
+    { id: "dashboard", label: "Dashboard", href: "/", requiredRoles: [] },
+    { id: "farm", label: "Farm", href: "/farm", requiredRoles: ["owner_admin", "production_farm"] },
+    { id: "production", label: "Production", href: "/production", requiredRoles: ["owner_admin", "production_farm"] },
+    { id: "purchasing", label: "Purchasing", href: "/purchasing", requiredRoles: ["owner_admin", "purchasing"] },
+    { id: "inventory", label: "Inventory", href: "/inventory", requiredRoles: ["owner_admin", "packing_fulfillment", "auditor"] },
+    { id: "quality", label: "Quality", href: "/quality", requiredRoles: ["owner_admin", "qc", "auditor"] },
+    { id: "qc", label: "QC", href: "/qc", requiredRoles: ["owner_admin", "qc", "production_farm"] },
+    { id: "traceability", label: "Traceability", href: "/traceability", requiredRoles: ["owner_admin", "qc", "auditor"] },
+    { id: "reports", label: "Reports", href: "/reports", requiredRoles: ["owner_admin", "sales_wholesale", "auditor"] },
+    { id: "wholesale", label: "Wholesale", href: "/wholesale", requiredRoles: ["owner_admin", "sales_wholesale"] },
+    { id: "crm", label: "CRM", href: "/crm", requiredRoles: ["owner_admin", "sales_wholesale"] },
+    { id: "admin", label: "Admin", href: "/admin/roles", requiredRoles: ["owner_admin"] }
+  ];
+
+  function userRoleCodes(userContext: UserContext): string[] {
+    return userContext.roles.map((role) => role.code);
+  }
+
+  function workspacePreferencesFor(userContext: UserContext): UserPreferenceRecord {
+    const existing = data.userPreferences.find(
+      (preference) => preference.organizationId === userContext.organizationId && preference.userId === userContext.userId
+    );
+    if (existing) {
+      return {
+        ...existing,
+        ...mergeWorkspacePreferences(existing)
+      };
+    }
+
+    const now = new Date();
+    const created: UserPreferenceRecord = {
+      id: randomUUID(),
+      organizationId: userContext.organizationId,
+      userId: userContext.userId,
+      ...defaultWorkspacePreferences,
+      savedFilters: {},
+      createdAt: now,
+      updatedAt: now,
+      version: 1
+    };
+    data.userPreferences.push(created);
+    return created;
+  }
+
+  function visibleSavedViews(userContext: UserContext): SavedViewRecord[] {
+    const roleCodes = userRoleCodes(userContext);
+    return data.savedViews
+      .filter((view) => view.organizationId === userContext.organizationId)
+      .filter(
+        (view) =>
+          view.ownerUserId === userContext.userId ||
+          (view.scope === "role_shared" && view.sharedRoleCodes.some((roleCode) => roleCodes.includes(roleCode)))
+      )
+      .sort((left, right) => left.gridKey.localeCompare(right.gridKey) || left.name.localeCompare(right.name));
+  }
+
+  function visibleColorRules(userContext: UserContext): ColorRuleRecord[] {
+    return data.colorRules
+      .filter((rule) => rule.organizationId === userContext.organizationId)
+      .filter((rule) => rule.userId === null || rule.userId === userContext.userId)
+      .map((rule) => ({ ...rule, ...ensureAccessibleColorRule(rule) }))
+      .sort((left, right) => left.priority - right.priority || left.label.localeCompare(right.label));
+  }
+
+  function visiblePinnedItems(userContext: UserContext): PinnedItemRecord[] {
+    return data.pinnedItems
+      .filter((pin) => pin.organizationId === userContext.organizationId && pin.userId === userContext.userId)
+      .sort((left, right) => left.sortOrder - right.sortOrder || left.label.localeCompare(right.label));
   }
 
   function userAlertSubscriptions(userContext: UserContext): AlertSubscriptionRecord[] {
@@ -4357,6 +7200,41 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
       });
   }
 
+  function receivingAlertSources(organizationId: string) {
+    return data.receiptLines
+      .map((line) => {
+        const receipt = data.receipts.find(
+          (candidate) => candidate.id === line.receiptId && candidate.organizationId === organizationId
+        );
+        const lot = data.lots.find((candidate) => candidate.id === line.lotId && candidate.organizationId === organizationId);
+        if (!receipt || !lot) {
+          return null;
+        }
+        const hold = data.lotHolds.find(
+          (candidate) =>
+            candidate.organizationId === organizationId &&
+            (candidate.id === line.lotHoldId || (candidate.lotId === lot.id && candidate.status === "active"))
+        );
+        return {
+          id: line.id,
+          receiptId: receipt.id,
+          receiptNumber: receipt.receiptNumber,
+          lotId: lot.id,
+          lotCode: lot.lotCode,
+          itemName: lot.itemName,
+          receivedAt: receipt.receivedAt,
+          expiryDate: line.expiryDate,
+          hasCoa: data.coaAttachments.some((attachment) => attachment.organizationId === organizationId && attachment.lotId === lot.id),
+          receivedQuantity: line.receivedQuantity,
+          dispositionedQuantity: line.acceptedQuantity + line.quarantinedQuantity + line.rejectedQuantity,
+          quarantinedQuantity: line.quarantinedQuantity,
+          uom: line.uom,
+          holdStatus: hold?.status ?? null
+        };
+      })
+      .filter((source): source is NonNullable<typeof source> => source !== null);
+  }
+
   function workCenterAlertSources(organizationId: string) {
     const scheduledByWorkCenter = new Map<string, { minutes: number; dueAt: Date | null }>();
     for (const run of data.productionOperationRuns.filter(
@@ -4438,6 +7316,7 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
         })),
       lowStock: lowStockSources(organizationId),
       supplierDocuments: supplierDocumentAlertSources(organizationId),
+      receiving: receivingAlertSources(organizationId),
       capas: data.capaRecords
         .filter((capa) => capa.organizationId === organizationId)
         .map((capa) => ({
@@ -4514,7 +7393,7 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
       return ruleType === "late_production";
     }
     if (widgetType === "qc_queue") {
-      return ruleType === "qc_overdue" || ruleType === "open_capa_due" || ruleType === "expiring_lot";
+      return ruleType === "qc_overdue" || ruleType === "open_capa_due" || ruleType === "expiring_lot" || ruleType === "quarantined_stock_aging" || ruleType === "missing_coa" || ruleType === "missing_expiry";
     }
     if (widgetType === "fulfillment_risk") {
       return ruleType === "low_stock" || ruleType === "expiring_lot" || ruleType === "blocked_shopify_sync";
@@ -4523,7 +7402,7 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
       return ruleType === "low_stock" || ruleType === "blocked_shopify_sync" || ruleType === "sku_readiness_gap";
     }
     if (widgetType === "purchasing_risk") {
-      return ruleType === "low_stock" || ruleType === "supplier_document_expiry";
+      return ruleType === "low_stock" || ruleType === "supplier_document_expiry" || ruleType === "quarantined_stock_aging" || ruleType === "missing_coa" || ruleType === "missing_expiry" || ruleType === "receipt_quantity_mismatch";
     }
     if (widgetType === "shopify_health") {
       return ruleType === "blocked_shopify_sync";
@@ -5516,9 +8395,49 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
       workCenter: data.workCenters.find((workCenter) => workCenter.id === run.workCenterId) ?? null,
       equipment: run.equipmentId ? data.equipment.find((equipment) => equipment.id === run.equipmentId) ?? null : null,
       laborRole: run.laborRoleId ? data.laborRoles.find((laborRole) => laborRole.id === run.laborRoleId) ?? null : null,
+      controlPoints: data.operationControlPoints.filter((point) => point.operationRunId === run.id),
       laborTimeEntries: data.laborTimeEntries.filter((entry) => entry.operationRunId === run.id),
-      machineTimeEntries: data.machineTimeEntries.filter((entry) => entry.operationRunId === run.id)
+      machineTimeEntries: data.machineTimeEntries.filter((entry) => entry.operationRunId === run.id),
+      crewTimeEntries: data.crewTimeEntries.filter((entry) => entry.operationRunId === run.id),
+      downtimeEvents: data.downtimeEvents.filter((entry) => entry.operationRunId === run.id),
+      scrapEvents: data.scrapEvents.filter((entry) => entry.operationRunId === run.id),
+      reworkOrders: data.reworkOrders.filter((entry) => entry.sourceOperationRunId === run.id),
+      generatedMovements: data.stockMovements.filter(
+        (movement) => movement.sourceType === "production_operation_run" && movement.sourceId === run.id
+      ),
+      reportingWarnings: reportingWarningsForRun(run)
     };
+  }
+
+  function reportingWarningsForRun(run: ProductionOperationRunRecord): string[] {
+    try {
+      return evaluateOperationReporting({
+        runs: data.productionOperationRuns
+          .filter((candidate) => candidate.productionOrderId === run.productionOrderId)
+          .map((candidate) => ({
+            id: candidate.id,
+            sequence: candidate.sequence,
+            status: candidate.status
+          })),
+        targetRunId: run.id,
+        controlPoints: data.operationControlPoints
+          .filter((point) => point.organizationId === run.organizationId)
+          .map((point) => ({
+            id: point.id,
+            operationRunId: point.operationRunId,
+            sequence: point.sequence,
+            purpose: point.purpose,
+            required: point.required,
+            completedAt: point.completedAt
+          })),
+        policy: {
+          allowNonsequentialReporting: run.allowNonsequentialReporting,
+          requireSupervisorApprovalForSkippedOperations: true
+        }
+      }).warnings;
+    } catch {
+      return [];
+    }
   }
 
   function equipmentDashboard(organizationId: string): EquipmentDashboardRecord {
@@ -5568,6 +8487,19 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
           });
         }
       }
+      const sanitationStatus = sanitationStatusForEquipment(organizationId, record.id, now);
+      if (sanitationStatus !== "clean" && sanitationStatus !== "not_required") {
+        equipmentAlerts.push({
+          id: `sanitation-${record.id}`,
+          equipmentId: record.id,
+          equipmentCode: record.code,
+          equipmentName: record.name,
+          alertType: "sanitation_not_clean",
+          severity: "warning",
+          dueAt: null,
+          message: `${record.code} sanitation is ${sanitationStatus}.`
+        });
+      }
       return equipmentAlerts;
     });
 
@@ -5582,7 +8514,98 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
       events: data.equipmentEvents
         .filter((record) => record.organizationId === organizationId)
         .sort((a, b) => b.occurredAt.getTime() - a.occurredAt.getTime()),
+      readings: data.equipmentReadings
+        .filter((record) => record.organizationId === organizationId)
+        .sort((a, b) => b.recordedAt.getTime() - a.recordedAt.getTime()),
+      preUseChecks: data.equipmentPreUseChecks
+        .filter((record) => record.organizationId === organizationId)
+        .sort((a, b) => b.completedAt.getTime() - a.completedAt.getTime()),
+      cleaningLogs: data.equipmentCleaningLogs
+        .filter((record) => record.organizationId === organizationId)
+        .sort((a, b) => b.cleanedAt.getTime() - a.cleanedAt.getTime()),
       alerts
+    };
+  }
+
+  function sanitationStatusForEquipment(
+    organizationId: string,
+    equipmentId: string,
+    now = new Date()
+  ): "clean" | "dirty" | "expired" | "unknown" | "not_required" {
+    const equipment = data.equipment.find((candidate) => candidate.id === equipmentId && candidate.organizationId === organizationId);
+    if (!equipment) {
+      return "unknown";
+    }
+    if (equipment.equipmentType === "scale" || equipment.equipmentType === "printer") {
+      return "not_required";
+    }
+    const latest = data.equipmentCleaningLogs
+      .filter((log) => log.organizationId === organizationId && log.equipmentId === equipmentId)
+      .sort((left, right) => right.cleanedAt.getTime() - left.cleanedAt.getTime())[0];
+    if (!latest) {
+      return "unknown";
+    }
+    if (latest.status !== "clean") {
+      return latest.status;
+    }
+    if (latest.expiresAt && latest.expiresAt.getTime() <= now.getTime()) {
+      return "expired";
+    }
+    return "clean";
+  }
+
+  function preUseReadinessForEquipment(
+    organizationId: string,
+    equipment: EquipmentRecord,
+    subject: { type: "ebr_step" | "routing_operation"; id: string }
+  ) {
+    const template = preUseTemplateFor(equipment, subject.type === "routing_operation" ? subject.id : null);
+    if (!template.requiredForCriticalOperation) {
+      return { required: false, completed: true, templateId: template.id, missingItems: [] };
+    }
+    const latest = data.equipmentPreUseChecks
+      .filter(
+        (check) =>
+          check.organizationId === organizationId &&
+          check.equipmentId === equipment.id &&
+          check.templateId === template.id &&
+          (subject.type !== "routing_operation" || check.routingOperationId === subject.id)
+      )
+      .sort((left, right) => right.completedAt.getTime() - left.completedAt.getTime())[0];
+    const missingItems = template.items
+      .filter((item) => item.required && !latest?.checkedItems.some((checked) => checked.itemId === item.id && checked.passed))
+      .map((item) => item.label);
+    return {
+      required: true,
+      completed: Boolean(latest && latest.status === "completed" && missingItems.length === 0),
+      templateId: template.id,
+      missingItems
+    };
+  }
+
+  function preUseTemplateFor(equipment: EquipmentRecord, routingOperationId: string | null): EquipmentPreUseCheckTemplate {
+    const baseItems = [
+      { id: "line-clear", label: "Line clearance complete", required: true },
+      { id: "guards", label: "Guards and hoses inspected", required: true }
+    ];
+    if (equipment.equipmentType === "scale") {
+      return {
+        id: "preuse-scale-weigh",
+        equipmentType: "scale",
+        routingOperationId,
+        requiredForCriticalOperation: true,
+        items: [
+          { id: "level", label: "Scale level and stable", required: true },
+          { id: "zero", label: "Zero/tare verified", required: true }
+        ]
+      };
+    }
+    return {
+      id: equipment.equipmentType === "bottling" ? "preuse-bottling-filler" : `preuse-${equipment.equipmentType}`,
+      equipmentType: equipment.equipmentType,
+      routingOperationId,
+      requiredForCriticalOperation: equipment.equipmentType !== "printer",
+      items: baseItems
     };
   }
 
@@ -5710,6 +8733,114 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
       afterJson: { qualityEventId: qualityEvent.id, equipmentEventId: event.id },
       requestId
     });
+  }
+
+  function createReadingQualityEvent(
+    userContext: UserContext,
+    equipment: EquipmentRecord,
+    reading: EquipmentReadingRecord,
+    messages: string[],
+    requestId: string
+  ): QualityEventRecord {
+    const qualityEvent: QualityEventRecord = {
+      id: randomUUID(),
+      organizationId: userContext.organizationId,
+      eventNumber: nextQualityNumber("OOS", data.qualityEvents.length),
+      eventType: "out_of_spec",
+      severity: "major",
+      status: "investigating",
+      title: `Out-of-limit equipment reading: ${equipment.code}`,
+      description: `${reading.parameterName ?? reading.parameterType} recorded ${reading.value} ${reading.unit}. ${messages.join(" ")}`,
+      detectedAt: reading.recordedAt,
+      sourceType: "equipment",
+      sourceId: equipment.id,
+      openedBy: userContext.userId,
+      closedAt: null,
+      closureSummary: null,
+      createdAt: reading.recordedAt,
+      updatedAt: reading.recordedAt,
+      version: 1
+    };
+    data.qualityEvents.push(qualityEvent);
+    data.qualityEventLinks.push({
+      id: randomUUID(),
+      qualityEventId: qualityEvent.id,
+      entityType: "equipment",
+      entityId: equipment.id
+    });
+    void transactionClient.insertAuditEvent({
+      organizationId: userContext.organizationId,
+      actorUserId: userContext.userId,
+      eventType: "equipment.reading_quality_event_created",
+      subjectType: "equipment",
+      subjectId: equipment.id,
+      beforeJson: null,
+      afterJson: { qualityEventId: qualityEvent.id, readingId: reading.id },
+      requestId
+    });
+    return qualityEvent;
+  }
+
+  function createProductionReworkQualityEvent(
+    userContext: UserContext,
+    run: ProductionOperationRunRecord,
+    input: ProductionDispositionInputRecord,
+    requestId: string
+  ): QualityEventRecord {
+    const now = input.occurredAt ?? new Date();
+    const qualityEvent: QualityEventRecord = {
+      id: randomUUID(),
+      organizationId: userContext.organizationId,
+      eventNumber: nextQualityNumber("QE", data.qualityEvents.length),
+      eventType: "deviation",
+      severity: "major",
+      status: "open",
+      title: `Production rework: operation ${run.sequence}`,
+      description: `${input.quantity} ${input.uom} moved to rework for ${input.reasonCode}.`,
+      detectedAt: now,
+      sourceType: "production_operation_run",
+      sourceId: run.id,
+      openedBy: userContext.userId,
+      closedAt: null,
+      closureSummary: null,
+      createdAt: now,
+      updatedAt: now,
+      version: 1
+    };
+    data.qualityEvents.push(qualityEvent);
+    data.qualityEventLinks.push({
+      id: randomUUID(),
+      qualityEventId: qualityEvent.id,
+      entityType: "order",
+      entityId: run.productionOrderId
+    });
+    if (input.lotId) {
+      data.qualityEventLinks.push({
+        id: randomUUID(),
+        qualityEventId: qualityEvent.id,
+        entityType: "lot",
+        entityId: input.lotId
+      });
+    }
+    void transactionClient.insertAuditEvent({
+      organizationId: userContext.organizationId,
+      actorUserId: userContext.userId,
+      eventType: "production_rework.quality_event_created",
+      subjectType: "production_operation_run",
+      subjectId: run.id,
+      beforeJson: null,
+      afterJson: { qualityEventId: qualityEvent.id },
+      requestId
+    });
+    return qualityEvent;
+  }
+
+  function requireRecord<T extends { id: string }>(records: T[], id: string): T {
+    const record = records.find((candidate) => candidate.id === id);
+    if (!record) {
+      throw new Error("unknown_supervisor_subject");
+    }
+    return record;
   }
 
   function refreshNextOperationReadiness(productionOrderId: string): void {
@@ -5844,16 +8975,54 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
     const equipment = data.bomOperationEquipment.filter((requirement) =>
       operations.some((operation) => operation.id === requirement.bomOperationId)
     );
+    const outputs = data.bomOperationOutputs.filter((output) =>
+      operations.some((operation) => operation.id === output.bomOperationId)
+    );
+    const costs = data.bomOperationCosts.filter((cost) => operations.some((operation) => operation.id === cost.bomOperationId));
     buildBomProductionPlan({
       bom: {
         id: bom.id,
         status: "active",
+        productVariantId: bom.productVariantId,
+        kind: bom.bomKind,
+        activeRevisionLocked: bom.activeRevisionLocked,
         yieldQuantity: bom.yieldQuantity,
-        yieldUom: bom.yieldUom
+        yieldUom: bom.yieldUom,
+        effectiveFrom: bom.effectiveFrom,
+        effectiveTo: bom.effectiveTo
       },
       operations: operations.map(bomOperationForDomain),
       materials: materials.map(bomMaterialForDomain),
-      equipment: equipment.map(bomEquipmentForDomain)
+      equipment: equipment.map(bomEquipmentForDomain),
+      outputs: outputs.map(bomOutputForDomain),
+      costs: costs.map(bomCostForDomain)
+    });
+  }
+
+  function assertBomEditable(bom: BillOfMaterialsRecord, changeRequestId?: string | null): void {
+    const changeControlPermitsEdit = Boolean(
+      changeRequestId?.trim() &&
+        data.changeRequests.some(
+          (changeRequest) =>
+            changeRequest.id === changeRequestId &&
+            changeRequest.organizationId === bom.organizationId &&
+            changeRequest.status === "approved"
+        )
+    );
+    assertBomRevisionEditable({
+      bom: {
+        id: bom.id,
+        status: bom.status,
+        productVariantId: bom.productVariantId,
+        versionCode: bom.versionCode,
+        kind: bom.bomKind,
+        activeRevisionLocked: bom.activeRevisionLocked,
+        yieldQuantity: bom.yieldQuantity,
+        yieldUom: bom.yieldUom,
+        effectiveFrom: bom.effectiveFrom,
+        effectiveTo: bom.effectiveTo
+      },
+      changeControlPermitsEdit
     });
   }
 
@@ -6078,6 +9247,261 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
     return document;
   }
 
+  function complianceDashboard(organizationId: string): ComplianceDashboardRecord {
+    const now = new Date();
+    const soon = new Date(now.getTime() + 30 * 24 * 60 * 60 * 1000);
+    const documents = data.controlledDocuments.filter((document) => document.organizationId === organizationId);
+    const requirements = data.complianceRequirements.filter((requirement) => requirement.organizationId === organizationId);
+    const sanitationChecks = data.sanitationChecks.filter((check) => check.organizationId === organizationId);
+    const allergenControls = data.allergenControls.filter((control) => control.organizationId === organizationId);
+    const trainingRequirements = data.trainingRequirements.filter((requirement) => requirement.organizationId === organizationId);
+    const trainingRecords = data.trainingRecords.filter((record) => record.organizationId === organizationId);
+    const auditPackets = data.auditPackets.filter((packet) => packet.organizationId === organizationId);
+    const currentDocuments = documents.filter((document) => document.status === "current" && !dateBefore(document.expiresAt, now));
+    const expiringDocuments = documents.filter(
+      (document) => document.status === "current" && document.expiresAt !== null && document.expiresAt.getTime() <= soon.getTime()
+    );
+    const currentTraining = trainingRecords.filter((record) => record.status === "current" && !dateBefore(record.expiresAt, now));
+    const trainingGaps = trainingRequirements.filter(
+      (requirement) =>
+        requirement.status === "active" &&
+        !trainingRecords.some(
+          (record) => record.requirementId === requirement.id && record.status === "current" && !dateBefore(record.expiresAt, now)
+        )
+    );
+    const sanitationReady = sanitationChecks.filter((check) => check.status === "pass" && !dateBefore(check.expiresAt, now));
+    const allergenReady = allergenControls.filter((control) => control.status === "pass");
+
+    return {
+      documents,
+      requirements,
+      sanitationChecks,
+      allergenControls,
+      trainingRequirements,
+      trainingRecords,
+      auditPackets,
+      readiness: {
+        controlledDocumentsCurrent: currentDocuments.length,
+        controlledDocumentsTotal: documents.length,
+        expiringDocuments: expiringDocuments.length,
+        trainingCurrent: currentTraining.length,
+        trainingTotal: trainingRequirements.length,
+        trainingGaps: trainingGaps.length,
+        sanitationReady: sanitationReady.length,
+        sanitationTotal: sanitationChecks.length,
+        allergenReady: allergenReady.length,
+        allergenTotal: allergenControls.length
+      },
+      alerts: [
+        ...expiringDocuments.map((document) => ({
+          id: `doc-alert-${document.id}`,
+          severity: "warning" as const,
+          title: `${document.documentType.replaceAll("_", " ")} renewal due`,
+          message: `${document.title} expires ${document.expiresAt?.toISOString().slice(0, 10) ?? "soon"}.`,
+          sourceType: "controlled_document",
+          sourceId: document.id,
+          dueAt: document.expiresAt
+        })),
+        ...documents
+          .filter((document) => document.status === "expired" || dateBefore(document.expiresAt, now))
+          .map((document) => ({
+            id: `doc-expired-${document.id}`,
+            severity: "critical" as const,
+            title: `${document.documentType.replaceAll("_", " ")} expired`,
+            message: `${document.title} is not current.`,
+            sourceType: "controlled_document",
+            sourceId: document.id,
+            dueAt: document.expiresAt
+          })),
+        ...trainingGaps.map((requirement) => ({
+          id: `training-gap-${requirement.id}`,
+          severity: "warning" as const,
+          title: "Training gap",
+          message: `${requirement.title} has at least one missing or expired record.`,
+          sourceType: "training_requirement",
+          sourceId: requirement.id,
+          dueAt: null
+        }))
+      ]
+    };
+  }
+
+  function evaluateComplianceGateForUser(userContext: UserContext, input: ComplianceGateEvaluationInput) {
+    const actorUserId = input.actorUserId ?? userContext.userId;
+    return evaluateComplianceGateDomain({
+      scope: {
+        action: input.action,
+        actorUserId,
+        roleCodes: input.roleCodes ?? userContext.roles.map((role) => role.code),
+        equipmentId: input.equipmentId ?? null,
+        roomId: input.roomId ?? null,
+        productFamily: input.productFamily ?? null,
+        ingredientClass: input.ingredientClass ?? null,
+        productionOrderId: input.productionOrderId ?? null,
+        workflowId: input.workflowId ?? null,
+        sopId: input.sopId ?? null,
+        supplierId: input.supplierId ?? null
+      },
+      requirements: data.complianceRequirements
+        .filter((requirement) => requirement.organizationId === userContext.organizationId)
+        .map((requirement) => ({
+          id: requirement.id,
+          requirementType: requirement.requirementType,
+          action: requirement.action,
+          label: requirement.label,
+          requiredDocumentType: requirement.requiredDocumentType,
+          trainingRequirementId: requirement.trainingRequirementId,
+          scope: requirement.scopeJson,
+          active: requirement.active
+        })),
+      documents: data.controlledDocuments
+        .filter((document) => document.organizationId === userContext.organizationId)
+        .map((document) => ({
+          id: document.id,
+          documentType: document.documentType,
+          status: document.status,
+          subjectType: document.subjectType,
+          subjectId: document.subjectId,
+          expiresAt: document.expiresAt
+        })),
+      trainingRecords: data.trainingRecords
+        .filter((record) => record.organizationId === userContext.organizationId)
+        .map((record) => ({
+          id: record.id,
+          userId: record.userId,
+          requirementId: record.requirementId,
+          status: record.status,
+          completedAt: record.completedAt,
+          expiresAt: record.expiresAt
+        })),
+      sanitationChecks: data.sanitationChecks
+        .filter((check) => check.organizationId === userContext.organizationId)
+        .map((check) => ({
+          id: check.id,
+          status: check.status,
+          equipmentId: check.equipmentId,
+          roomId: check.roomId,
+          productionOrderId: check.productionOrderId,
+          completedAt: check.completedAt,
+          expiresAt: check.expiresAt
+        })),
+      allergenControls: data.allergenControls
+        .filter((control) => control.organizationId === userContext.organizationId)
+        .map((control) => ({
+          id: control.id,
+          status: control.status,
+          productFamily: control.productFamily,
+          ingredientClass: control.ingredientClass,
+          productionOrderId: control.productionOrderId,
+          completedAt: control.verifiedAt
+        }))
+    });
+  }
+
+  function createAuditPacketDocument(
+    userContext: UserContext,
+    packet: ReturnType<typeof buildAuditPacket>,
+    input: AuditPacketInputRecord
+  ): GeneratedDocumentRecord {
+    const now = new Date();
+    const count = data.generatedDocuments.filter(
+      (document) => document.organizationId === userContext.organizationId && document.documentType === "audit_packet"
+    ).length + 1;
+    const documentNumber = `AUD-${String(count).padStart(4, "0")}`;
+    const document: GeneratedDocumentRecord = {
+      id: randomUUID(),
+      organizationId: userContext.organizationId,
+      documentNumber,
+      documentType: "audit_packet",
+      templateId: "doc-template-release-packet-v1",
+      templateName: "Compliance Audit Packet",
+      versionNumber: 1,
+      status: "final",
+      watermark: "FINAL",
+      subjectType: input.targetType,
+      subjectId: input.targetId,
+      lotId: input.targetType === "lot" ? input.targetId : null,
+      lotCode: input.targetType === "lot" ? data.lots.find((lot) => lot.id === input.targetId)?.lotCode ?? null : null,
+      salesOrderId: input.targetType === "customer_shipment" ? input.targetId : null,
+      shipmentId: input.targetType === "customer_shipment" ? input.targetId : null,
+      filePath: `${userContext.organizationId}/audit-packets/${documentNumber}.pdf`,
+      fileName: `${documentNumber}.pdf`,
+      contentType: "application/pdf",
+      renderedDataJson: packet,
+      bodyText: JSON.stringify(packet, null, 2),
+      customerFacing: input.customerFacing ?? false,
+      generatedBy: userContext.userId,
+      generatedAt: now,
+      finalizedBy: userContext.userId,
+      finalizedAt: now,
+      voidedBy: null,
+      voidedAt: null,
+      voidReason: null,
+      replacesDocumentId: null,
+      createdAt: now,
+      updatedAt: now,
+      version: 1
+    };
+    data.generatedDocuments.push(document);
+    return document;
+  }
+
+  function buildAuditPacketSections(organizationId: string, input: AuditPacketInputRecord) {
+    const targetLot =
+      input.targetType === "lot"
+        ? data.lots.find((lot) => lot.organizationId === organizationId && lot.id === input.targetId) ?? null
+        : null;
+    const relatedQualityEvents = data.qualityEvents.filter(
+      (event) =>
+        event.organizationId === organizationId &&
+        (event.sourceId === input.targetId ||
+          data.qualityEventLinks.some((link) => link.qualityEventId === event.id && link.entityId === input.targetId))
+    );
+    return {
+      ebr: data.ebrExecutions.filter(
+        (execution) =>
+          execution.organizationId === organizationId &&
+          (execution.productionOrderId === input.targetId || execution.processingBatchId === input.targetId || execution.id === input.targetId)
+      ),
+      coa: data.generatedDocuments.filter(
+        (document) =>
+          document.organizationId === organizationId &&
+          document.status === "final" &&
+          document.documentType !== "audit_packet" &&
+          (document.lotId === input.targetId || document.subjectId === input.targetId)
+      ),
+      sds: data.controlledDocuments.filter(
+        (document) => document.organizationId === organizationId && document.documentType === "sds" && !document.internalOnly
+      ),
+      supplierDocuments: data.supplierDocuments.filter((document) => document.organizationId === organizationId),
+      lotGenealogy: targetLot ? releasePacketInputForLot(targetLot).traceabilitySummary.inputLots : [],
+      deviations: relatedQualityEvents.map((event) => ({
+        id: event.id,
+        eventNumber: event.eventNumber,
+        title: event.title,
+        status: event.status,
+        severity: event.severity,
+        customerVisible: event.severity !== "critical"
+      })),
+      capa: data.capaRecords
+        .filter((capa) => relatedQualityEvents.some((event) => event.id === capa.qualityEventId))
+        .map((capa) => ({
+          id: capa.id,
+          capaNumber: capa.capaNumber,
+          status: capa.status,
+          rootCause: capa.rootCause,
+          customerVisible: false
+        })),
+      equipmentLogs: data.equipmentEvents.filter((event) => event.organizationId === organizationId),
+      approvals: data.documentApprovals.filter((approval) => approval.organizationId === organizationId),
+      shippingHistory: targetLot ? releasePacketInputForLot(targetLot).traceabilitySummary.shippedOrders : []
+    };
+  }
+
+  function dateBefore(value: Date | null, compare: Date): boolean {
+    return Boolean(value && value.getTime() < compare.getTime());
+  }
+
   function releasePacketInputForLot(lot: LotRecord) {
     const coa = data.generatedDocuments
       .filter((document) => document.lotId === lot.id && document.documentType !== "lot_release_packet" && document.status === "final")
@@ -6180,6 +9604,92 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
         };
       })
       .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime());
+  }
+
+  function sampleDetail(sample: SampleRecord): SampleDetailRecord {
+    return {
+      ...sample,
+      lot: sample.lotId ? data.lots.find((lot) => lot.id === sample.lotId) ?? null : null,
+      supplier: sample.supplierId ? data.suppliers.find((supplier) => supplier.id === sample.supplierId) ?? null : null,
+      tests: data.sampleTests
+        .filter((test) => test.sampleId === sample.id)
+        .map((test) => ({
+          ...test,
+          testMethod: data.qcTestMethods.find((method) => method.id === test.testMethodId) ?? null,
+          results: data.labResults
+            .filter((result) => result.sampleTestId === test.id)
+            .sort((left, right) => right.enteredAt.getTime() - left.enteredAt.getTime())
+        }))
+        .sort((left, right) => left.createdAt.getTime() - right.createdAt.getTime())
+    };
+  }
+
+  function sampleDetails(organizationId: string): SampleDetailRecord[] {
+    return data.samples
+      .filter((sample) => sample.organizationId === organizationId)
+      .map((sample) => {
+        if (sample.status === "planned" && sample.dueAt && sample.dueAt.getTime() <= Date.now()) {
+          sample.status = "collected";
+        }
+        return sampleDetail(sample);
+      })
+      .sort((left, right) => (left.dueAt?.getTime() ?? 0) - (right.dueAt?.getTime() ?? 0));
+  }
+
+  function limsRetainedInventory(organizationId: string): Array<RetainedSampleRecord & { lot: LotRecord | null; pulls: RetainedSamplePullRecord[] }> {
+    return data.retainedSamples
+      .filter((sample) => sample.organizationId === organizationId)
+      .map((sample) => ({
+        ...sample,
+        lot: data.lots.find((lot) => lot.id === sample.lotId) ?? null,
+        pulls: data.retainedSamplePulls
+          .filter((pull) => pull.retainedSampleId === sample.id)
+          .sort((left, right) => right.pulledAt.getTime() - left.pulledAt.getTime())
+      }))
+      .sort((left, right) => left.retainedSampleNumber.localeCompare(right.retainedSampleNumber));
+  }
+
+  function limsStabilityStudies(organizationId: string): Array<StabilityStudyRecord & { lot: LotRecord | null; pullPoints: StabilityPullPointRecord[] }> {
+    return data.stabilityStudies
+      .filter((study) => study.organizationId === organizationId)
+      .map((study) => ({
+        ...study,
+        lot: data.lots.find((lot) => lot.id === study.lotId) ?? null,
+        pullPoints: data.stabilityPullPoints
+          .filter((pull) => pull.stabilityStudyId === study.id)
+          .map((pull) => {
+            const nextStatus = stabilityPullStatus(pull);
+            if (nextStatus !== pull.status) {
+              pull.status = nextStatus;
+              pull.updatedAt = new Date();
+              pull.version += 1;
+            }
+            return pull;
+          })
+          .sort((left, right) => left.sequence - right.sequence)
+      }))
+      .sort((left, right) => left.studyNumber.localeCompare(right.studyNumber));
+  }
+
+  function limsTrends(organizationId: string) {
+    return summarizeQcTrends(
+      data.labResults
+        .filter((result) => result.organizationId === organizationId && result.invalidatedAt === null)
+        .map((result) => {
+          const sample = data.samples.find((candidate) => candidate.id === result.sampleId);
+          const method = data.qcTestMethods.find((candidate) => candidate.id === result.testMethodId);
+          const supplier = sample?.supplierId ? data.suppliers.find((candidate) => candidate.id === sample.supplierId) : null;
+          return {
+            groupKey: [supplier?.name, method?.name].filter(Boolean).join(" / ") || method?.name || "Unassigned",
+            evaluatedStatus: result.evaluatedStatus,
+            valueNumber: result.valueNumber
+          };
+        })
+    );
+  }
+
+  function nextLimsNumber(prefix: string, count: number): string {
+    return `${prefix}-2026-${String(count + 1).padStart(4, "0")}`;
   }
 
   function activeMatchingSpecs(lot: LotRecord, context: {
@@ -6667,6 +10177,18 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
       });
     }
 
+    for (const forecast of data.demandForecasts.filter(
+      (candidate) => candidate.organizationId === organizationId && candidate.status === "approved"
+    )) {
+      const lines = aggregateForecastLines(
+        data.forecastLines.filter((line) => line.forecastId === forecast.id),
+        data.forecastDrivers.filter((driver) =>
+          data.forecastLines.some((line) => line.forecastId === forecast.id && line.id === driver.forecastLineId)
+        )
+      ).filter((line) => line.periodEnd.getTime() <= horizonEnd.getTime());
+      demands.push(...forecastLinesToMrpDemands(forecast, lines, planningLocationId));
+    }
+
     for (const balance of data.inventoryBalances.filter(
       (candidate) => candidate.organizationId === organizationId && usableMrpBalance(candidate)
     )) {
@@ -6745,23 +10267,53 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
     const calendars: PlanningCapacityCalendar[] = [];
     for (const date of dates) {
       for (const workCenter of data.workCenters.filter((candidate) => candidate.organizationId === organizationId && candidate.isActive)) {
+        const isBottling = workCenter.id === "wc-bottling";
         calendars.push({
           id: `cal-${workCenter.id}-${date.toISOString().slice(0, 10)}`,
           resourceType: "work_center",
           resourceId: workCenter.id,
           resourceName: workCenter.name,
           date,
-          availableMinutes: workCenter.id === "wc-bottling" ? 60 : 180
+          shiftCode: "AM",
+          startsAt: new Date(`${date.toISOString().slice(0, 10)}T08:00:00.000Z`),
+          endsAt: new Date(`${date.toISOString().slice(0, 10)}T12:00:00.000Z`),
+          reason: "shift",
+          availableMinutes: isBottling ? 60 : 180,
+          unavailableMinutes: isBottling && date.toISOString().startsWith("2026-06-26") ? 30 : 0,
+          notes: isBottling ? "Includes allergen/label line clearance and cleaning window." : "Prep shift block."
         });
       }
-      for (const equipment of data.equipment.filter((candidate) => candidate.organizationId === organizationId && candidate.status === "available")) {
+      for (const equipment of data.equipment.filter((candidate) => candidate.organizationId === organizationId)) {
+        const underMaintenance = equipment.status === "maintenance" || equipment.status === "offline" || equipment.status === "unavailable";
         calendars.push({
           id: `cal-${equipment.id}-${date.toISOString().slice(0, 10)}`,
           resourceType: "equipment",
           resourceId: equipment.id,
           resourceName: equipment.name,
           date,
-          availableMinutes: 60
+          shiftCode: "AM",
+          startsAt: new Date(`${date.toISOString().slice(0, 10)}T08:00:00.000Z`),
+          endsAt: new Date(`${date.toISOString().slice(0, 10)}T12:00:00.000Z`),
+          reason: underMaintenance ? "maintenance" : "shift",
+          availableMinutes: underMaintenance ? 0 : 60,
+          unavailableMinutes: underMaintenance ? 60 : 0,
+          notes: underMaintenance ? "Maintenance blocks finite scheduling." : "Equipment shift capacity."
+        });
+      }
+      for (const laborRole of data.laborRoles.filter((candidate) => candidate.organizationId === organizationId && candidate.isActive)) {
+        calendars.push({
+          id: `cal-${laborRole.id}-${date.toISOString().slice(0, 10)}`,
+          resourceType: "labor_role",
+          resourceId: laborRole.id,
+          resourceName: laborRole.name,
+          date,
+          shiftCode: "AM",
+          startsAt: new Date(`${date.toISOString().slice(0, 10)}T08:00:00.000Z`),
+          endsAt: new Date(`${date.toISOString().slice(0, 10)}T12:00:00.000Z`),
+          reason: "shift",
+          availableMinutes: laborRole.id === "labor-operator" ? 120 : 180,
+          unavailableMinutes: 0,
+          notes: "Labor role capacity block."
         });
       }
     }
@@ -6776,6 +10328,7 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
         const operationCode = data.operationCodes.find((candidate) => candidate.id === run.operationCodeId);
         const workCenter = data.workCenters.find((candidate) => candidate.id === run.workCenterId);
         const equipment = run.equipmentId ? data.equipment.find((candidate) => candidate.id === run.equipmentId) : null;
+        const laborRole = run.laborRoleId ? data.laborRoles.find((candidate) => candidate.id === run.laborRoleId) : null;
         const routingOperation = data.routingOperations.find((candidate) => candidate.id === run.routingOperationId);
         const scheduledMinutes = calculateOperationDurationMinutes(run.scheduledStartAt, run.scheduledEndAt);
         const requiredMinutes =
@@ -6794,11 +10347,21 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
           workCenterName: workCenter?.name ?? run.workCenterId,
           equipmentId: run.equipmentId,
           equipmentName: equipment?.name ?? null,
+          laborRoleId: run.laborRoleId,
+          laborRoleName: laborRole?.name ?? null,
           sequence: run.sequence,
           requiredMinutes,
           scheduledStartAt: run.scheduledStartAt,
           scheduledEndAt: run.scheduledEndAt,
           dueAt: order?.dueAt ?? run.scheduledEndAt,
+          dispatchPriority: order?.priority ?? (run.status === "ready" ? 2 : 5),
+          constraintDate: order?.dueAt ?? null,
+          materialConstraintAt:
+            run.productionOrderId === "po-lm-bottle-001" && run.sequence >= 20
+              ? new Date("2026-06-27T08:00:00.000Z")
+              : null,
+          minBlockMinutes: routingOperation ? routingOperation.setupTimeMinutes + routingOperation.runTimeMinutes : requiredMinutes,
+          changeoverMinutes: run.workCenterId === "wc-bottling" ? 15 : 5,
           status: run.status
         };
       });
@@ -6864,6 +10427,194 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
     return `MRP-PROD-${String(next).padStart(4, "0")}`;
   }
 
+  function hydratedDemandForecast(forecast: DemandForecastRecord): DemandForecastRecord {
+    const lines = data.forecastLines.filter((line) => line.forecastId === forecast.id);
+    const lineIds = new Set(lines.map((line) => line.id));
+    const drivers = data.forecastDrivers.filter((driver) => lineIds.has(driver.forecastLineId));
+    return {
+      ...forecast,
+      lines,
+      drivers,
+      aggregatedLines: aggregateForecastLines(lines, drivers)
+    };
+  }
+
+  function buildSopMrpPlan(organizationId: string, input: PlanningScenarioInput) {
+    const { demands, supplies, itemCatalog } = buildMrpDemandAndSupply(organizationId, input.horizonEnd);
+    const forecast = input.forecastId
+      ? data.demandForecasts.find((candidate) => candidate.organizationId === organizationId && candidate.id === input.forecastId)
+      : null;
+    if (forecast) {
+      const hydrated = hydratedDemandForecast(forecast);
+      demands.push(
+        ...forecastLinesToMrpDemands(
+          { ...hydrated, status: "approved" },
+          hydrated.aggregatedLines.filter((line) => line.periodEnd.getTime() <= input.horizonEnd.getTime()),
+          defaultPlanningLocationId(organizationId)
+        )
+      );
+    }
+
+    return calculateMrpPlan({
+      generatedAt: new Date("2026-06-26T08:00:00.000Z"),
+      horizonEnd: input.horizonEnd,
+      planningStart: new Date("2026-06-26T00:00:00.000Z"),
+      bucketGranularity: "day",
+      demands,
+      supplies,
+      itemCatalog,
+      boms: orgBillOfMaterials(organizationId).map((bom) => ({
+        id: bom.id,
+        productVariantId: bom.productVariantId,
+        versionCode: bom.versionCode,
+        status: bom.status,
+        yieldQuantity: bom.yieldQuantity,
+        yieldUom: bom.yieldUom,
+        effectiveFrom: bom.effectiveFrom,
+        effectiveTo: bom.effectiveTo,
+        lines: data.bomLines
+          .filter((line) => line.bomId === bom.id)
+          .map((line) => ({
+            id: line.id,
+            componentType: line.componentType,
+            componentId: line.componentId,
+            quantity: line.quantity,
+            uom: line.uom,
+            wastePercent: line.wastePercent,
+            isCritical: line.isCritical
+          }))
+      })),
+      leadTimes: buildPlanningLeadTimes(organizationId),
+      capacityCalendars: buildPlanningCapacityCalendars(organizationId, input.horizonEnd),
+      productionOperations: buildProductionOperationPlans(organizationId),
+      ctpRequests: buildCtpRequests(organizationId),
+      scenarioSnapshots: buildPlanningScenarioSnapshots(organizationId, input.horizonEnd)
+    });
+  }
+
+  function buildPlanningScenarioRecord(userContext: UserContext, input: PlanningScenarioInput): PlanningScenarioRecord {
+    const now = new Date();
+    const scenario: PlanningScenario = {
+      id: randomUUID(),
+      name: input.name.trim(),
+      status: "review",
+      forecastId: input.forecastId ?? null,
+      horizonStart: input.horizonStart,
+      horizonEnd: input.horizonEnd,
+      notes: input.notes?.trim() || null,
+      createdAt: now
+    };
+    const plan = buildSopMrpPlan(userContext.organizationId, input);
+    const supplyDemandLines: ScenarioSupplyDemandLineRecord[] = plan.bucketLines.map((line) => ({
+      id: randomUUID(),
+      scenarioId: scenario.id,
+      itemType: line.itemType,
+      itemId: line.itemId,
+      sku: line.sku,
+      name: line.name,
+      periodStart: line.bucketStart,
+      demandQuantity: line.demandQuantity,
+      supplyQuantity: line.supplyQuantity,
+      shortageQuantity: line.shortageQuantity,
+      uom: line.uom,
+      sourceIds: [...line.demandIds, ...line.supplyIds]
+    }));
+    const capacityLines: ScenarioCapacityLineRecord[] = plan.capacityLoads.map((line) => ({
+      id: randomUUID(),
+      scenarioId: scenario.id,
+      resourceType: line.resourceType,
+      resourceId: line.resourceId,
+      resourceName: line.resourceName,
+      bucketStart: line.bucketStart,
+      availableMinutes: line.availableMinutes,
+      scheduledMinutes: line.scheduledMinutes,
+      overloadMinutes: line.overloadMinutes,
+      loadPercent: line.loadPercent
+    }));
+    const riskInput = {
+      scenario,
+      plan,
+      expiringStock: data.lots
+        .filter((lot) => lot.organizationId === userContext.organizationId && lot.expiresAt && lot.expiresAt.getTime() <= input.horizonEnd.getTime())
+        .map((lot) => ({
+          id: lot.id,
+          itemName: itemRef(lot.itemType, lot.itemId, "unit").name,
+          quantity: data.inventoryBalances
+            .filter((balance) => balance.lotId === lot.id)
+            .reduce((total, balance) => total + balance.availableQuantity, 0),
+          uom: data.inventoryBalances.find((balance) => balance.lotId === lot.id)?.uom ?? "unit",
+          expiresAt: lot.expiresAt!
+        })),
+      purchaseSpend: data.purchaseOrders
+        .filter((order) => order.organizationId === userContext.organizationId && ["draft", "ordered", "partially_received"].includes(order.status))
+        .map((order) => ({
+          id: order.id,
+          supplierName: data.suppliers.find((supplier) => supplier.id === order.supplierId)?.name ?? order.supplierId,
+          amount: data.purchaseOrderLines
+            .filter((line) => line.purchaseOrderId === order.id)
+            .reduce((total, line) => total + line.quantity * (line.unitCost ?? 0), 0),
+          currency: order.currency,
+          expectedAt: order.expectedAt
+        })),
+      ...(input.serviceLevelTarget !== undefined ? { serviceLevelTarget: input.serviceLevelTarget } : {})
+    };
+    const riskItems = scoreScenarioRisks(riskInput);
+    const record: PlanningScenarioRecord = {
+      ...scenario,
+      organizationId: userContext.organizationId,
+      createdBy: userContext.userId,
+      updatedAt: now,
+      version: 1,
+      supplyDemandLines,
+      capacityLines,
+      riskItems
+    };
+    data.planningScenarios.push(record);
+    data.scenarioSupplyDemandLines.push(...supplyDemandLines);
+    data.scenarioCapacityLines.push(...capacityLines);
+    data.scenarioRiskItems.push(...riskItems);
+    return record;
+  }
+
+  function hydratePlanningScenario(scenario: PlanningScenarioRecord): PlanningScenarioRecord {
+    return {
+      ...scenario,
+      supplyDemandLines: data.scenarioSupplyDemandLines.filter((line) => line.scenarioId === scenario.id),
+      capacityLines: data.scenarioCapacityLines.filter((line) => line.scenarioId === scenario.id),
+      riskItems: data.scenarioRiskItems.filter((risk) => risk.scenarioId === scenario.id)
+    };
+  }
+
+  function buildSopDashboard(organizationId: string): SopDashboardRecord {
+    const scenarios = data.planningScenarios
+      .filter((scenario) => scenario.organizationId === organizationId)
+      .map(hydratePlanningScenario);
+    const baseline = scenarios[0] ?? null;
+    const comparisons = baseline
+      ? scenarios.slice(1).map((scenario) =>
+          compareScenarioRiskSets(baseline.id, scenario.id, baseline.riskItems, scenario.riskItems)
+        )
+      : [];
+    const allRisks = scenarios.flatMap((scenario) => scenario.riskItems);
+    return {
+      generatedAt: new Date(),
+      forecasts: data.demandForecasts
+        .filter((forecast) => forecast.organizationId === organizationId)
+        .map(hydratedDemandForecast),
+      scenarios,
+      comparisons,
+      managementReview: (["now", "next", "later"] as const).map((horizon) => {
+        const risks = allRisks.filter((risk) => risk.managementHorizon === horizon);
+        return {
+          horizon,
+          decisionCount: risks.length,
+          criticalCount: risks.filter((risk) => risk.severity === "critical").length,
+          topRisks: risks.slice(0, 5)
+        };
+      })
+    };
+  }
+
   function preferredSupplierIdForItem(organizationId: string, itemType: string, itemId: string): string {
     const existingLine = data.purchaseOrderLines.find(
       (line) => line.itemType === itemType && line.itemId === itemId
@@ -6917,12 +10668,19 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
 
   function productionOrderDetail(order: ProductionOrderRecord): ProductionOrderDetailRecord {
     const batches = data.processingBatches.filter((batch) => batch.productionOrderId === order.id);
-    const outputLots = data.lots.filter(
+    const batchOutputLots = data.lots.filter(
       (lot) =>
         lot.organizationId === order.organizationId &&
         lot.sourceType === "processing_batch" &&
         batches.some((batch) => batch.id === lot.sourceId)
     );
+    const plannedOutputLots = data.lots.filter(
+      (lot) =>
+        lot.organizationId === order.organizationId &&
+        lot.sourceType === "production_order" &&
+        lot.sourceId === order.id
+    );
+    const outputLots = [...plannedOutputLots, ...batchOutputLots];
     const outputPlans = data.batchOutputs
       .filter((output) => batches.some((batch) => batch.id === output.processingBatchId))
       .map((output) => ({ quantity: output.quantity, uom: output.uom }));
@@ -6940,6 +10698,23 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
     };
   }
 
+  function nextProductionLotCode(organizationId: string, sku: string, orderNumber: string): string {
+    const compactSku = sku.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toUpperCase() || "ITEM";
+    const compactOrder = orderNumber.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toUpperCase() || "PO";
+    const base = `${compactSku}-${compactOrder}`.slice(0, 72);
+    let candidate = base;
+    let suffix = 1;
+    while (
+      data.lots.some(
+        (lot) => lot.organizationId === organizationId && lot.lotCode.toLocaleLowerCase() === candidate.toLocaleLowerCase()
+      )
+    ) {
+      suffix += 1;
+      candidate = `${base}-${suffix}`.slice(0, 80);
+    }
+    return candidate;
+  }
+
   function bomDetail(bom: BillOfMaterialsRecord): BillOfMaterialsDetailRecord {
     const operations = data.bomOperations
       .filter((operation) => operation.bomId === bom.id)
@@ -6950,16 +10725,29 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
     const equipmentRequirements = data.bomOperationEquipment.filter((requirement) =>
       operations.some((operation) => operation.id === requirement.bomOperationId)
     );
+    const outputs = data.bomOperationOutputs.filter((output) =>
+      operations.some((operation) => operation.id === output.bomOperationId)
+    );
+    const costs = data.bomOperationCosts.filter((cost) =>
+      operations.some((operation) => operation.id === cost.bomOperationId)
+    );
     const productionPlan = buildBomProductionPlan({
       bom: {
         id: bom.id,
         status: bom.status,
+        productVariantId: bom.productVariantId,
+        kind: bom.bomKind,
+        activeRevisionLocked: bom.activeRevisionLocked,
         yieldQuantity: bom.yieldQuantity,
-        yieldUom: bom.yieldUom
+        yieldUom: bom.yieldUom,
+        effectiveFrom: bom.effectiveFrom,
+        effectiveTo: bom.effectiveTo
       },
       operations: operations.map(bomOperationForDomain),
       materials: materials.map(bomMaterialForDomain),
-      equipment: equipmentRequirements.map(bomEquipmentForDomain)
+      equipment: equipmentRequirements.map(bomEquipmentForDomain),
+      outputs: outputs.map(bomOutputForDomain),
+      costs: costs.map(bomCostForDomain)
     });
     const runtimeByOperation = new Map(
       productionPlan.operationRuntimes.map((runtime) => [runtime.bomOperationId, runtime])
@@ -6979,6 +10767,15 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
           .filter((step) => step.bomOperationId === operation.id)
           .sort((left, right) => left.sequence - right.sequence),
         materials: materials.filter((material) => material.bomOperationId === operation.id),
+        outputs: outputs.filter((output) => output.bomOperationId === operation.id),
+        substitutes: materials
+          .filter((material) => material.bomOperationId === operation.id)
+          .flatMap((material) =>
+            data.bomSubstitutes
+              .filter((substitute) => substitute.bomOperationMaterialId === material.id)
+              .map((substitute) => ({ materialId: material.id, substitute }))
+          ),
+        costs: costs.filter((cost) => cost.bomOperationId === operation.id),
         equipment: equipmentRequirements
           .filter((requirement) => requirement.bomOperationId === operation.id)
           .map((requirement) => ({
@@ -6995,8 +10792,62 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
           operations: [bomOperationForDomain(operation)]
         }).operationRuntimes[0]!
       })),
-      productionPlan
+      productionPlan,
+      alternates: data.bomAlternates.filter((alternate) => alternate.bomId === bom.id),
+      readiness: bomReadiness(bom)
     };
+  }
+
+  function bomDefinitionForDomain(bom: BillOfMaterialsRecord) {
+    const operations = data.bomOperations.filter((operation) => operation.bomId === bom.id);
+    const operationIds = new Set(operations.map((operation) => operation.id));
+    const materials = data.bomOperationMaterials.filter((material) => operationIds.has(material.bomOperationId));
+    return {
+      bom: {
+        id: bom.id,
+        status: bom.status,
+        productVariantId: bom.productVariantId,
+        versionCode: bom.versionCode,
+        kind: bom.bomKind,
+        activeRevisionLocked: bom.activeRevisionLocked,
+        yieldQuantity: bom.yieldQuantity,
+        yieldUom: bom.yieldUom,
+        effectiveFrom: bom.effectiveFrom,
+        effectiveTo: bom.effectiveTo
+      },
+      operations: operations.map(bomOperationForDomain),
+      materials: materials.map(bomMaterialForDomain),
+      outputs: data.bomOperationOutputs.filter((output) => operationIds.has(output.bomOperationId)).map(bomOutputForDomain),
+      replacements: data.bomSubstitutes
+        .filter((substitute) => materials.some((material) => material.id === substitute.bomOperationMaterialId))
+        .map(bomSubstituteForDomain),
+      costs: data.bomOperationCosts.filter((cost) => operationIds.has(cost.bomOperationId)).map(bomCostForDomain)
+    };
+  }
+
+  function bomReadiness(bom: BillOfMaterialsRecord, asOf = new Date()): BillOfMaterialsDetailRecord["readiness"] {
+    const operations = data.bomOperations.filter((operation) => operation.bomId === bom.id);
+    const operationIds = new Set(operations.map((operation) => operation.id));
+    const equipment = data.bomOperationEquipment.filter((requirement) => operationIds.has(requirement.bomOperationId));
+    return evaluateBomReadiness({
+      ...bomDefinitionForDomain(bom),
+      asOf,
+      hasRouting: operations.length > 0,
+      hasQcSpec: data.qcSpecifications.some(
+        (spec) =>
+          spec.organizationId === bom.organizationId &&
+          spec.status === "approved" &&
+          (spec.productVariantId === bom.productVariantId || spec.itemId === bom.productVariantId)
+      ),
+      equipment: equipment.map(bomEquipmentForDomain),
+      equipmentReady: Object.fromEntries(
+        equipment.map((requirement) => [
+          requirement.equipmentId,
+          data.equipment.find((candidate) => candidate.id === requirement.equipmentId)?.status === "available"
+        ])
+      ),
+      hasCostRollup: data.costRollups.some((rollup) => rollup.bomId === bom.id)
+    });
   }
 
   function bomOperationForDomain(operation: BomOperationRecord): BomOperationDefinition {
@@ -7013,6 +10864,7 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
       moveTimeMinutes: operation.moveTimeMinutes,
       finishTimeMinutes: operation.finishTimeMinutes,
       runtimeBasis: operation.runtimeBasis,
+      backflushLabor: operation.backflushLabor,
       controlPoint: operation.controlPoint
     };
   }
@@ -7021,10 +10873,66 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
     return {
       id: material.id,
       bomOperationId: material.bomOperationId,
+      componentType: material.componentType,
+      componentId: material.componentId,
       quantity: material.quantity,
       uom: material.uom,
       wastePercent: material.wastePercent,
-      issueMethod: material.issueMethod
+      issueMethod: material.issueMethod,
+      effectiveFrom: material.effectiveFrom,
+      effectiveTo: material.effectiveTo,
+      isCritical: material.isCritical,
+      lotTraceRequired: material.lotTraceRequired
+    };
+  }
+
+  function bomOutputForDomain(output: BomOperationOutputRecord): BomOperationOutputDefinition {
+    return {
+      id: output.id,
+      bomOperationId: output.bomOperationId,
+      outputType: output.outputType,
+      itemType: output.itemType,
+      itemId: output.itemId,
+      quantity: output.quantity,
+      uom: output.uom,
+      scrapReasonCode: output.scrapReasonCode,
+      traceInventory: output.traceInventory,
+      costCreditPercent: output.costCreditPercent,
+      reworkRequired: output.reworkRequired
+    };
+  }
+
+  function bomSubstituteForDomain(substitute: BomSubstituteRecord): BomComponentReplacementDefinition {
+    return {
+      id: substitute.id,
+      bomOperationMaterialId: substitute.bomOperationMaterialId,
+      replacementType: substitute.replacementType,
+      componentType: substitute.componentType,
+      componentId: substitute.componentId,
+      quantity: substitute.quantity,
+      uom: substitute.uom,
+      conversionFactor: substitute.conversionFactor,
+      effectiveFrom: substitute.effectiveFrom,
+      effectiveTo: substitute.effectiveTo,
+      priority: substitute.priority,
+      approved: substitute.approved,
+      approvalReference: substitute.approvalReference,
+      notes: substitute.notes
+    };
+  }
+
+  function bomCostForDomain(cost: BomOperationCostRecord): BomOperationCostDefinition {
+    return {
+      id: cost.id,
+      bomOperationId: cost.bomOperationId,
+      costType: cost.costType,
+      costCode: cost.costCode,
+      description: cost.description,
+      quantity: cost.quantity,
+      uom: cost.uom,
+      unitCost: cost.unitCost,
+      currency: cost.currency,
+      backflush: cost.backflush
     };
   }
 
@@ -7382,6 +11290,126 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
     ]);
   }
 
+  function productionWipSummary(order: ProductionOrderRecord): ProductionWipSummaryRecord {
+    const runs = data.productionOperationRuns.filter((run) => run.productionOrderId === order.id);
+    const estimate = estimatedCostForOrder(order);
+    const usageSummary = actualOperationUsages(runs).reduce<Record<string, number>>(
+      (summary, usage) => {
+        summary[usage.category] = roundMoney((summary[usage.category] ?? 0) + usage.quantity * usage.unitCost);
+        return summary;
+      },
+      {}
+    );
+    const actualOutput = runs.reduce((total, run) => total + run.outputQuantity, 0);
+    const actualScrap = runs.reduce((total, run) => total + run.scrapQuantity, 0);
+    const actualRework = runs.reduce((total, run) => total + run.reworkQuantity, 0);
+    const summary = calculateProductionWipSummary({
+      planned: {
+        material: estimate?.summary.material ?? 0,
+        packaging: estimate?.summary.packaging ?? 0,
+        labor: estimate?.summary.labor ?? 0,
+        machine: estimate?.summary.machine ?? 0,
+        overhead: estimate?.summary.overhead ?? 0,
+        freight: estimate?.summary.freight ?? 0,
+        outputQuantity: order.plannedQuantity ?? 0,
+        scrapQuantity: 0
+      },
+      actual: {
+        material: data.stockMovements
+          .filter((movement) => movement.sourceType === "production_operation_run" && runs.some((run) => run.id === movement.sourceId))
+          .filter((movement) => movement.movementType === "consumption")
+          .reduce((total, movement) => total + movement.quantity * unitCostForItem(movement.itemType, movement.itemId, movement.uom), 0),
+        packaging: 0,
+        labor: usageSummary.labor ?? 0,
+        machine: usageSummary.machine ?? 0,
+        overhead: usageSummary.overhead ?? 0,
+        freight: usageSummary.freight ?? 0,
+        outputQuantity: actualOutput,
+        scrapQuantity: actualScrap,
+        reworkQuantity: actualRework
+      }
+    });
+    return {
+      productionOrderId: order.id,
+      orderNumber: order.orderNumber,
+      planned: summary.planned,
+      actual: summary.actual,
+      variance: summary.variance,
+      yieldPercent: summary.yieldPercent,
+      generatedAt: new Date()
+    };
+  }
+
+  function unitCostForItem(itemType: StockMovementRecord["itemType"], itemId: string, uom: string): number {
+    return data.standardCosts.find((cost) => cost.itemType === itemType && cost.itemId === itemId && cost.uom === uom)?.unitCost ?? 0;
+  }
+
+  function roundMoney(value: number): number {
+    return Math.round((value + Number.EPSILON) * 100) / 100;
+  }
+
+  function productionSupervisorQueue(organizationId: string): ProductionControlDashboardRecord["supervisorQueue"] {
+    const runItems = data.productionOperationRuns
+      .filter((run) => run.organizationId === organizationId && run.supervisorApprovalStatus === "pending")
+      .map((run) => ({
+        subjectType: "operation_run" as const,
+        subjectId: run.id,
+        productionOrderId: run.productionOrderId,
+        operationRunId: run.id,
+        label: `Operation ${run.sequence} nonsequential reporting`,
+        reason: run.skippedOperationIds.length > 0 ? `Skipped ${run.skippedOperationIds.length} required operation(s).` : "Operation requires approval.",
+        requestedAt: run.updatedAt
+      }));
+    const scrapItems = data.scrapEvents
+      .filter((event) => event.organizationId === organizationId && event.approvalStatus === "pending")
+      .map((event) => ({
+        subjectType: "scrap_event" as const,
+        subjectId: event.id,
+        productionOrderId: event.productionOrderId,
+        operationRunId: event.operationRunId,
+        label: `${event.dispositionType.replaceAll("_", " ")} ${event.quantity} ${event.uom}`,
+        reason: event.reasonCode,
+        requestedAt: event.occurredAt
+      }));
+    const laborItems = data.laborTimeEntries
+      .filter((entry) => entry.organizationId === organizationId && entry.approvalStatus === "pending")
+      .map((entry) => {
+        const run = data.productionOperationRuns.find((candidate) => candidate.id === entry.operationRunId);
+        return run
+          ? {
+              subjectType: "labor_time_entry" as const,
+              subjectId: entry.id,
+              productionOrderId: run.productionOrderId,
+              operationRunId: run.id,
+              label: `${entry.entryType} labor ${entry.durationMinutes} min`,
+              reason: entry.indirectCode ?? "labor approval",
+              requestedAt: entry.startedAt
+            }
+          : null;
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+    const downtimeItems = data.downtimeEvents
+      .filter((entry) => entry.organizationId === organizationId && entry.approvalStatus === "pending")
+      .map((entry) => {
+        const run = data.productionOperationRuns.find((candidate) => candidate.id === entry.operationRunId);
+        return run
+          ? {
+              subjectType: "downtime_event" as const,
+              subjectId: entry.id,
+              productionOrderId: run.productionOrderId,
+              operationRunId: run.id,
+              label: `${entry.reasonCode} downtime ${entry.durationMinutes} min`,
+              reason: entry.notes ?? entry.reasonCode,
+              requestedAt: entry.startedAt
+            }
+          : null;
+      })
+      .filter((entry): entry is NonNullable<typeof entry> => Boolean(entry));
+    return [...runItems, ...scrapItems, ...laborItems, ...downtimeItems].sort(
+      (left, right) => right.requestedAt.getTime() - left.requestedAt.getTime()
+    );
+  }
+
   function varianceReportsForOrganization(organizationId: string): CostVarianceRecord[] {
     return data.productionOrders
       .filter((order) => order.organizationId === organizationId)
@@ -7448,6 +11476,271 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
     return simulateBatchMargins({ batchActualCost: actual, pricePoints });
   }
 
+  function financeValuationCosts(organizationId: string): InventoryValuationCost[] {
+    const standard = data.standardCosts
+      .filter((cost) => ["product_variant", "material", "packaging_component", "wip", "harvest"].includes(cost.itemType))
+      .map((cost) => ({
+        itemType: cost.itemType as InventoryValuationCost["itemType"],
+        itemId: cost.itemId ?? cost.id,
+        lotId: null,
+        unitCost: cost.unitCost,
+        currency: cost.currency,
+        valuationMethod: "standard_cost",
+        costSource: `standard_cost:${cost.id}`,
+        metadata: { itemName: cost.itemName, category: cost.category }
+      }));
+    const landed = data.landedCosts
+      .filter((landedCost) => landedCost.organizationId === organizationId)
+      .flatMap((landedCost) =>
+        landedCost.allocations.map((allocation) => ({
+          itemType: allocation.itemType,
+          itemId: allocation.itemId,
+          lotId: allocation.lotId,
+          unitCost: allocation.totalUnitCost,
+          currency: allocation.currency,
+          valuationMethod: "standard_plus_landed",
+          costSource: `landed_cost:${landedCost.id}`,
+          metadata: { landedCostNumber: landedCost.landedCostNumber, category: allocation.category }
+        }))
+      );
+    const actual = completedActualCostsForOrganization(organizationId).flatMap((cost) =>
+      data.batchOutputs
+        .filter((output) => output.processingBatchId === cost.processingBatchId)
+        .flatMap((output): Array<InventoryValuationCost | null> => {
+          const lot = data.lots.find((candidate) => candidate.id === output.lotId);
+          return lot
+            ? [{
+                itemType: lot.itemType,
+                itemId: lot.itemId,
+                lotId: lot.id,
+                unitCost: cost.unitCost,
+                currency: cost.currency,
+                valuationMethod: "batch_actual",
+                costSource: `batch_actual:${cost.id}`,
+                metadata: { batchId: cost.processingBatchId, lotCode: lot.lotCode }
+              }, {
+                itemType: lot.itemType,
+                itemId: lot.itemId,
+                lotId: null,
+                unitCost: cost.unitCost,
+                currency: cost.currency,
+                valuationMethod: "batch_actual",
+                costSource: `batch_actual:${cost.id}:item`,
+                metadata: { batchId: cost.processingBatchId, fallback: "item" }
+              }]
+            : [null];
+        })
+        .filter((cost): cost is InventoryValuationCost => cost !== null)
+    );
+    return [...landed, ...actual, ...standard];
+  }
+
+  function createValuationSnapshotRecord(
+    organizationId: string,
+    input: InventoryValuationSnapshotInput
+  ): InventoryValuationSnapshotRecord {
+    return {
+      ...createInventoryValuationSnapshot({
+        id: randomUUID(),
+        organizationId,
+        snapshotNumber: input.snapshotNumber ?? `VAL-${input.period}-${data.inventoryValuationSnapshots.length + 1}`,
+        period: input.period,
+        asOf: input.asOf ?? new Date(),
+        currency: input.currency ?? data.organizations.find((organization) => organization.id === organizationId)?.defaultCurrency ?? "EUR",
+        valuationMethod: input.valuationMethod ?? "standard_plus_landed",
+        balances: input.balances ?? filteredBalances(organizationId),
+        costs: input.costs ?? financeValuationCosts(organizationId),
+        metadata: { generatedBy: "finance_bridge" }
+      }),
+      status: "final" as const
+    };
+  }
+
+  function buildPeriodCloseRun(organizationId: string, period: string): PeriodCloseRunRecord {
+    const balances = filteredBalances(organizationId);
+    const costs = financeValuationCosts(organizationId);
+    return runPeriodCloseChecks({
+      id: randomUUID(),
+      organizationId,
+      period,
+      unpostedCorrections: data.stockMovements
+        .filter((movement) => movement.organizationId === organizationId && movement.movementType === "reversal" && movement.sourceType === "draft_correction")
+        .map((movement) => ({ id: movement.id, label: movement.movementNumber })),
+      balances,
+      unreleasedReceipts: data.receipts
+        .filter((receipt) => receipt.organizationId === organizationId && !["posted", "cancelled"].includes(receipt.status))
+        .map((receipt) => ({ id: receipt.id, label: receipt.receiptNumber, status: receipt.status })),
+      openCounts: data.stockCountSessions
+        .filter((session) => session.organizationId === organizationId && !["closed", "cancelled"].includes(session.status))
+        .map((session) => ({ id: session.id, label: session.sessionCode, status: session.status })),
+      unresolvedHolds: data.lotHolds
+        .filter((hold) => hold.organizationId === organizationId && hold.status === "active")
+        .map((hold) => ({ id: hold.id, label: hold.lotId, reason: hold.reason })),
+      incompleteProduction: data.productionOrders
+        .filter((order) => order.organizationId === organizationId && ["released", "in_progress", "on_hold"].includes(order.status))
+        .map((order) => ({ id: order.id, label: order.orderNumber, status: order.status })),
+      missingCostRecords: balances
+        .filter((balance) => balance.availableQuantity + balance.reservedQuantity + balance.heldQuantity > 0)
+        .filter((balance) => !costs.some((cost) => cost.itemType === balance.itemType && cost.itemId === balance.itemId && (cost.lotId ?? balance.lotId) === balance.lotId))
+        .map((balance) => ({
+          id: `${balance.itemType}:${balance.itemId}`,
+          label: itemDisplayName(balance.itemType, balance.itemId),
+          itemType: balance.itemType,
+          itemId: balance.itemId
+        }))
+    });
+  }
+
+  function latestPeriodClose(organizationId: string): PeriodCloseRunRecord {
+    return data.periodCloseRuns
+      .filter((run) => run.organizationId === organizationId)
+      .sort((left, right) => right.checkedAt.getTime() - left.checkedAt.getTime())[0] ?? buildPeriodCloseRun(organizationId, currentPeriod());
+  }
+
+  function financeExportRecords(organizationId: string, sourceTypes: FinanceExportBatchInput["sourceTypes"] = []): FinanceExportRecord[] {
+    const included = new Set(sourceTypes && sourceTypes.length > 0 ? sourceTypes : ["purchase", "receipt", "sale", "shipment", "inventory_adjustment", "production_variance", "landed_cost"]);
+    return [
+      ...data.purchaseOrders.filter((order) => order.organizationId === organizationId && included.has("purchase")).map((order) => ({
+        sourceType: "purchase" as const,
+        sourceId: order.id,
+        occurredAt: order.orderedAt ?? order.createdAt,
+        amount: purchaseOrderTotal(order.id),
+        currency: order.currency,
+        payload: { documentNumber: order.poNumber, accountCode: "5000", status: order.status }
+      })),
+      ...data.receipts.filter((receipt) => receipt.organizationId === organizationId && included.has("receipt")).map((receipt) => ({
+        sourceType: "receipt" as const,
+        sourceId: receipt.id,
+        occurredAt: receipt.receivedAt,
+        amount: receiptTotal(receipt.id),
+        currency: purchaseOrderCurrency(receipt.purchaseOrderId) ?? "EUR",
+        payload: { documentNumber: receipt.receiptNumber, accountCode: "1400", status: receipt.status, purchaseOrderId: receipt.purchaseOrderId }
+      })),
+      ...data.salesOrders.filter((order) => order.organizationId === organizationId && included.has("sale")).map((order) => ({
+        sourceType: "sale" as const,
+        sourceId: order.id,
+        occurredAt: order.orderedAt,
+        amount: order.totalAmountExport ?? salesOrderTotal(order.id),
+        currency: order.currency,
+        payload: { documentNumber: order.orderNumber, accountCode: "4000", status: order.status, channel: order.channel }
+      })),
+      ...data.shipments.filter((shipment) => shipment.organizationId === organizationId && included.has("shipment")).map((shipment) => ({
+        sourceType: "shipment" as const,
+        sourceId: shipment.id,
+        occurredAt: shipment.shippedAt ?? new Date(),
+        amount: 0,
+        currency: "EUR",
+        payload: { documentNumber: shipment.shipmentNumber, accountCode: "ship", status: shipment.status }
+      })),
+      ...data.stockMovements
+        .filter((movement) => movement.organizationId === organizationId && included.has("inventory_adjustment"))
+        .filter((movement) => ["adjustment", "cycle_count_correction", "reversal"].includes(movement.movementType))
+        .map((movement) => ({
+          sourceType: "inventory_adjustment" as const,
+          sourceId: movement.id,
+          occurredAt: movement.occurredAt,
+          amount: roundMoney(movement.quantity * valuationUnitCost(organizationId, movement.itemType, movement.itemId, movement.lotId)),
+          currency: "EUR",
+          payload: {
+            documentNumber: movement.movementNumber,
+            accountCode: "5200",
+            movementType: movement.movementType,
+            reasonCode: movement.reasonCode,
+            itemType: movement.itemType,
+            itemId: movement.itemId
+          }
+        })),
+      ...varianceReportsForOrganization(organizationId).filter(() => included.has("production_variance")).map((variance) => ({
+        sourceType: "production_variance" as const,
+        sourceId: variance.id,
+        occurredAt: variance.generatedAt,
+        amount: variance.lines.find((line) => line.category === "total")?.varianceCost ?? 0,
+        currency: variance.currency,
+        payload: { documentNumber: variance.id, accountCode: "5300", productionOrderId: variance.productionOrderId }
+      })),
+      ...data.landedCosts.filter((cost) => cost.organizationId === organizationId && included.has("landed_cost")).map((cost) => ({
+        sourceType: "landed_cost" as const,
+        sourceId: cost.id,
+        occurredAt: cost.allocatedAt,
+        amount: cost.totalAmount,
+        currency: cost.currency,
+        payload: { documentNumber: cost.landedCostNumber, accountCode: "5100", status: cost.status }
+      }))
+    ];
+  }
+
+  function financeReconciliations(organizationId: string): ReconciliationResult[] {
+    return [
+      reconcileInventoryLedgerToBalances({
+        movements: data.stockMovements
+          .filter((movement) => movement.organizationId === organizationId && movement.toLocationId)
+          .map((movement) => ({
+            id: movement.id,
+            itemType: movement.itemType,
+            itemId: movement.itemId,
+            lotId: movement.lotId,
+            locationId: movement.toLocationId ?? "unknown",
+            quantityDelta: movement.quantity
+          })),
+        balances: filteredBalances(organizationId)
+      }),
+      reconcileExpectedActual({
+        id: "receipts_to_pos",
+        title: "Receipts to purchase orders",
+        expected: data.purchaseOrderLines.map((line) => ({ id: line.id, reference: line.id, quantity: line.quantity })),
+        actual: data.receiptLines.map((line) => ({ id: line.id, reference: line.purchaseOrderLineId ?? line.id, quantity: line.quantity }))
+      }),
+      reconcileExpectedActual({
+        id: "shipments_to_orders",
+        title: "Shipments to sales orders",
+        expected: data.salesOrderLines.map((line) => ({ id: line.id, reference: line.salesOrderId, quantity: line.quantity })),
+        actual: data.orderAllocations
+          .filter((allocation) => allocation.shippedAt)
+          .map((allocation) => {
+            const line = data.salesOrderLines.find((candidate) => candidate.id === allocation.salesOrderLineId);
+            return { id: allocation.id, reference: line?.salesOrderId ?? allocation.salesOrderLineId, quantity: allocation.quantity };
+          })
+      })
+    ];
+  }
+
+  function purchaseOrderTotal(purchaseOrderId: string): number {
+    return roundMoney(data.purchaseOrderLines.filter((line) => line.purchaseOrderId === purchaseOrderId).reduce((total, line) => total + line.quantity * (line.unitCost ?? 0), 0));
+  }
+
+  function purchaseOrderCurrency(purchaseOrderId: string | null): string | null {
+    return data.purchaseOrders.find((order) => order.id === purchaseOrderId)?.currency ?? null;
+  }
+
+  function receiptTotal(receiptId: string): number {
+    return roundMoney(data.receiptLines
+      .filter((line) => line.receiptId === receiptId)
+      .reduce((total, line) => {
+        const poLine = data.purchaseOrderLines.find((candidate) => candidate.id === line.purchaseOrderLineId);
+        return total + line.acceptedQuantity * (poLine?.unitCost ?? 0);
+      }, 0));
+  }
+
+  function salesOrderTotal(salesOrderId: string): number {
+    return roundMoney(data.salesOrderLines.filter((line) => line.salesOrderId === salesOrderId).reduce((total, line) => total + line.quantity * (line.unitPrice ?? 0), 0));
+  }
+
+  function valuationUnitCost(organizationId: string, itemType: InventoryItemType, itemId: string, lotId: string | null): number {
+    return financeValuationCosts(organizationId).find(
+      (cost) => cost.itemType === itemType && cost.itemId === itemId && (cost.lotId ?? null) === lotId
+    )?.unitCost ?? financeValuationCosts(organizationId).find(
+      (cost) => cost.itemType === itemType && cost.itemId === itemId && !cost.lotId
+    )?.unitCost ?? 0;
+  }
+
+  function itemDisplayName(itemType: string, itemId: string): string {
+    return data.lots.find((lot) => lot.itemType === itemType && lot.itemId === itemId)?.itemName ?? itemId;
+  }
+
+  function currentPeriod(): string {
+    return new Date().toISOString().slice(0, 7);
+  }
+
   function scrapFromBatchParams(batch: ProcessingBatchRecord): number {
     const rejected = batch.processParamsJson.bottlesRejected;
     return typeof rejected === "number" ? rejected : 0;
@@ -7501,6 +11794,117 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
     return typeof value === "number" && Number.isFinite(value) ? value : null;
   }
 
+  function weighDispenseSessionDetail(session: WeighDispenseSessionRecord): WeighDispenseSessionDetailRecord {
+    const lines = data.weighDispenseLines
+      .filter((line) => line.sessionId === session.id)
+      .sort((left, right) => left.sequence - right.sequence);
+    return {
+      session,
+      lines,
+      history: lines.filter((line) => line.status !== "pending")
+    };
+  }
+
+  function weighDispenseSourceLines(input: {
+    organizationId: string;
+    bomId?: string | null;
+    formulaRevisionId?: string | null;
+  }): WeighDispenseSourceLine[] {
+    const lines: WeighDispenseSourceLine[] = [];
+    if (input.bomId) {
+      const bom = data.billOfMaterials.find(
+        (candidate) => candidate.id === input.bomId && candidate.organizationId === input.organizationId
+      );
+      if (!bom) {
+        throw new Error("unknown_bom");
+      }
+      for (const material of data.bomOperationMaterials.filter((candidate) =>
+        data.bomOperations.some((operation) => operation.id === candidate.bomOperationId && operation.bomId === bom.id)
+      )) {
+        const item = itemSnapshot(material.componentType, material.componentId);
+        lines.push({
+          id: material.id,
+          source: "bom_operation_material",
+          componentType: material.componentType,
+          componentId: material.componentId,
+          componentName: item?.name ?? material.componentId,
+          quantity: material.quantity,
+          uom: material.uom,
+          wastePercent: material.wastePercent,
+          isCritical: material.isCritical,
+          requiresPotencyAdjustment: false,
+          tolerancePercent: 2,
+          minQuantity: material.isCritical ? material.quantity * 0.995 : null,
+          maxQuantity: material.isCritical ? material.quantity * 1.04 : null
+        });
+      }
+      for (const line of data.bomLines.filter((candidate) => candidate.bomId === bom.id)) {
+        const item = itemSnapshot(line.componentType, line.componentId);
+        lines.push({
+          id: line.id,
+          source: "bom_line",
+          componentType: line.componentType,
+          componentId: line.componentId,
+          componentName: item?.name ?? line.componentId,
+          quantity: line.quantity,
+          uom: line.uom,
+          wastePercent: line.wastePercent,
+          isCritical: line.isCritical,
+          requiresPotencyAdjustment: false,
+          tolerancePercent: 2
+        });
+      }
+    }
+
+    if (input.formulaRevisionId) {
+      const revision = data.formulaRevisions.find(
+        (candidate) => candidate.id === input.formulaRevisionId && candidate.organizationId === input.organizationId
+      );
+      if (!revision) {
+        throw new Error("unknown_formula_revision");
+      }
+      for (const line of data.formulaLines.filter((candidate) => candidate.revisionId === revision.id)) {
+        if (!line.componentType || !line.componentId || line.componentType === "wip") {
+          continue;
+        }
+        lines.push({
+          id: line.id,
+          source: "formula_line",
+          componentType: line.componentType,
+          componentId: line.componentId,
+          componentName: line.componentNameSnapshot,
+          quantity: line.quantity,
+          uom: line.uom,
+          wastePercent: line.wastePercent,
+          isCritical: line.requiresApproval,
+          requiresPotencyAdjustment: Boolean((revision.potencyTargetsJson?.activeFormulaLineIds as string[] | undefined)?.includes(line.id)),
+          potencyBasis: numericConfig(revision.potencyTargetsJson?.potencyBasis) ?? 100,
+          tolerancePercent: 2
+        });
+      }
+    }
+
+    const unique = new Map<string, WeighDispenseSourceLine>();
+    for (const line of lines) {
+      unique.set(`${line.componentType}:${line.componentId}:${line.source}:${line.id}`, line);
+    }
+    return [...unique.values()];
+  }
+
+  function latestApprovedPotencyResult(organizationId: string, lotId: string): QcResultRecord | null {
+    const taskIds = new Set(
+      data.qcTasks
+        .filter((task) => task.organizationId === organizationId && task.lotId === lotId)
+        .map((task) => task.id)
+    );
+    return (
+      data.qcResults
+        .filter((result) => result.organizationId === organizationId && taskIds.has(result.qcTaskId))
+        .filter((result) => result.status === "approved" && result.reviewedAt && result.valueNumber !== null)
+        .sort((left, right) => (right.reviewedAt?.getTime() ?? 0) - (left.reviewedAt?.getTime() ?? 0))[0] ?? null
+    );
+  }
+
   function ebrResultHash(payload: Record<string, unknown>, previousHash: string | null): string {
     return createHash("sha256")
       .update(JSON.stringify({ previousHash, payload }))
@@ -7519,6 +11923,53 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
           .filter((output) => output.processingBatchId === execution.processingBatchId)
           .map((output) => ({ lotId: output.lotId, quantity: output.quantity, uom: output.uom }))
       : [];
+    const executionEquipmentIds = new Set(
+      detail.results
+        .map((result) => result.equipmentId)
+        .concat(
+          data.equipmentReadings
+            .filter(
+              (reading) =>
+                reading.ebrExecutionId === execution.id ||
+                (execution.productionOrderId !== null && reading.productionOrderId === execution.productionOrderId) ||
+                (execution.processingBatchId !== null && reading.processingBatchId === execution.processingBatchId)
+            )
+            .map((reading) => reading.equipmentId)
+        )
+        .filter((equipmentId): equipmentId is string => Boolean(equipmentId))
+    );
+    const equipmentHistory = [
+      ...data.equipmentEvents
+        .filter((event) => event.organizationId === execution.organizationId && executionEquipmentIds.has(event.equipmentId))
+        .map((event) => ({
+          equipmentId: event.equipmentId,
+          eventType: event.eventType,
+          title: event.title,
+          occurredAt: event.occurredAt,
+          source: null,
+          value: null,
+          unit: null,
+          limitStatus: null
+        })),
+      ...data.equipmentReadings
+        .filter(
+          (reading) =>
+            reading.organizationId === execution.organizationId &&
+            (reading.ebrExecutionId === execution.id ||
+              (execution.productionOrderId !== null && reading.productionOrderId === execution.productionOrderId) ||
+              (execution.processingBatchId !== null && reading.processingBatchId === execution.processingBatchId))
+        )
+        .map((reading) => ({
+          equipmentId: reading.equipmentId,
+          eventType: `${reading.source}_reading`,
+          title: reading.parameterName ?? reading.parameterType,
+          occurredAt: reading.recordedAt,
+          source: reading.source,
+          value: reading.value,
+          unit: reading.unit,
+          limitStatus: reading.limitStatus
+        }))
+    ].sort((left, right) => left.occurredAt.getTime() - right.occurredAt.getTime());
     return buildEbrPacket({
       execution: {
         id: execution.id,
@@ -7566,6 +12017,7 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
       })),
       inputs: batchInputsForExecution,
       outputs: batchOutputsForExecution,
+      equipmentHistory,
       deviations: execution.amendmentReason
         ? [{ id: `${execution.id}:amendment`, reason: execution.amendmentReason, createdAt: execution.updatedAt }]
         : []
@@ -7780,6 +12232,425 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
         return true;
       })
       .map((balance) => enrichBalance(balance));
+  }
+
+  function wmsZoneForLocation(locationId: string): WarehouseZoneRecord | null {
+    if (locationId === "loc-quarantine") {
+      return data.warehouseZones.find((zone) => zone.id === "zone-quarantine") ?? null;
+    }
+    if (locationId === "loc-stage-1") {
+      return data.warehouseZones.find((zone) => zone.id === "zone-staging") ?? null;
+    }
+    return data.warehouseZones.find((zone) => zone.id === "zone-ambient") ?? null;
+  }
+
+  function lotStatusForWms(lot: LotRecord | null | undefined): "pending" | "released" | "hold" | "rejected" | "expired" | "quarantine" {
+    return lot?.qcStatus ?? "released";
+  }
+
+  function putAwaySuggestionsForTask(task: PutAwayTaskRecord) {
+    const lot = task.lotId ? data.lots.find((candidate) => candidate.id === task.lotId) : null;
+    const candidates = data.locations
+      .filter(
+        (location) =>
+          location.organizationId === task.organizationId &&
+          ["warehouse", "packing", "quarantine"].includes(location.type)
+      )
+      .flatMap((location) => {
+        const zone = wmsZoneForLocation(location.id);
+        if (!zone) {
+          return [];
+        }
+        const usedQuantity = data.inventoryBalances
+          .filter((balance) => balance.organizationId === task.organizationId && balance.locationId === location.id && balance.uom === task.uom)
+          .reduce((total, balance) => total + balance.availableQuantity + balance.heldQuantity + balance.reservedQuantity, 0);
+        return [{
+          locationId: location.id,
+          locationCode: location.code,
+          locationName: location.name,
+          zone,
+          capacityQuantity: location.id === "loc-quarantine" ? 200 : 1000,
+          usedQuantity,
+          capacityUom: task.uom
+        }];
+      });
+
+    return suggestPutAway({
+      itemType: task.itemType,
+      itemId: task.itemId,
+      itemClass: task.itemType === "product_variant" ? "finished_goods" : null,
+      lotId: task.lotId,
+      lotStatus: lotStatusForWms(lot),
+      expiresAt: lot?.expiresAt ?? null,
+      quantity: task.quantity,
+      uom: task.uom,
+      rules: data.storageRules.filter((rule) => rule.organizationId === task.organizationId),
+      candidates
+    });
+  }
+
+  function wmsPickSuggestion(organizationId: string) {
+    const openLine = data.salesOrderLines.find((line) =>
+      data.salesOrders.some(
+        (order) => order.id === line.salesOrderId && order.organizationId === organizationId && order.status !== "shipped"
+      )
+    );
+    if (!openLine) {
+      return null;
+    }
+
+    return suggestPick({
+      itemType: "product_variant",
+      itemId: openLine.productVariantId,
+      quantity: openLine.quantity,
+      uom: openLine.uom,
+      strategy: "fefo",
+      balances: data.inventoryBalances
+        .filter((balance) => balance.organizationId === organizationId)
+        .map((balance) => domainBalance(balance)),
+      lots: data.lots
+        .filter((lot) => lot.organizationId === organizationId)
+        .map((lot) => ({
+          id: lot.id,
+          lotCode: lot.lotCode,
+          qcStatus: effectiveQcStatus(lot),
+          status: lot.status,
+          expiresAt: lot.expiresAt,
+          receivedAt: lot.receivedAt
+        }))
+    });
+  }
+
+  function wmsDashboard(organizationId: string): WmsDashboardRecord {
+    const putawayTasks = data.putawayTasks
+      .filter((task) => task.organizationId === organizationId)
+      .map((task) => {
+        const suggestions = putAwaySuggestionsForTask(task);
+        return {
+          ...task,
+          suggestions,
+          suggestedLocationId: task.suggestedLocationId ?? suggestions[0]?.locationId ?? null
+        };
+      });
+
+    return {
+      scanModes: ["receive", "put_away", "transfer", "issue", "count", "pick", "pack", "ship", "storage_lookup", "item_lookup", "container_lookup"],
+      containers: data.containers.filter((container) => container.organizationId === organizationId),
+      containerLines: data.containerLines.filter((line) => line.organizationId === organizationId),
+      warehouseZones: data.warehouseZones.filter((zone) => zone.organizationId === organizationId),
+      storageRules: data.storageRules.filter((rule) => rule.organizationId === organizationId),
+      stagingLocations: data.stagingLocations.filter((location) => location.organizationId === organizationId),
+      putawayTasks,
+      waveBatches: data.waveBatches.filter((wave) => wave.organizationId === organizationId),
+      pickTasks: data.pickTasks.filter((task) => task.organizationId === organizationId).sort((left, right) => left.sequence - right.sequence),
+      packSessions: data.packSessions.filter((session) => session.organizationId === organizationId),
+      pickSuggestion: wmsPickSuggestion(organizationId)
+    };
+  }
+
+  function wmsLookup(organizationId: string, code: string) {
+    const normalized = code.trim().toLocaleLowerCase();
+    const lots = data.lots.filter(
+      (lot) =>
+        lot.organizationId === organizationId &&
+        (lot.lotCode.toLocaleLowerCase() === normalized ||
+          lot.itemSku.toLocaleLowerCase() === normalized ||
+          lot.id.toLocaleLowerCase() === normalized)
+    );
+    const lotIds = new Set(lots.map((lot) => lot.id));
+    return {
+      balances: filteredBalances(organizationId).filter(
+        (balance) =>
+          lotIds.has(balance.lotId ?? "") ||
+          balance.itemSku?.toLocaleLowerCase() === normalized ||
+          balance.itemId.toLocaleLowerCase() === normalized
+      ),
+      locations: data.locations.filter(
+        (location) =>
+          location.organizationId === organizationId &&
+          (location.code.toLocaleLowerCase() === normalized ||
+            location.name.toLocaleLowerCase() === normalized ||
+            location.id.toLocaleLowerCase() === normalized)
+      ),
+      lots
+    };
+  }
+
+  async function executeWmsCommand(
+    userContext: UserContext,
+    input: WmsScanCommandInputRecord,
+    requestId: string
+  ): Promise<WmsScanCommandResultRecord> {
+    const organizationId = userContext.organizationId;
+    const command = normalizeWmsScanCommand(input);
+    const lookup = wmsLookup(organizationId, command.code);
+    const warnings: string[] = [];
+    let movement: StockMovementRecord | null = null;
+    let countResult: StockCountPostResult | null = null;
+    let putawayTask: PutAwayTaskRecord | null = null;
+    let pickTask: PickTaskRecord | null = null;
+    let packSession: PackSessionRecord | null = null;
+    let container =
+      data.containers.find(
+        (candidate) =>
+          candidate.organizationId === organizationId &&
+          (candidate.id === command.containerId || candidate.containerCode.toLocaleLowerCase() === command.code.toLocaleLowerCase())
+      ) ?? null;
+    const balance = lookup.balances[0] ?? null;
+    const lot = lookup.lots[0] ?? (balance?.lotId ? data.lots.find((candidate) => candidate.id === balance.lotId) ?? null : null);
+
+    if (command.mode === "receive") {
+      if (!container) {
+        container = {
+          id: randomUUID(),
+          organizationId,
+          containerCode: command.code,
+          containerType: "license_plate",
+          parentContainerId: null,
+          locationId: command.toLocationId ?? "loc-pack",
+          locationName: data.locations.find((location) => location.id === (command.toLocationId ?? "loc-pack"))?.name ?? null,
+          zoneId: wmsZoneForLocation(command.toLocationId ?? "loc-pack")?.id ?? null,
+          status: "open",
+          tareWeight: null,
+          weightUom: null,
+          createdAt: new Date(),
+          updatedAt: new Date(),
+          version: 1
+        };
+        data.containers.push(container);
+      }
+      if (lot) {
+        data.containerLines.push({
+          id: randomUUID(),
+          organizationId,
+          containerId: container.id,
+          itemType: lot.itemType,
+          itemId: lot.itemId,
+          itemName: lot.itemName,
+          itemSku: lot.itemSku,
+          lotId: lot.id,
+          lotCode: lot.lotCode,
+          qcStatus: lot.qcStatus,
+          expiresAt: lot.expiresAt,
+          quantity: command.quantity ?? balance?.availableQuantity ?? 1,
+          uom: command.uom ?? balance?.uom ?? itemSnapshot(lot.itemType, lot.itemId)?.uom ?? "unit",
+          receivedAt: lot.receivedAt
+        });
+      }
+      const lines = data.containerLines.filter((line) => line.containerId === container!.id);
+      if (lines.length > 0) {
+        assertContainerLinesTraceable(lines);
+        const firstLine = lines[0]!;
+        putawayTask = {
+          id: randomUUID(),
+          organizationId,
+          taskNumber: `PA-${String(data.putawayTasks.length + 1).padStart(4, "0")}`,
+          containerId: container.id,
+          containerCode: container.containerCode,
+          itemType: firstLine.itemType,
+          itemId: firstLine.itemId,
+          lotId: firstLine.lotId,
+          lotCode: firstLine.lotCode ?? null,
+          fromLocationId: container.locationId,
+          toLocationId: null,
+          suggestedLocationId: null,
+          status: "open",
+          quantity: firstLine.quantity,
+          uom: firstLine.uom,
+          priority: firstLine.qcStatus === "hold" ? 1 : 5,
+          suggestions: [],
+          exceptionReason: null,
+          createdAt: new Date(),
+          completedAt: null
+        };
+        putawayTask.suggestions = putAwaySuggestionsForTask(putawayTask);
+        putawayTask.suggestedLocationId = putawayTask.suggestions[0]?.locationId ?? null;
+        data.putawayTasks.push(putawayTask);
+      }
+    }
+
+    if (command.mode === "put_away") {
+      putawayTask =
+        data.putawayTasks.find(
+          (task) =>
+            task.organizationId === organizationId &&
+            task.status !== "complete" &&
+            (task.id === command.code ||
+              task.taskNumber.toLocaleLowerCase() === command.code.toLocaleLowerCase() ||
+              task.containerCode?.toLocaleLowerCase() === command.code.toLocaleLowerCase())
+        ) ?? null;
+      if (!putawayTask) {
+        throw new Error("putaway_task_not_found");
+      }
+      const activePutawayTask = putawayTask;
+      const destinationId = command.toLocationId ?? activePutawayTask.suggestedLocationId;
+      const destinationZone = destinationId ? wmsZoneForLocation(destinationId) : null;
+      const taskLot = activePutawayTask.lotId ? data.lots.find((candidate) => candidate.id === activePutawayTask.lotId) : null;
+      if (!destinationId || !destinationZone) {
+        throw new Error("unknown_destination_zone");
+      }
+      assertPutAwayAllowed({ lotStatus: lotStatusForWms(taskLot), destinationZone });
+      movement = (await applyInventoryMovement(userContext, {
+        movementType: "transfer",
+        clientTransactionId: input.clientTransactionId ?? `${requestId}:putaway:${activePutawayTask.id}`,
+        itemType: activePutawayTask.itemType,
+        itemId: activePutawayTask.itemId,
+        lotId: activePutawayTask.lotId,
+        fromLocationId: command.fromLocationId ?? activePutawayTask.fromLocationId,
+        toLocationId: destinationId,
+        quantity: command.quantity ?? activePutawayTask.quantity,
+        uom: command.uom ?? activePutawayTask.uom,
+        sourceType: "putaway_task",
+        sourceId: activePutawayTask.id,
+        reasonCode: "wms_putaway",
+        metadata: { scanMode: command.mode, code: command.code }
+      }, requestId)).movement;
+      activePutawayTask.status = "complete";
+      activePutawayTask.toLocationId = destinationId;
+      activePutawayTask.completedAt = new Date();
+    }
+
+    if (command.mode === "transfer" || command.mode === "issue") {
+      if (!balance) {
+        throw new Error("wms_balance_not_found");
+      }
+      movement = (await applyInventoryMovement(userContext, {
+        movementType: command.mode === "transfer" ? "transfer" : "consume",
+        clientTransactionId: input.clientTransactionId ?? `${requestId}:${command.mode}:${command.code}`,
+        itemType: balance.itemType,
+        itemId: balance.itemId,
+        lotId: balance.lotId,
+        fromLocationId: command.fromLocationId ?? balance.locationId,
+        toLocationId: command.mode === "transfer" ? command.toLocationId ?? null : null,
+        quantity: command.quantity ?? balance.availableQuantity,
+        uom: command.uom ?? balance.uom,
+        sourceType: "wms_scan",
+        sourceId: command.code,
+        reasonCode: command.mode === "transfer" ? "wms_transfer" : "wms_issue",
+        notes: command.reason,
+        metadata: { scanMode: command.mode, code: command.code }
+      }, requestId)).movement;
+    }
+
+    if (command.mode === "count") {
+      if (!balance) {
+        throw new Error("wms_balance_not_found");
+      }
+      const session: StockCountSessionRecord = {
+        id: randomUUID(),
+        organizationId,
+        sessionCode: `WMS-CNT-${String(data.stockCountSessions.length + 1).padStart(4, "0")}`,
+        locationId: command.fromLocationId ?? balance.locationId,
+        locationName: data.locations.find((location) => location.id === (command.fromLocationId ?? balance.locationId))?.name ?? null,
+        status: "open",
+        startedBy: userContext.userId,
+        startedAt: new Date(),
+        closedAt: null,
+        createdOffline: false,
+        conflictCount: 0
+      };
+      const expectedQuantity = balance.availableQuantity + balance.reservedQuantity + balance.heldQuantity;
+      const countedQuantity = command.quantity ?? balance.availableQuantity;
+      const line: StockCountLineRecord = {
+        id: randomUUID(),
+        sessionId: session.id,
+        itemType: balance.itemType,
+        itemId: balance.itemId,
+        lotId: balance.lotId,
+        expectedQuantity,
+        countedQuantity,
+        varianceQuantity: countedQuantity - expectedQuantity,
+        uom: command.uom ?? balance.uom,
+        status: countedQuantity === expectedQuantity ? "counted" : "variance",
+        conflict: false
+      };
+      data.stockCountSessions.push(session);
+      data.stockCountLines.push(line);
+      countResult = { session, lines: [enrichCountLine(line)], conflicts: [], movements: [], idempotent: false };
+    }
+
+    if (command.mode === "pick") {
+      pickTask =
+        data.pickTasks.find(
+          (task) =>
+            task.organizationId === organizationId &&
+            task.status !== "complete" &&
+            (task.id === command.code || task.taskNumber.toLocaleLowerCase() === command.code.toLocaleLowerCase() || task.lotCode?.toLocaleLowerCase() === command.code.toLocaleLowerCase())
+        ) ?? data.pickTasks.find((task) => task.organizationId === organizationId && task.status !== "complete") ?? null;
+      if (!pickTask) {
+        throw new Error("pick_task_not_found");
+      }
+      if (input.overrideReason?.trim()) {
+        pickTask.overrideReason = input.overrideReason.trim();
+        warnings.push("FEFO/FIFO suggestion override reason was audited.");
+      }
+      movement = (await applyInventoryMovement(userContext, {
+        movementType: "allocate",
+        clientTransactionId: input.clientTransactionId ?? `${requestId}:pick:${pickTask.id}`,
+        itemType: pickTask.itemType,
+        itemId: pickTask.itemId,
+        lotId: pickTask.lotId,
+        fromLocationId: command.fromLocationId ?? pickTask.fromLocationId,
+        quantity: command.quantity ?? pickTask.quantity,
+        uom: command.uom ?? pickTask.uom,
+        sourceType: "sales_order_line",
+        sourceId: pickTask.salesOrderLineId,
+        reasonCode: "wms_pick",
+        metadata: { scanMode: command.mode, toteContainerId: pickTask.toteContainerId, overrideReason: pickTask.overrideReason }
+      }, requestId)).movement;
+      pickTask.status = "complete";
+      pickTask.completedAt = new Date();
+    }
+
+    if (command.mode === "pack") {
+      packSession =
+        data.packSessions.find(
+          (session) =>
+            session.organizationId === organizationId &&
+            session.status !== "shipped" &&
+            (session.id === command.code || session.sessionNumber.toLocaleLowerCase() === command.code.toLocaleLowerCase())
+        ) ?? data.packSessions.find((session) => session.organizationId === organizationId && session.status !== "shipped") ?? null;
+      if (!packSession) {
+        throw new Error("pack_session_not_found");
+      }
+      const orderLineIds = new Set(data.salesOrderLines.filter((line) => line.salesOrderId === packSession!.salesOrderId).map((line) => line.id));
+      const completed = data.pickTasks.filter((task) => task.salesOrderLineId && orderLineIds.has(task.salesOrderLineId) && task.status === "complete");
+      packSession.verifiedLineCount = completed.length;
+      packSession.status = completed.length > 0 ? "verified" : "exception";
+      packSession.exceptionReason = completed.length > 0 ? null : "No completed pick tasks were found for pack verification.";
+      packSession.packedAt = packSession.status === "verified" ? new Date() : null;
+    }
+
+    if (command.mode === "ship") {
+      packSession = data.packSessions.find(
+        (session) => session.organizationId === organizationId && (session.id === command.code || session.sessionNumber.toLocaleLowerCase() === command.code.toLocaleLowerCase())
+      ) ?? null;
+      if (!packSession || packSession.status === "open" || packSession.status === "exception") {
+        throw new Error("pack_verification_required_before_ship");
+      }
+      packSession.status = "shipped";
+      packSession.shippedAt = new Date();
+    }
+
+    if (["container_lookup", "storage_lookup", "item_lookup"].includes(command.mode) && !container) {
+      container = data.containers.find((candidate) => candidate.organizationId === organizationId && candidate.containerCode.toLocaleLowerCase() === command.code.toLocaleLowerCase()) ?? null;
+    }
+
+    const message = movement?.movementNumber ?? countResult?.session.sessionCode ?? putawayTask?.taskNumber ?? pickTask?.taskNumber ?? packSession?.sessionNumber ?? container?.containerCode ?? "lookup";
+    return {
+      mode: command.mode,
+      code: command.code,
+      message: `${command.mode} ${message}`,
+      container,
+      containerLines: container ? data.containerLines.filter((line) => line.containerId === container!.id) : [],
+      putawayTask,
+      pickTask,
+      packSession,
+      movement,
+      countResult,
+      lookup,
+      warnings
+    };
   }
 
   function filteredMovements(
@@ -9598,6 +14469,135 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
     };
   }
 
+  function roleCodesFor(userContext: UserContext): string[] {
+    return userContext.roles.map((role) => role.code);
+  }
+
+  function inquiryVisibleToUser(inquiry: GenericInquiry, userContext: UserContext): boolean {
+    const roles = roleCodesFor(userContext);
+    if (roles.includes("owner_admin")) {
+      return true;
+    }
+    if (inquiry.ownerUserId === userContext.userId) {
+      return true;
+    }
+    return inquiry.visibility === "role_shared" && inquiry.sharedRoleCodes.some((roleCode) => roles.includes(roleCode));
+  }
+
+  function workflowGuidesFor(userContext: UserContext): WorkflowGuideRecord[] {
+    return data.workflowGuides
+      .filter((guide) => guide.organizationId === userContext.organizationId && guide.status === "active")
+      .filter((guide) => {
+        const availability = workflowAvailabilityForRoles(guide, roleCodesFor(userContext));
+        return availability.available || availability.learnOnly || userContext.roles.some((role) => role.code === "owner_admin");
+      })
+      .sort((left, right) => left.module.localeCompare(right.module) || left.title.localeCompare(right.title));
+  }
+
+  function workflowDefinitionsFor(userContext: UserContext): WorkflowDefinitionRecord[] {
+    const roles = roleCodesFor(userContext);
+    return data.workflowDefinitions
+      .filter((definition) => definition.organizationId === userContext.organizationId && definition.active)
+      .filter(
+        (definition) =>
+          roles.includes("owner_admin") ||
+          definition.actions.some((action) =>
+            actorPermission(userContext).effectivePermissions.some(
+              (permission) => permission.permissionCode === action.permissionCode && permission.level !== "deny"
+            )
+          )
+      )
+      .sort((left, right) => left.recordType.localeCompare(right.recordType) || left.name.localeCompare(right.name));
+  }
+
+  function actorPermission(userContext: UserContext) {
+    return {
+      userId: userContext.userId,
+      roleCodes: roleCodesFor(userContext),
+      effectivePermissions: effectivePermissionsFor(userContext),
+      locationId: userContext.roles.find((role) => role.locationId)?.locationId ?? null
+    };
+  }
+
+  function effectivePermissionsFor(userContext: UserContext) {
+    const organizationId = userContext.organizationId;
+    const roleCodes = roleCodesFor(userContext);
+    return resolveEffectivePermissions({
+      roleCodes,
+      permissionSets: data.permissionSets.filter((set) => set.organizationId === organizationId),
+      rolePermissionSetCodes: Object.fromEntries(
+        data.roles
+          .filter((role) => role.organizationId === organizationId)
+          .map((role) => [
+            role.code,
+            data.rolePermissionSets
+              .filter((assignment) => assignment.roleId === role.id)
+              .map((assignment) => data.permissionSets.find((set) => set.id === assignment.permissionSetId)?.code)
+              .filter((code): code is string => Boolean(code))
+          ])
+      ),
+      userOverrides: data.userPermissionOverrides.filter((override) => override.organizationId === organizationId),
+      accessScopeRules: data.accessScopeRules.filter((rule) => rule.organizationId === organizationId),
+      userId: userContext.userId
+    });
+  }
+
+  function approvalInboxFor(userContext: UserContext): WorkflowApprovalRequestRecord[] {
+    const roleCodes = new Set(roleCodesFor(userContext));
+    const permissionCodes = new Set(effectivePermissionsFor(userContext).map((permission) => permission.permissionCode));
+    return data.approvalRequests
+      .filter((request) => request.organizationId === userContext.organizationId && request.status === "pending")
+      .filter(
+        (request) =>
+          roleCodes.has("owner_admin") ||
+          (request.roleCode ? roleCodes.has(request.roleCode) : false) ||
+          (request.permissionCode ? permissionCodes.has(request.permissionCode) : false)
+      )
+      .sort((left, right) => new Date(left.dueAt).getTime() - new Date(right.dueAt).getTime());
+  }
+
+  function workflowActionAvailability(
+    userContext: UserContext,
+    definition: WorkflowDefinitionRecord,
+    record: Parameters<typeof resolveWorkflow>[0]["record"]
+  ): WorkflowActionAvailabilityRecord {
+    const resolution = resolveWorkflow({
+      definition,
+      record,
+      actor: actorPermission(userContext)
+    });
+    return {
+      ...resolution,
+      approvalEscalations: evaluateApprovalEscalations({
+        definition,
+        requests: data.approvalRequests.filter(
+          (request) =>
+            request.organizationId === userContext.organizationId &&
+            request.workflowDefinitionId === definition.id &&
+            request.recordType === record.recordType &&
+            request.recordId === record.recordId
+        )
+      }),
+      blockedActionEscalations: evaluateBlockedActionEscalations({ resolution, definition })
+    };
+  }
+
+  function workflowRunDetail(run: WorkflowRunRecord): WorkflowRunDetailRecord | null {
+    const guide = data.workflowGuides.find(
+      (candidate) => candidate.organizationId === run.organizationId && candidate.id === run.workflowId
+    );
+    if (!guide) {
+      return null;
+    }
+    return {
+      run,
+      guide,
+      events: data.workflowRunEvents
+        .filter((event) => event.organizationId === run.organizationId && event.runId === run.id)
+        .sort((left, right) => left.occurredAt.getTime() - right.occurredAt.getTime())
+    };
+  }
+
   return {
     async findUserContextByAuthUserId(authUserId) {
       const user = data.users.find((candidate) => candidate.authUserId === authUserId);
@@ -9678,6 +14678,410 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
 
     async listLocations(organizationId) {
       return data.locations.filter((location) => location.organizationId === organizationId);
+    },
+
+    async getEffectivePermissionsForUser(organizationId, userId) {
+      const user = data.users.find((candidate) => candidate.id === userId && candidate.organizationId === organizationId);
+      return user ? effectivePermissionsForUser(user) : [];
+    },
+
+    async listPermissionMatrix(organizationId) {
+      return permissionMatrix(organizationId);
+    },
+
+    async updateRolePermissionSets(userContext, roleId, permissionSetIds, requestId) {
+      const role = data.roles.find(
+        (candidate) => candidate.id === roleId && candidate.organizationId === userContext.organizationId
+      );
+      if (!role) {
+        throw new Error("unknown_role");
+      }
+      const permissionSets = data.permissionSets.filter(
+        (set) => set.organizationId === userContext.organizationId && permissionSetIds.includes(set.id)
+      );
+      if (permissionSets.length !== [...new Set(permissionSetIds)].length) {
+        throw new Error("unknown_permission_set");
+      }
+      const before = permissionMatrix(userContext.organizationId);
+      data.rolePermissionSets = data.rolePermissionSets.filter((assignment) => assignment.roleId !== roleId);
+      for (const permissionSetId of [...new Set(permissionSetIds)]) {
+        data.rolePermissionSets.push({ id: randomUUID(), roleId, permissionSetId });
+      }
+      const after = permissionMatrix(userContext.organizationId);
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: "permission.role_sets.updated",
+        subjectType: "roles",
+        subjectId: roleId,
+        beforeJson: before.rolePermissionSets.filter((assignment) => assignment.roleId === roleId),
+        afterJson: after.rolePermissionSets.filter((assignment) => assignment.roleId === roleId),
+        requestId
+      });
+      return after;
+    },
+
+    async upsertUserPermissionOverride(userContext, input: UserPermissionOverrideInput, requestId) {
+      const user = data.users.find(
+        (candidate) => candidate.id === input.userId && candidate.organizationId === userContext.organizationId
+      );
+      if (!user) {
+        throw new Error("unknown_user");
+      }
+      if (!permissionCatalog.some((entry) => entry.code === input.permissionCode)) {
+        throw new Error("unknown_permission");
+      }
+      const before = permissionMatrix(userContext.organizationId);
+      const existing = data.userPermissionOverrides.find(
+        (override) => override.organizationId === userContext.organizationId &&
+          override.userId === input.userId &&
+          override.permissionCode === input.permissionCode
+      );
+      if (existing) {
+        existing.level = input.level;
+        existing.reason = input.reason;
+        if (input.scope !== undefined) {
+          existing.scope = { ...input.scope };
+        } else {
+          delete existing.scope;
+        }
+      } else {
+        const override: UserPermissionOverride = {
+          id: randomUUID(),
+          organizationId: userContext.organizationId,
+          userId: input.userId,
+          permissionCode: input.permissionCode,
+          level: input.level,
+          reason: input.reason
+        };
+        if (input.scope !== undefined) {
+          override.scope = { ...input.scope };
+        }
+        data.userPermissionOverrides.push(override);
+      }
+      const after = permissionMatrix(userContext.organizationId);
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: "permission.user_override.updated",
+        subjectType: "users",
+        subjectId: input.userId,
+        beforeJson: before.userOverrides.filter((override) => override.userId === input.userId),
+        afterJson: after.userOverrides.filter((override) => override.userId === input.userId),
+        requestId
+      });
+      return after;
+    },
+
+    async previewUserAccess(organizationId, subjectUserId, input: PermissionPreviewInput): Promise<AccessPreview | null> {
+      const user = data.users.find(
+        (candidate) => candidate.id === subjectUserId && candidate.organizationId === organizationId
+      );
+      if (!user) {
+        return null;
+      }
+      const effective = effectivePermissionsForUser(user);
+      const resolution = explainPermission({
+        effectivePermissions: effective,
+        permissionCode: input.permissionCode,
+        requiredLevel: input.requiredLevel,
+        ...(input.locationId !== undefined ? { locationId: input.locationId } : {}),
+        ...(input.scope !== undefined ? { scope: input.scope } : {})
+      });
+      return {
+        subjectUserId,
+        action: input,
+        resolution,
+        effective
+      };
+    },
+
+    async listPermissionChangeHistory(organizationId) {
+      return auditEvents
+        .filter((event) => event.organizationId === organizationId && event.eventType.startsWith("permission."))
+        .sort((left, right) => right.occurredAt.getTime() - left.occurredAt.getTime());
+    },
+
+    async getConfigurationSnapshot(organizationId) {
+      return configurationSnapshot(organizationId);
+    },
+
+    async upsertDocumentType(userContext, input: DocumentTypeInput, requestId) {
+      const now = new Date();
+      const existing = data.documentTypes.find(
+        (candidate) =>
+          candidate.organizationId === userContext.organizationId &&
+          candidate.category === input.category &&
+          candidate.code.toLocaleLowerCase() === input.code.toLocaleLowerCase()
+      );
+      const before = existing ? cloneRecord(existing) : null;
+      const record: DocumentTypeRecord = existing ?? {
+        id: randomUUID(),
+        organizationId: userContext.organizationId,
+        createdAt: now,
+        updatedAt: now,
+        version: 0,
+        ...input
+      };
+      Object.assign(record, input, { updatedAt: now, version: record.version + 1 });
+      if (!existing) {
+        data.documentTypes.push(record);
+      }
+      await auditConfigurationChange(
+        userContext,
+        existing ? "configuration.document_type.updated" : "configuration.document_type.created",
+        "document_types",
+        record.id,
+        before,
+        cloneRecord(record),
+        requestId
+      );
+      return record;
+    },
+
+    async upsertNumberingSequence(userContext, input: NumberingSequenceInput, requestId) {
+      if (!data.documentTypes.some((type) => type.organizationId === userContext.organizationId && type.id === input.documentTypeId)) {
+        throw new Error("unknown_document_type");
+      }
+      const now = new Date();
+      const existing = data.numberingSequences.find(
+        (candidate) =>
+          candidate.organizationId === userContext.organizationId &&
+          candidate.code.toLocaleLowerCase() === input.code.toLocaleLowerCase()
+      );
+      const before = existing ? cloneRecord(existing) : null;
+      const record: NumberingSequenceRecord = existing ?? {
+        id: randomUUID(),
+        organizationId: userContext.organizationId,
+        createdAt: now,
+        updatedAt: now,
+        version: 0,
+        lastScopeKey: input.lastScopeKey ?? null,
+        ...input
+      };
+      Object.assign(record, input, { lastScopeKey: input.lastScopeKey ?? record.lastScopeKey ?? null, updatedAt: now, version: record.version + 1 });
+      if (!existing) {
+        data.numberingSequences.push(record);
+      }
+      const documentType = data.documentTypes.find((type) => type.id === record.documentTypeId);
+      if (documentType && documentType.numberingSequenceId === null) {
+        documentType.numberingSequenceId = record.id;
+      }
+      await auditConfigurationChange(
+        userContext,
+        existing ? "configuration.numbering_sequence.updated" : "configuration.numbering_sequence.created",
+        "numbering_sequences",
+        record.id,
+        before,
+        cloneRecord(record),
+        requestId
+      );
+      return record;
+    },
+
+    async upsertReasonCode(userContext, input: ReasonCodeInput, requestId) {
+      const now = new Date();
+      const existing = data.reasonCodes.find(
+        (candidate) =>
+          candidate.organizationId === userContext.organizationId &&
+          candidate.catalog === input.catalog &&
+          candidate.code.toLocaleLowerCase() === input.code.toLocaleLowerCase()
+      );
+      const before = existing ? cloneRecord(existing) : null;
+      const record: ReasonCodeRecord = existing ?? {
+        id: randomUUID(),
+        organizationId: userContext.organizationId,
+        createdAt: now,
+        updatedAt: now,
+        version: 0,
+        ...input
+      };
+      Object.assign(record, input, { updatedAt: now, version: record.version + 1 });
+      if (!existing) {
+        data.reasonCodes.push(record);
+      }
+      await auditConfigurationChange(
+        userContext,
+        existing ? "configuration.reason_code.updated" : "configuration.reason_code.created",
+        "reason_codes",
+        record.id,
+        before,
+        cloneRecord(record),
+        requestId
+      );
+      return record;
+    },
+
+    async upsertAttributeDefinition(userContext, input: AttributeDefinitionInput, requestId) {
+      const now = new Date();
+      const existing = data.attributeDefinitions.find(
+        (candidate) => candidate.organizationId === userContext.organizationId && candidate.code.toLocaleLowerCase() === input.code.toLocaleLowerCase()
+      );
+      const before = existing ? cloneRecord(existing) : null;
+      const record: AttributeDefinitionRecord = existing ?? {
+        id: randomUUID(),
+        organizationId: userContext.organizationId,
+        createdAt: now,
+        updatedAt: now,
+        version: 0,
+        ...input
+      };
+      Object.assign(record, input, { updatedAt: now, version: record.version + 1 });
+      if (!existing) {
+        data.attributeDefinitions.push(record);
+      }
+      await auditConfigurationChange(
+        userContext,
+        existing ? "configuration.attribute_definition.updated" : "configuration.attribute_definition.created",
+        "attribute_definitions",
+        record.id,
+        before,
+        cloneRecord(record),
+        requestId
+      );
+      return record;
+    },
+
+    async upsertAttributeSet(userContext, input: AttributeSetInput, requestId) {
+      const unknownAttribute = input.attributeDefinitionIds.find(
+        (id) => !data.attributeDefinitions.some((attribute) => attribute.organizationId === userContext.organizationId && attribute.id === id)
+      );
+      if (unknownAttribute) {
+        throw new Error("unknown_attribute_definition");
+      }
+      const now = new Date();
+      const existing = data.attributeSets.find(
+        (candidate) => candidate.organizationId === userContext.organizationId && candidate.code.toLocaleLowerCase() === input.code.toLocaleLowerCase()
+      );
+      const before = existing ? cloneRecord(existing) : null;
+      const record: AttributeSetRecord = existing ?? {
+        id: randomUUID(),
+        organizationId: userContext.organizationId,
+        createdAt: now,
+        updatedAt: now,
+        version: 0,
+        ...input
+      };
+      Object.assign(record, input, { updatedAt: now, version: record.version + 1 });
+      if (!existing) {
+        data.attributeSets.push(record);
+      }
+      await auditConfigurationChange(
+        userContext,
+        existing ? "configuration.attribute_set.updated" : "configuration.attribute_set.created",
+        "attribute_sets",
+        record.id,
+        before,
+        cloneRecord(record),
+        requestId
+      );
+      return record;
+    },
+
+    async upsertFieldBehaviorRule(userContext, input: FieldBehaviorRuleInput, requestId) {
+      if (input.documentTypeId && !data.documentTypes.some((type) => type.organizationId === userContext.organizationId && type.id === input.documentTypeId)) {
+        throw new Error("unknown_document_type");
+      }
+      const now = new Date();
+      const existing = data.fieldBehaviorRules.find(
+        (candidate) =>
+          candidate.organizationId === userContext.organizationId &&
+          candidate.documentTypeId === input.documentTypeId &&
+          candidate.targetEntity === input.targetEntity &&
+          candidate.fieldName === input.fieldName &&
+          candidate.workflowState === input.workflowState
+      );
+      const before = existing ? cloneRecord(existing) : null;
+      const record: FieldBehaviorRuleRecord = existing ?? {
+        id: randomUUID(),
+        organizationId: userContext.organizationId,
+        createdAt: now,
+        updatedAt: now,
+        version: 0,
+        ...input
+      };
+      Object.assign(record, input, { updatedAt: now, version: record.version + 1 });
+      if (!existing) {
+        data.fieldBehaviorRules.push(record);
+      }
+      await auditConfigurationChange(
+        userContext,
+        existing ? "configuration.field_behavior_rule.updated" : "configuration.field_behavior_rule.created",
+        "field_behavior_rules",
+        record.id,
+        before,
+        cloneRecord(record),
+        requestId
+      );
+      return record;
+    },
+
+    async generateConfiguredDocumentNumber(userContext, input: DocumentNumberPreviewInput, requestId) {
+      const documentType = data.documentTypes.find(
+        (candidate) => candidate.organizationId === userContext.organizationId && candidate.id === input.documentTypeId
+      );
+      if (!documentType) {
+        throw new Error("unknown_document_type");
+      }
+      const sequence = data.numberingSequences.find(
+        (candidate) =>
+          candidate.organizationId === userContext.organizationId &&
+          candidate.active &&
+          (candidate.id === documentType.numberingSequenceId || candidate.documentTypeId === documentType.id)
+      );
+      if (!sequence) {
+        throw new Error("missing_numbering_sequence");
+      }
+      const generated = generateDocumentNumber(sequence, {
+        organizationId: userContext.organizationId,
+        documentType,
+        now: input.now ?? new Date(),
+        locationCode: locationCode(input.locationId ?? documentType.defaultLocationId)
+      });
+      if (input.commit) {
+        const before = cloneRecord(sequence);
+        sequence.nextNumber = generated.nextNumber;
+        sequence.lastScopeKey = generated.scopeKey;
+        sequence.updatedAt = new Date();
+        sequence.version += 1;
+        await auditConfigurationChange(
+          userContext,
+          "configuration.numbering_sequence.generated",
+          "numbering_sequences",
+          sequence.id,
+          before,
+          { ...cloneRecord(sequence), generatedDocumentNumber: generated.documentNumber },
+          requestId
+        );
+      }
+      return { ...generated, documentType, sequence };
+    },
+
+    async resolveConfiguredFieldBehavior(userContext, input) {
+      return resolveFieldBehavior(
+        data.fieldBehaviorRules.filter((rule) => rule.organizationId === userContext.organizationId),
+        {
+          targetEntity: input.targetEntity,
+          ...(input.documentTypeId !== undefined ? { documentTypeId: input.documentTypeId } : {}),
+          ...(input.workflowState !== undefined ? { workflowState: input.workflowState } : {}),
+          permissionCodes: permissionCodesForContext(userContext)
+        }
+      );
+    },
+
+    async validateConfiguredRecord(userContext, input: ConfigurationValidationInput) {
+      const resolvedFields = await this.resolveConfiguredFieldBehavior(userContext, input);
+      const requiredAttributes = requiredAttributeDefinitionsForContext(
+        data.attributeSets.filter((set) => set.organizationId === userContext.organizationId),
+        data.attributeDefinitions.filter((attribute) => attribute.organizationId === userContext.organizationId),
+        input.appliesTo ?? (input.documentTypeId ? { document_type: input.documentTypeId } : {})
+      );
+      return validateConfiguredRecordDomain({
+        values: input.values,
+        ...(input.attributeValues !== undefined ? { attributeValues: input.attributeValues } : {}),
+        resolvedFields,
+        requiredAttributes
+      });
     },
 
     async listMasterData(organizationId) {
@@ -9964,6 +15368,72 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
         variant,
         package: productPackage
       };
+    },
+
+    async runProductConfiguratorRuleTests(organizationId, templateId = null) {
+      const rule = orgSkuRules(organizationId)[0] ?? { ...defaultSkuRule, organizationId };
+      return orgProductTemplates(organizationId)
+        .filter((template) => !templateId || template.id === templateId)
+        .map((template) => ({
+          templateId: template.id,
+          templateVersion: template.templateVersion ?? "draft",
+          approvalStatus: template.approvalStatus ?? "draft",
+          results: runConfiguratorRuleTests(template, {
+            ...(rule ? { rule } : {}),
+            existingSkus: orgProductVariants(organizationId).map((variant) => variant.sku)
+          })
+        }))
+        .filter((run) => run.results.length > 0);
+    },
+
+    async upsertConfiguratorRule(organizationId, input: ConfiguratorRuleInput) {
+      const template = data.productTemplates.find(
+        (candidate) => candidate.organizationId === organizationId && candidate.id === input.templateId
+      );
+      if (!template) {
+        throw new Error("unknown_product_template");
+      }
+      const group = template.optionGroups?.find((candidate) => candidate.code === input.groupCode);
+      if (!group) {
+        throw new Error("unknown_option_group");
+      }
+      const option = template.options?.find((candidate) => candidate.groupId === group.id && candidate.code === input.optionCode);
+      if (!option) {
+        throw new Error("unknown_configurator_option");
+      }
+      const status = input.status ?? "pending_approval";
+      if (status === "active" && !input.changeRequestId?.trim()) {
+        throw new Error("change_control_required");
+      }
+
+      const existing = template.configuratorRules?.find(
+        (candidate) => candidate.name.trim().toLowerCase() === input.name.trim().toLowerCase()
+      );
+      const effects = {
+        ...(input.skuSuffix?.trim() ? { skuSuffix: input.skuSuffix.trim() } : {}),
+        ...(input.labelField?.trim() ? { labelFields: [input.labelField.trim()] } : {}),
+        ...(input.qcTest?.trim() ? { qcTests: [input.qcTest.trim()] } : {}),
+        ...(typeof input.priceDelta === "number" ? { priceDelta: input.priceDelta } : {}),
+        ...(typeof input.expectedCostDelta === "number" ? { expectedCostDelta: input.expectedCostDelta } : {})
+      };
+      const rule = existing ?? {
+        id: randomUUID(),
+        templateId: template.id,
+        name: input.name.trim(),
+        status,
+        changeRequestId: input.changeRequestId?.trim() || null,
+        appliesWhen: [{ groupCode: input.groupCode, optionCodes: [input.optionCode] }],
+        effects
+      };
+      rule.name = input.name.trim();
+      rule.status = status;
+      rule.changeRequestId = input.changeRequestId?.trim() || null;
+      rule.appliesWhen = [{ groupCode: input.groupCode, optionCodes: [input.optionCode] }];
+      rule.effects = effects;
+      if (!existing) {
+        template.configuratorRules = [...(template.configuratorRules ?? []), rule];
+      }
+      return template;
     },
 
     async getProduct(organizationId, productId) {
@@ -10494,6 +15964,14 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
       };
     },
 
+    async getWmsDashboard(organizationId) {
+      return wmsDashboard(organizationId);
+    },
+
+    async executeWmsScanCommand(userContext, input, requestId) {
+      return executeWmsCommand(userContext, input, requestId);
+    },
+
     async createProduct(organizationId, input: ProductInput) {
       const product: ProductRecord = {
         ...trimmedRecord(input),
@@ -10655,12 +16133,17 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
           productVariantId: bom.productVariantId,
           versionCode: bom.versionCode,
           status: bom.status,
+          bomKind: bom.bomKind,
           yieldQuantity: bom.yieldQuantity,
           yieldUom: bom.yieldUom,
           effectiveFrom: bom.effectiveFrom,
           effectiveTo: bom.effectiveTo,
-          lines: data.bomLines
-            .filter((line) => line.bomId === bom.id)
+          lines: data.bomOperationMaterials
+            .filter((line) =>
+              data.bomOperations.some((operation) => operation.bomId === bom.id && operation.id === line.bomOperationId)
+            )
+            .filter((line) => !line.effectiveFrom || line.effectiveFrom.getTime() <= filters.horizonEnd.getTime())
+            .filter((line) => !line.effectiveTo || line.effectiveTo.getTime() > new Date("2026-06-26T00:00:00.000Z").getTime())
             .map((line) => ({
               id: line.id,
               componentType: line.componentType,
@@ -10678,6 +16161,139 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
         scenarioSnapshots: buildPlanningScenarioSnapshots(organizationId, filters.horizonEnd),
         ...(filters.locationIds ? { locationIds: filters.locationIds } : {})
       });
+    },
+
+    async listDemandForecasts(organizationId) {
+      return data.demandForecasts
+        .filter((forecast) => forecast.organizationId === organizationId)
+        .map(hydratedDemandForecast)
+        .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+    },
+
+    async createDemandForecast(userContext, input: DemandForecastInput, requestId) {
+      const now = new Date();
+      const scenarioId = input.scenarioId?.trim() || `forecast-scenario-${Date.now()}`;
+      const forecast: DemandForecastRecord = {
+        id: randomUUID(),
+        organizationId: userContext.organizationId,
+        name: input.name.trim(),
+        scenarioId,
+        status: "draft",
+        bucket: input.bucket,
+        horizonStart: input.horizonStart,
+        horizonEnd: input.horizonEnd,
+        notes: input.notes?.trim() || null,
+        approvedAt: null,
+        approvedBy: null,
+        createdBy: userContext.userId,
+        createdAt: now,
+        updatedAt: now,
+        version: 1,
+        lines: [],
+        drivers: [],
+        aggregatedLines: []
+      };
+      data.demandForecasts.push(forecast);
+      const createdLines: ForecastLineRecord[] = input.lines.map((line) => ({
+        ...line,
+        id: randomUUID(),
+        organizationId: userContext.organizationId,
+        forecastId: forecast.id,
+        scenarioId: line.scenarioId ?? scenarioId,
+        manualOverrideQuantity: line.manualOverrideQuantity ?? null,
+        manualOverrideReason: line.manualOverrideReason ?? null,
+        createdAt: now,
+        updatedAt: now,
+        version: 1
+      }));
+      const drivers: ForecastDriverRecord[] = (input.drivers ?? []).map((driver) => {
+        const line = createdLines[driver.forecastLineClientIndex];
+        if (!line) {
+          throw new Error("unknown_forecast_line");
+        }
+        return {
+          id: randomUUID(),
+          organizationId: userContext.organizationId,
+          forecastLineId: line.id,
+          driverType: driver.driverType,
+          quantityImpact: driver.quantityImpact,
+          confidence: driver.confidence,
+          reason: driver.reason,
+          createdAt: now
+        };
+      });
+      aggregateForecastLines(createdLines, drivers);
+      data.forecastLines.push(...createdLines);
+      data.forecastDrivers.push(...drivers);
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: "forecast.created",
+        subjectType: "demand_forecast",
+        subjectId: forecast.id,
+        beforeJson: null,
+        afterJson: { forecastId: forecast.id, lineCount: createdLines.length },
+        requestId
+      });
+      return hydratedDemandForecast(forecast);
+    },
+
+    async approveDemandForecast(userContext, forecastId, input: ForecastApprovalInput, requestId) {
+      const forecast = data.demandForecasts.find(
+        (candidate) => candidate.organizationId === userContext.organizationId && candidate.id === forecastId
+      );
+      if (!forecast) {
+        return null;
+      }
+      const before = cloneRecord(forecast);
+      aggregateForecastLines(
+        data.forecastLines.filter((line) => line.forecastId === forecast.id),
+        data.forecastDrivers.filter((driver) =>
+          data.forecastLines.some((line) => line.forecastId === forecast.id && line.id === driver.forecastLineId)
+        )
+      );
+      forecast.status = "approved";
+      forecast.approvedAt = new Date();
+      forecast.approvedBy = userContext.userId;
+      forecast.updatedAt = forecast.approvedAt;
+      forecast.version += 1;
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: "forecast.approved_to_mrp",
+        subjectType: "demand_forecast",
+        subjectId: forecast.id,
+        beforeJson: before,
+        afterJson: { forecastId: forecast.id, approvalNote: input.approvalNote },
+        requestId
+      });
+      return hydratedDemandForecast(forecast);
+    },
+
+    async listPlanningScenarios(organizationId) {
+      return data.planningScenarios
+        .filter((scenario) => scenario.organizationId === organizationId)
+        .map(hydratePlanningScenario)
+        .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime());
+    },
+
+    async createPlanningScenario(userContext, input: PlanningScenarioInput, requestId) {
+      const scenario = buildPlanningScenarioRecord(userContext, input);
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: "planning_scenario.created",
+        subjectType: "planning_scenario",
+        subjectId: scenario.id,
+        beforeJson: null,
+        afterJson: { scenarioId: scenario.id, forecastId: scenario.forecastId, riskCount: scenario.riskItems.length },
+        requestId
+      });
+      return scenario;
+    },
+
+    async getSopDashboard(organizationId) {
+      return buildSopDashboard(organizationId);
     },
 
     async convertMrpSuggestion(organizationId, input) {
@@ -10978,6 +16594,423 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
       return supplierQualityDashboard(organizationId);
     },
 
+    async listEdiStagingCenter(organizationId) {
+      return {
+        partners: data.ediPartners.filter((partner) => partner.organizationId === organizationId),
+        mappings: data.partnerItemMappings.filter((mapping) => mapping.organizationId === organizationId),
+        batches: data.ediDocumentBatches.filter((batch) => batch.organizationId === organizationId),
+        documents: data.ediDocuments.filter((document) => document.organizationId === organizationId),
+        asns: data.asnHeaders
+          .filter((asn) => asn.organizationId === organizationId)
+          .map((asn) => ({
+            ...asn,
+            lines: data.asnLines.filter((line) => line.asnHeaderId === asn.id),
+            partner: data.ediPartners.find((partner) => partner.id === asn.partnerId) ?? null,
+            purchaseOrder: asn.purchaseOrderId
+              ? data.purchaseOrders.find((order) => order.id === asn.purchaseOrderId) ?? null
+              : null
+          }))
+          .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime()),
+        supplierPortalUsers: data.supplierPortalUsers.filter((user) => user.organizationId === organizationId),
+        customerPortalAccess: data.customerPortalAccess.filter((access) => access.organizationId === organizationId)
+      };
+    },
+
+    async createEdiPartner(userContext, input: EdiPartnerInput, requestId) {
+      const organizationId = userContext.organizationId;
+      if (input.supplierId && !data.suppliers.some((supplier) => supplier.id === input.supplierId && supplier.organizationId === organizationId)) {
+        throw new Error("unknown_supplier");
+      }
+      if (input.customerId && !data.customers.some((customer) => customer.id === input.customerId && customer.organizationId === organizationId)) {
+        throw new Error("unknown_customer");
+      }
+      if (data.ediPartners.some((partner) => partner.organizationId === organizationId && partner.partnerCode.toLocaleLowerCase() === input.partnerCode.trim().toLocaleLowerCase())) {
+        throw new Error("duplicate_edi_partner_code");
+      }
+      const now = new Date();
+      const partner: EdiPartnerRecord = {
+        id: randomUUID(),
+        organizationId,
+        partnerCode: input.partnerCode.trim(),
+        name: input.name.trim(),
+        partnerType: input.partnerType,
+        supplierId: input.supplierId ?? null,
+        customerId: input.customerId ?? null,
+        status: input.status ?? "draft",
+        defaultDocumentFormat: input.defaultDocumentFormat ?? "csv",
+        settingsJson: input.settingsJson ?? {},
+        createdAt: now,
+        updatedAt: now,
+        version: 1
+      };
+      data.ediPartners.push(partner);
+      await transactionClient.insertAuditEvent({
+        organizationId,
+        actorUserId: userContext.userId,
+        eventType: "edi_partner.created",
+        subjectType: "edi_partner",
+        subjectId: partner.id,
+        beforeJson: null,
+        afterJson: partner,
+        requestId
+      });
+      return partner;
+    },
+
+    async upsertPartnerItemMapping(userContext, input: PartnerItemMappingInput, requestId) {
+      const organizationId = userContext.organizationId;
+      const partner = data.ediPartners.find((candidate) => candidate.id === input.partnerId && candidate.organizationId === organizationId);
+      if (!partner) {
+        throw new Error("unknown_edi_partner");
+      }
+      if (input.mappingType === "item") {
+        assertPurchaseItemExists(organizationId, input.internalType, input.internalId);
+      }
+      const existing = data.partnerItemMappings.find(
+        (mapping) =>
+          mapping.organizationId === organizationId &&
+          mapping.partnerId === input.partnerId &&
+          mapping.mappingType === input.mappingType &&
+          mapping.externalCode.toLocaleLowerCase() === input.externalCode.trim().toLocaleLowerCase()
+      );
+      const now = new Date();
+      if (existing) {
+        const beforeJson = { ...existing };
+        Object.assign(existing, {
+          externalDescription: input.externalDescription?.trim() || null,
+          internalType: input.internalType.trim(),
+          internalId: input.internalId.trim(),
+          internalCode: input.internalCode?.trim() || null,
+          active: input.active ?? existing.active,
+          updatedAt: now,
+          version: existing.version + 1
+        });
+        await transactionClient.insertAuditEvent({
+          organizationId,
+          actorUserId: userContext.userId,
+          eventType: "partner_mapping.updated",
+          subjectType: "partner_item_mapping",
+          subjectId: existing.id,
+          beforeJson,
+          afterJson: existing,
+          requestId
+        });
+        return existing;
+      }
+      const mapping: PartnerItemMappingRecord = {
+        id: randomUUID(),
+        organizationId,
+        partnerId: input.partnerId,
+        mappingType: input.mappingType,
+        externalCode: input.externalCode.trim(),
+        externalDescription: input.externalDescription?.trim() || null,
+        internalType: input.internalType.trim(),
+        internalId: input.internalId.trim(),
+        internalCode: input.internalCode?.trim() || null,
+        active: input.active ?? true,
+        createdAt: now,
+        updatedAt: now,
+        version: 1
+      };
+      data.partnerItemMappings.push(mapping);
+      await transactionClient.insertAuditEvent({
+        organizationId,
+        actorUserId: userContext.userId,
+        eventType: "partner_mapping.created",
+        subjectType: "partner_item_mapping",
+        subjectId: mapping.id,
+        beforeJson: null,
+        afterJson: mapping,
+        requestId
+      });
+      return mapping;
+    },
+
+    async importAsnDocument(userContext, input: ImportAsnInput, requestId) {
+      const organizationId = userContext.organizationId;
+      const partner = data.ediPartners.find((candidate) => candidate.id === input.partnerId && candidate.organizationId === organizationId);
+      if (!partner) {
+        throw new Error("unknown_edi_partner");
+      }
+      const parsed = input.format === "json" ? JSON.parse(input.contents) : parseAsnCsv(input.contents);
+      const supplierId = parsed.supplierId || partner.supplierId;
+      if (!supplierId || !data.suppliers.some((supplier) => supplier.id === supplierId && supplier.organizationId === organizationId)) {
+        throw new Error("unknown_supplier");
+      }
+      const purchaseOrder =
+        (parsed.purchaseOrderId
+          ? data.purchaseOrders.find((order) => order.id === parsed.purchaseOrderId && order.organizationId === organizationId)
+          : null) ??
+        (parsed.poNumber
+          ? data.purchaseOrders.find((order) => order.organizationId === organizationId && order.poNumber === parsed.poNumber)
+          : null);
+      const mappings = data.partnerItemMappings.filter((mapping) => mapping.partnerId === partner.id && mapping.organizationId === organizationId);
+      const validation = validateAsnMappings(parsed, mappings);
+      const now = new Date();
+      const status = validation.valid ? "validated" : "quarantined";
+      const batch: EdiDocumentBatchRecord = {
+        id: randomUUID(),
+        organizationId,
+        partnerId: partner.id,
+        batchNumber: `EDI-${String(data.ediDocumentBatches.length + 1).padStart(4, "0")}`,
+        sourceFileName: input.fileName.trim(),
+        documentType: "asn",
+        status,
+        importedBy: userContext.userId,
+        importedAt: now,
+        approvedBy: null,
+        approvedAt: null,
+        metadataJson: { format: input.format ?? "csv", quarantinePolicy: "approval_required_before_live_records" },
+        createdAt: now,
+        updatedAt: now,
+        version: 1
+      };
+      const document: EdiDocumentRecord = {
+        id: randomUUID(),
+        organizationId,
+        partnerId: partner.id,
+        batchId: batch.id,
+        documentType: "asn",
+        documentNumber: parsed.asnNumber,
+        status,
+        quarantineReason: validation.valid ? null : "ASN requires mapping or data corrections before approval.",
+        validationIssues: validation.issues,
+        payloadJson: JSON.parse(JSON.stringify(parsed)),
+        relatedEntityType: purchaseOrder ? "purchase_order" : null,
+        relatedEntityId: purchaseOrder?.id ?? null,
+        approvedBy: null,
+        approvedAt: null,
+        convertedEntityType: null,
+        convertedEntityId: null,
+        createdAt: now,
+        updatedAt: now,
+        version: 1
+      };
+      const asn: AsnHeaderRecord = {
+        id: randomUUID(),
+        organizationId,
+        partnerId: partner.id,
+        ediDocumentId: document.id,
+        asnNumber: parsed.asnNumber,
+        supplierId,
+        purchaseOrderId: purchaseOrder?.id ?? parsed.purchaseOrderId ?? null,
+        poNumber: parsed.poNumber ?? purchaseOrder?.poNumber ?? null,
+        status,
+        shipDate: parsed.shipDate ?? null,
+        expectedAt: parsed.expectedAt ?? null,
+        carrier: parsed.carrier ?? null,
+        trackingNumber: parsed.trackingNumber ?? null,
+        packingSlipNumber: parsed.packingSlipNumber ?? null,
+        validationIssues: validation.issues,
+        approvedBy: null,
+        approvedAt: null,
+        convertedReceiptId: null,
+        createdAt: now,
+        updatedAt: now,
+        version: 1
+      };
+      const asnLines: AsnLineRecord[] = parsed.lines.map((line: ParsedAsnLine) => {
+        let resolved: ReturnType<typeof resolveMappedAsnLine> | null = null;
+        try {
+          resolved = resolveMappedAsnLine(line, mappings);
+        } catch {
+          resolved = null;
+        }
+        const lineIssues = validation.issues.filter((issue) => issue.lineNumber === line.lineNumber);
+        return {
+          id: randomUUID(),
+          organizationId,
+          asnHeaderId: asn.id,
+          lineNumber: line.lineNumber,
+          purchaseOrderLineId: line.purchaseOrderLineId ?? null,
+          externalItemCode: line.externalItemCode,
+          supplierSku: line.supplierSku ?? null,
+          itemMappingId: resolved?.itemMappingId ?? null,
+          unitMappingId: resolved?.unitMappingId ?? null,
+          itemType: (resolved?.itemType as AsnLineRecord["itemType"]) ?? null,
+          itemId: resolved?.itemId ?? null,
+          quantity: line.quantity,
+          uom: line.uom,
+          mappedUom: resolved?.uom ?? null,
+          lotCode: line.lotCode,
+          supplierLotNumber: line.supplierLotNumber ?? null,
+          expiryDate: line.expiryDate ?? null,
+          validationIssues: lineIssues,
+          createdAt: now,
+          updatedAt: now,
+          version: 1
+        };
+      });
+      data.ediDocumentBatches.push(batch);
+      data.ediDocuments.push(document);
+      data.asnHeaders.push(asn);
+      data.asnLines.push(...asnLines);
+      await transactionClient.insertAuditEvent({
+        organizationId,
+        actorUserId: userContext.userId,
+        eventType: "edi_document.imported",
+        subjectType: "edi_document",
+        subjectId: document.id,
+        beforeJson: null,
+        afterJson: { document, asn, lineCount: asnLines.length },
+        requestId
+      });
+      return { batch, document, asn: { ...asn, lines: asnLines } };
+    },
+
+    async approveAsnDocument(userContext, asnHeaderId, requestId) {
+      const organizationId = userContext.organizationId;
+      const asn = data.asnHeaders.find((candidate) => candidate.id === asnHeaderId && candidate.organizationId === organizationId);
+      if (!asn) {
+        return null;
+      }
+      const lines = data.asnLines.filter((line) => line.asnHeaderId === asn.id);
+      const issues = [...asn.validationIssues, ...lines.flatMap((line) => line.validationIssues)];
+      if (issues.some((issue) => issue.level === "error") || lines.some((line) => !line.itemType || !line.itemId || !line.mappedUom)) {
+        throw new DomainConflictError("ASN validation errors block approval.", { issues });
+      }
+      const now = new Date();
+      const beforeJson = { ...asn };
+      asn.status = "approved";
+      asn.approvedBy = userContext.userId;
+      asn.approvedAt = now;
+      asn.updatedAt = now;
+      asn.version += 1;
+      const document = data.ediDocuments.find((candidate) => candidate.id === asn.ediDocumentId);
+      if (document) {
+        document.status = "approved";
+        document.approvedBy = userContext.userId;
+        document.approvedAt = now;
+        document.updatedAt = now;
+        document.version += 1;
+      }
+      await transactionClient.insertAuditEvent({
+        organizationId,
+        actorUserId: userContext.userId,
+        eventType: "asn.approved",
+        subjectType: "asn_header",
+        subjectId: asn.id,
+        beforeJson,
+        afterJson: asn,
+        requestId
+      });
+      return asn;
+    },
+
+    async convertAsnToReceipt(userContext, asnHeaderId, input: AsnConversionInput, requestId) {
+      const organizationId = userContext.organizationId;
+      const asn = data.asnHeaders.find((candidate) => candidate.id === asnHeaderId && candidate.organizationId === organizationId);
+      if (!asn) {
+        throw new Error("unknown_asn");
+      }
+      if (asn.status !== "approved") {
+        throw new DomainConflictError("ASN must be approved before conversion.", { asnStatus: asn.status });
+      }
+      if (asn.convertedReceiptId) {
+        const existing = data.receipts.find((receipt) => receipt.id === asn.convertedReceiptId);
+        if (existing) {
+          return receiptDetail(existing);
+        }
+      }
+      const lines = data.asnLines.filter((line) => line.asnHeaderId === asn.id);
+      const carrierMapping = asn.carrier
+        ? data.partnerItemMappings.find(
+            (mapping) =>
+              mapping.partnerId === asn.partnerId &&
+              mapping.mappingType === "carrier" &&
+              mapping.active &&
+              mapping.externalCode.toLocaleLowerCase() === asn.carrier!.toLocaleLowerCase()
+          )
+        : null;
+      const receipt = await this.receivePurchaseOrder(
+        userContext,
+        {
+          receiptNumber: input.receiptNumber,
+          purchaseOrderId: asn.purchaseOrderId,
+          supplierId: asn.supplierId,
+          receivedAt: asn.expectedAt ?? new Date(),
+          locationId: input.locationId,
+          billOfLadingNumber: asn.trackingNumber,
+          carrier: carrierMapping?.internalCode ?? carrierMapping?.internalId ?? asn.carrier,
+          packingSlipNumber: asn.packingSlipNumber,
+          receivingNotes: `Converted from approved ASN ${asn.asnNumber}.`,
+          supplierDocumentIds: [],
+          clientTransactionId: input.clientTransactionId,
+          lines: lines.map((line): ReceiptLineInput => {
+            const purchaseOrderLine =
+              line.purchaseOrderLineId ??
+              data.purchaseOrderLines.find(
+                (candidate) =>
+                  candidate.purchaseOrderId === asn.purchaseOrderId &&
+                  candidate.itemType === line.itemType &&
+                  candidate.itemId === line.itemId
+              )?.id ??
+              null;
+            return {
+              purchaseOrderLineId: purchaseOrderLine,
+              ...(line.itemType ? { itemType: line.itemType } : {}),
+              ...(line.itemId ? { itemId: line.itemId } : {}),
+              lotCode: line.lotCode,
+              supplierLotNumber: line.supplierLotNumber,
+              quantity: line.quantity,
+              receivedQuantity: line.quantity,
+              acceptedQuantity: line.quantity,
+              quarantinedQuantity: 0,
+              rejectedQuantity: 0,
+              disposition: "accepted",
+              dispositionReason: input.dispositionReason ?? null,
+              uom: line.mappedUom ?? line.uom,
+              expiryDate: line.expiryDate
+            };
+          })
+        },
+        requestId
+      );
+      const now = new Date();
+      asn.status = "converted";
+      asn.convertedReceiptId = receipt.receipt.id;
+      asn.updatedAt = now;
+      asn.version += 1;
+      const document = data.ediDocuments.find((candidate) => candidate.id === asn.ediDocumentId);
+      if (document) {
+        document.status = "converted";
+        document.convertedEntityType = "receipt";
+        document.convertedEntityId = receipt.receipt.id;
+        document.updatedAt = now;
+        document.version += 1;
+      }
+      await transactionClient.insertAuditEvent({
+        organizationId,
+        actorUserId: userContext.userId,
+        eventType: "asn.converted_to_receipt",
+        subjectType: "asn_header",
+        subjectId: asn.id,
+        beforeJson: null,
+        afterJson: { asnId: asn.id, receiptId: receipt.receipt.id },
+        requestId
+      });
+      return receipt;
+    },
+
+    async listCustomerDocumentPortalPreview(userContext, accessId = null) {
+      const organizationId = userContext.organizationId;
+      return data.customerPortalAccess
+        .filter((access) => access.organizationId === organizationId)
+        .filter((access) => !accessId || access.id === accessId)
+        .map((access): CustomerDocumentPortalPreviewRecord => ({
+          access,
+          documents: data.generatedDocuments.filter(
+            (document) =>
+              document.organizationId === organizationId &&
+              document.status === "final" &&
+              document.customerFacing &&
+              access.allowedDocumentTypes.includes(document.documentType) &&
+              (!access.salesOrderId || document.salesOrderId === access.salesOrderId || document.subjectId === access.salesOrderId) &&
+              (!access.shipmentId || document.shipmentId === access.shipmentId || document.renderedDataJson.shipmentId === access.shipmentId)
+          )
+        }));
+    },
+
     async listPurchaseOrders(organizationId) {
       return orgPurchaseOrders(organizationId)
         .sort((left, right) => right.createdAt.getTime() - left.createdAt.getTime())
@@ -11171,8 +17204,10 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
       const stagedLots: LotRecord[] = [];
       const stagedLotApprovals = new Map<string, SupplierApprovalRecord | null>();
       const normalizedMovements: ReturnType<typeof normalizeInventoryMovement>[] = [];
+      const movementLinks: Array<{ lineId: string; kind: "receipt" | "hold" }> = [];
       const stagedQcRecords: QcRecordRecord[] = [];
       const stagedCoas: CoaAttachmentRecord[] = [];
+      const stagedLotHolds: LotHoldRecord[] = [];
 
       input.lines.forEach((lineInput, index) => {
         const purchaseOrderLine = lineInput.purchaseOrderLineId
@@ -11200,12 +17235,14 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
             candidate.itemType === itemType &&
             candidate.itemId === itemId
         ) ?? null;
+        const disposition = normalizeReceiptDisposition(lineInput);
+        const purchaseOrderReceiptQuantity = quantityCountsAgainstPurchaseOrder(disposition);
         if (purchaseOrderLine) {
           const alreadyReceived = receivedQuantityForPurchaseOrderLine(purchaseOrderLine.id);
           const stagedForLine = stagedLines
             .filter((candidate) => candidate.purchaseOrderLineId === purchaseOrderLine.id)
             .reduce((total, candidate) => total + candidate.quantity, 0);
-          if (alreadyReceived + stagedForLine + lineInput.quantity > purchaseOrderLine.quantity) {
+          if (alreadyReceived + stagedForLine + purchaseOrderReceiptQuantity > purchaseOrderLine.quantity) {
             throw new Error("receipt_exceeds_ordered_quantity");
           }
           if (purchaseOrderLine.uom !== lineInput.uom) {
@@ -11230,10 +17267,15 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
           itemSku: item.sku,
           sourceType: "receipt",
           sourceId: receiptId,
-          manufacturedAt: null,
+          manufacturedAt: lineInput.manufactureDate ?? null,
           receivedAt,
           expiresAt: lineInput.expiryDate ?? null,
-          qcStatus: "pending",
+          qcStatus:
+            disposition.rejectedQuantity > 0 && disposition.acceptedQuantity === 0 && disposition.quarantinedQuantity === 0
+              ? "rejected"
+              : disposition.quarantinedQuantity > 0 && disposition.acceptedQuantity === 0
+                ? "hold"
+                : "released",
           status: "active",
           parentLotId: null,
           metadataJson: {
@@ -11242,6 +17284,11 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
             supplierApprovalId: approval?.id ?? null,
             supplierRiskLevel: approval?.riskLevel ?? null,
             supplierLotNumber: lineInput.supplierLotNumber?.trim() || null,
+            internalLotNumber: lineInput.internalLotNumber?.trim() || lineInput.lotCode.trim(),
+            billOfLadingNumber: input.billOfLadingNumber?.trim() || null,
+            carrier: input.carrier?.trim() || null,
+            packingSlipNumber: input.packingSlipNumber?.trim() || null,
+            disposition,
             purchaseOrderId: purchaseOrder?.id ?? null,
             purchaseOrderLineId: purchaseOrderLine?.id ?? null
           },
@@ -11251,38 +17298,124 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
         };
         stagedLots.push(lot);
         stagedLotApprovals.set(lot.id, approval);
-        normalizedMovements.push(
-          normalizeInventoryMovement({
-            movementType: "receipt",
-            clientTransactionId: `${input.clientTransactionId}:line:${index + 1}`,
-            itemType,
-            itemId,
+        const receiptLineId = randomUUID();
+        const stockQuantity = disposition.acceptedQuantity + disposition.quarantinedQuantity;
+        if (stockQuantity > 0) {
+          normalizedMovements.push(
+            normalizeInventoryMovement({
+              movementType: "receipt",
+              clientTransactionId: `${input.clientTransactionId}:line:${index + 1}:receipt`,
+              itemType,
+              itemId,
+              lotId,
+              toLocationId: input.locationId,
+              quantity: stockQuantity,
+              uom: lineInput.uom,
+              occurredAt: receivedAt,
+              sourceType: "receipt",
+              sourceId: receiptId,
+              reasonCode: "supplier_receipt",
+              metadata: {
+                rootClientTransactionId: input.clientTransactionId,
+                purchaseOrderId: purchaseOrder?.id ?? null,
+                purchaseOrderLineId: purchaseOrderLine?.id ?? null,
+                receiptLineId,
+                acceptedQuantity: disposition.acceptedQuantity,
+                quarantinedQuantity: disposition.quarantinedQuantity,
+                rejectedQuantity: disposition.rejectedQuantity,
+                supplierLotNumber: lineInput.supplierLotNumber?.trim() || null,
+                billOfLadingNumber: input.billOfLadingNumber?.trim() || null
+              }
+            })
+          );
+          movementLinks.push({ lineId: receiptLineId, kind: "receipt" });
+        }
+        let lotHoldId: string | null = null;
+        if (disposition.quarantinedQuantity > 0) {
+          lotHoldId = randomUUID();
+          stagedLotHolds.push({
+            id: lotHoldId,
+            organizationId,
             lotId,
-            toLocationId: input.locationId,
-            quantity: lineInput.quantity,
-            uom: lineInput.uom,
-            occurredAt: receivedAt,
-            sourceType: "receipt",
-            sourceId: receiptId,
-            reasonCode: "supplier_receipt",
-            metadata: {
-              rootClientTransactionId: input.clientTransactionId,
-              purchaseOrderId: purchaseOrder?.id ?? null,
-              purchaseOrderLineId: purchaseOrderLine?.id ?? null,
-              supplierLotNumber: lineInput.supplierLotNumber?.trim() || null
-            }
-          })
-        );
+            qualityEventId: null,
+            status: "active",
+            reason: disposition.dispositionReason ?? "Incoming QC quarantine",
+            heldBy: userContext.userId,
+            heldAt: receivedAt,
+            decision: "hold",
+            decisionBy: userContext.userId,
+            decisionAt: receivedAt,
+            decisionReason: disposition.dispositionReason ?? "Incoming QC quarantine",
+            evidence: input.receiptNumber.trim(),
+            createdAt: now,
+            updatedAt: now,
+            version: 1
+          });
+          normalizedMovements.push(
+            normalizeInventoryMovement({
+              movementType: "hold",
+              clientTransactionId: `${input.clientTransactionId}:line:${index + 1}:hold`,
+              itemType,
+              itemId,
+              lotId,
+              fromLocationId: input.locationId,
+              quantity: disposition.quarantinedQuantity,
+              uom: lineInput.uom,
+              occurredAt: receivedAt,
+              sourceType: "lot_hold",
+              sourceId: lotHoldId,
+              reasonCode: "incoming_qc_quarantine",
+              notes: disposition.dispositionReason,
+              metadata: {
+                rootClientTransactionId: input.clientTransactionId,
+                receiptId,
+                receiptLineId,
+                purchaseOrderId: purchaseOrder?.id ?? null,
+                purchaseOrderLineId: purchaseOrderLine?.id ?? null,
+                supplierLotNumber: lineInput.supplierLotNumber?.trim() || null,
+                billOfLadingNumber: input.billOfLadingNumber?.trim() || null
+              }
+            })
+          );
+          movementLinks.push({ lineId: receiptLineId, kind: "hold" });
+        }
         stagedLines.push({
-          id: randomUUID(),
+          id: receiptLineId,
           receiptId,
           purchaseOrderLineId: purchaseOrderLine?.id ?? null,
           lotId,
-          quantity: lineInput.quantity,
+          quantity: purchaseOrderReceiptQuantity,
+          receivedQuantity: disposition.receivedQuantity,
+          damagedQuantity: disposition.damagedQuantity,
+          acceptedQuantity: disposition.acceptedQuantity,
+          quarantinedQuantity: disposition.quarantinedQuantity,
+          rejectedQuantity: disposition.rejectedQuantity,
           uom: lineInput.uom,
           expiryDate: lineInput.expiryDate ?? null,
+          manufactureDate: lineInput.manufactureDate ?? null,
           supplierLotNumber: lineInput.supplierLotNumber?.trim() || null,
+          internalLotNumber: lineInput.internalLotNumber?.trim() || lineInput.lotCode.trim(),
+          containerCount: lineInput.containerCount ?? null,
+          disposition: disposition.disposition,
+          dispositionReason: disposition.dispositionReason,
           stockMovementId: null,
+          acceptedStockMovementId: null,
+          quarantineStockMovementId: null,
+          lotHoldId,
+          qcTaskIds: [],
+          receivingLabel: {
+            labelCode: `RCV-${input.receiptNumber.trim()}-${index + 1}`,
+            status: receivingLabelStatus(disposition),
+            fields: {
+              item: item.name,
+              lot: lineInput.lotCode.trim(),
+              supplierLot: lineInput.supplierLotNumber?.trim() || null,
+              expiry: lineInput.expiryDate?.toISOString().slice(0, 10) ?? null,
+              purchaseOrder: purchaseOrder?.poNumber ?? null,
+              receipt: input.receiptNumber.trim(),
+              status: receivingLabelStatus(disposition)
+            }
+          },
           correctedQuantity: 0,
           createdAt: now,
           updatedAt: now,
@@ -11336,6 +17469,12 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
         supplierId: supplier.id,
         receivedAt,
         locationId: input.locationId,
+        billOfLadingNumber: input.billOfLadingNumber?.trim() || null,
+        carrier: input.carrier?.trim() || null,
+        packingSlipNumber: input.packingSlipNumber?.trim() || null,
+        receivedByUserId: input.receivedByUserId?.trim() || userContext.userId,
+        receivingNotes: input.receivingNotes?.trim() || null,
+        supplierDocumentIds: input.supplierDocumentIds ?? [],
         status: "posted",
         createdAt: now,
         updatedAt: now,
@@ -11356,12 +17495,28 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
       }
       data.qcRecords.push(...stagedQcRecords);
       data.coaAttachments.push(...stagedCoas);
+      data.lotHolds.push(...stagedLotHolds);
 
       const movements = normalizedMovements.map((movement) =>
         createStockMovementFromNormalized(organizationId, userContext.userId, movement)
       );
-      stagedLines.forEach((line, index) => {
-        line.stockMovementId = movements[index]?.id ?? null;
+      movementLinks.forEach((link, index) => {
+        const line = stagedLines.find((candidate) => candidate.id === link.lineId);
+        const movement = movements[index] ?? null;
+        if (!line || !movement) {
+          return;
+        }
+        if (link.kind === "receipt") {
+          line.stockMovementId = movement.id;
+          line.acceptedStockMovementId = movement.id;
+        } else {
+          line.quarantineStockMovementId = movement.id;
+        }
+      });
+      stagedLines.forEach((line) => {
+        line.qcTaskIds = generatedInspectionTasks
+          .filter((task) => task.lotId === line.lotId)
+          .map((task) => task.id);
       });
       data.receiptLines.push(...stagedLines);
       commitProjectedBalances(projected.filter((balance) => changedKeys.has(inventoryBalanceKey(balance))));
@@ -11921,6 +18076,655 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
       return lot ? releaseChecklist(lot) : null;
     },
 
+    async getLimsDashboard(organizationId): Promise<LimsDashboardRecord> {
+      const samples = sampleDetails(organizationId);
+      const retainedSamples = limsRetainedInventory(organizationId);
+      const stabilityStudies = limsStabilityStudies(organizationId);
+      const openSamples = samples.filter((sample) => !["approved", "failed", "invalidated"].includes(sample.status)).length;
+      return {
+        openSamples,
+        awaitingReview: samples.filter((sample) => sample.status === "awaiting_review").length,
+        failedResults: data.labResults.filter(
+          (result) => result.organizationId === organizationId && result.evaluatedStatus === "fail" && result.invalidatedAt === null
+        ).length,
+        retainedAvailable: retainedSamples.filter((sample) => ["available", "partially_pulled"].includes(sample.status)).length,
+        stabilityDue: stabilityStudies.flatMap((study) => study.pullPoints).filter((pull) => pull.status === "due" || pull.status === "missed").length,
+        sampleQueue: samples,
+        retainedSamples,
+        stabilityStudies,
+        trends: limsTrends(organizationId)
+      };
+    },
+
+    async listSamples(organizationId) {
+      return sampleDetails(organizationId);
+    },
+
+    async getSample(organizationId, sampleId) {
+      const sample = data.samples.find((candidate) => candidate.id === sampleId && candidate.organizationId === organizationId);
+      return sample ? sampleDetail(sample) : null;
+    },
+
+    async createSamplingPlan(organizationId, input: SamplingPlanInput) {
+      if (
+        data.samplingPlans.some(
+          (plan) => plan.organizationId === organizationId && plan.planCode.toLocaleLowerCase() === input.planCode.trim().toLocaleLowerCase()
+        )
+      ) {
+        throw new Error("duplicate_sampling_plan_code");
+      }
+      const now = new Date();
+      const plan: SamplingPlanRecord = {
+        id: randomUUID(),
+        organizationId,
+        planCode: input.planCode.trim(),
+        name: input.name.trim(),
+        supplierId: input.supplierId ?? null,
+        itemClass: input.itemClass?.trim() || null,
+        itemType: input.itemType ?? null,
+        itemId: input.itemId ?? input.materialId ?? input.productVariantId ?? null,
+        materialId: input.materialId ?? null,
+        productVariantId: input.productVariantId ?? null,
+        riskLevel: input.riskLevel ?? null,
+        inspectionType: input.inspectionType,
+        batchSizeMin: input.batchSizeMin ?? null,
+        batchSizeMax: input.batchSizeMax ?? null,
+        containerCountMin: input.containerCountMin ?? null,
+        containerCountMax: input.containerCountMax ?? null,
+        sampleSize: input.sampleSize ?? 1,
+        containerSampleCount: input.containerSampleCount ?? 0,
+        priority: input.priority ?? 100,
+        active: input.active ?? true,
+        instructions: input.instructions?.trim() || "",
+        createdAt: now,
+        updatedAt: now,
+        version: 1
+      };
+      data.samplingPlans.push(plan);
+      return plan;
+    },
+
+    async listSamplingPlans(organizationId) {
+      return data.samplingPlans
+        .filter((plan) => plan.organizationId === organizationId)
+        .sort((left, right) => left.planCode.localeCompare(right.planCode));
+    },
+
+    async generateSamplesFromPlan(userContext, input: GenerateSamplesInput, requestId) {
+      const now = new Date();
+      const planSelection = selectSamplingPlan(data.samplingPlans.filter((plan) => plan.organizationId === userContext.organizationId), {
+        supplierId: input.supplierId ?? null,
+        itemClass: input.itemType === "product_variant" ? "finished_good" : input.itemType === "material" ? "raw_material" : null,
+        itemType: input.itemType ?? null,
+        itemId: input.itemId ?? null,
+        productVariantId: input.productVariantId ?? null,
+        materialId: input.materialId ?? null,
+        riskLevel: input.riskLevel ?? null,
+        inspectionType: input.inspectionType,
+        batchSize: input.batchSize ?? null,
+        containerCount: input.containerCount ?? null
+      });
+      const lot = input.lotId ? data.lots.find((candidate) => candidate.id === input.lotId && candidate.organizationId === userContext.organizationId) : null;
+      const testMethodIds = input.testMethodIds?.length
+        ? input.testMethodIds
+        : data.qcTestMethods.filter((method) => method.organizationId === userContext.organizationId && method.isActive).slice(0, 1).map((method) => method.id);
+      if (testMethodIds.length === 0) {
+        throw new Error("lims_test_method_required");
+      }
+      const created: SampleDetailRecord[] = [];
+      const sampleCount = Math.max(1, planSelection.sampleSize || 1);
+      for (let index = 0; index < sampleCount; index += 1) {
+        const sample: SampleRecord = {
+          id: randomUUID(),
+          organizationId: userContext.organizationId,
+          sampleNumber: nextLimsNumber("SMP", data.samples.length + created.length),
+          sourceType: input.sourceType,
+          sourceId: input.sourceId,
+          inspectionType: input.inspectionType,
+          samplingPlanId: planSelection.plan?.id ?? null,
+          lotId: input.lotId ?? null,
+          receiptId: input.sourceType === "receipt" ? input.sourceId : null,
+          supplierId: input.supplierId ?? null,
+          processingBatchId: input.sourceType === "processing_batch" ? input.sourceId : null,
+          productionOrderId: input.sourceType === "production_order" ? input.sourceId : null,
+          stabilityStudyId: null,
+          retainedSampleId: null,
+          itemType: input.itemType ?? lot?.itemType ?? null,
+          itemId: input.itemId ?? lot?.itemId ?? null,
+          status: "planned",
+          sampleSize: 1,
+          uom: lot?.itemType === "product_variant" ? "each" : "g",
+          containerCount: input.containerCount ?? null,
+          storageLocationId: null,
+          dueAt: input.dueAt ?? new Date(now.getTime() + 24 * 60 * 60 * 1000),
+          collectedAt: null,
+          collectedBy: null,
+          notes: input.notes?.trim() || planSelection.reason,
+          metadataJson: { planReason: planSelection.reason, sampleIndex: index + 1 },
+          createdAt: now,
+          updatedAt: now,
+          version: 1
+        };
+        data.samples.push(sample);
+        for (const testMethodId of testMethodIds) {
+          const method = data.qcTestMethods.find((candidate) => candidate.id === testMethodId && candidate.organizationId === userContext.organizationId);
+          if (!method) {
+            throw new Error("unknown_qc_test_method");
+          }
+          data.sampleTests.push({
+            id: randomUUID(),
+            organizationId: userContext.organizationId,
+            sampleId: sample.id,
+            qcTaskId: null,
+            testMethodId: method.id,
+            instrumentId: null,
+            status: "pending",
+            expectedMin: method.defaultExpectedMin,
+            expectedMax: method.defaultExpectedMax,
+            unit: method.unit,
+            passFailRule: method.passFailRule,
+            retestRule: { retestAllowed: true, maxRetests: 1, autoCreateQualityEventOnFail: true, autoHoldOnFail: true },
+            evidenceRequirement: method.evidenceRequirement,
+            dueAt: sample.dueAt,
+            createdAt: now,
+            updatedAt: now,
+            version: 1
+          });
+        }
+        created.push(sampleDetail(sample));
+      }
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: "lims.samples_generated",
+        subjectType: input.sourceType,
+        subjectId: input.sourceId,
+        beforeJson: null,
+        afterJson: { sampleIds: created.map((sample) => sample.id), planId: planSelection.plan?.id ?? null },
+        requestId
+      });
+      return { samples: created, plan: (planSelection.plan as SamplingPlanRecord | null) ?? null };
+    },
+
+    async enterLabResult(userContext, input: LabResultInput, requestId) {
+      const sampleTest = data.sampleTests.find(
+        (candidate) => candidate.id === input.sampleTestId && candidate.organizationId === userContext.organizationId
+      );
+      if (!sampleTest) {
+        throw new Error("unknown_sample_test");
+      }
+      const sample = data.samples.find((candidate) => candidate.id === sampleTest.sampleId);
+      if (!sample) {
+        throw new Error("unknown_sample");
+      }
+      const method = data.qcTestMethods.find((candidate) => candidate.id === sampleTest.testMethodId);
+      if (!method) {
+        throw new Error("unknown_qc_test_method");
+      }
+      const previousRetests = input.retestOfResultId
+        ? data.labResults.filter((result) => result.retestOfResultId === input.retestOfResultId).length
+        : 0;
+      const original = input.retestOfResultId
+        ? data.labResults.find((result) => result.id === input.retestOfResultId && result.organizationId === userContext.organizationId)
+        : null;
+      if (input.retestOfResultId && original) {
+        assertRetestAllowed(
+          { passFailRule: sampleTest.passFailRule, evidenceRequirement: sampleTest.evidenceRequirement, ...sampleTest.retestRule },
+          {
+            originalResultId: original.id,
+            originalResultStatus: original.evaluatedStatus,
+            priorRetestCount: previousRetests,
+            reason: input.reason ?? null,
+            evidenceCount: input.evidence?.length ?? 0
+          }
+        );
+      }
+      const disposition = evaluateLabResult(
+        { passFailRule: sampleTest.passFailRule, evidenceRequirement: sampleTest.evidenceRequirement, ...sampleTest.retestRule },
+        {
+          valueNumber: input.valueNumber ?? null,
+          valueText: input.valueText ?? null,
+          valueBoolean: input.valueBoolean ?? null,
+          attachmentCount: input.evidence?.length ?? 0,
+          comment: input.comments ?? input.reason ?? null
+        }
+      );
+      const now = new Date();
+      let qualityEvent: QualityEventRecord | null = null;
+      if (disposition.createQualityEvent) {
+        qualityEvent = {
+          id: randomUUID(),
+          organizationId: userContext.organizationId,
+          eventNumber: nextQualityNumber("OOS", data.qualityEvents.length),
+          eventType: "out_of_spec",
+          severity: "major",
+          status: "open",
+          title: `Out-of-spec lab result for ${sample.sampleNumber}`,
+          description: disposition.reasons.join(" ") || `${method.name} did not meet expected criteria.`,
+          detectedAt: now,
+          sourceType: "lab_result",
+          sourceId: sampleTest.id,
+          openedBy: userContext.userId,
+          closedAt: null,
+          closureSummary: null,
+          createdAt: now,
+          updatedAt: now,
+          version: 1
+        };
+        data.qualityEvents.push(qualityEvent);
+        if (sample.lotId) {
+          data.qualityEventLinks.push({ id: randomUUID(), qualityEventId: qualityEvent.id, entityType: "lot", entityId: sample.lotId });
+        }
+      }
+      if (disposition.holdLot && sample.lotId) {
+        const lot = data.lots.find((candidate) => candidate.id === sample.lotId);
+        if (lot) {
+          lot.qcStatus = "hold";
+          lot.updatedAt = now;
+          lot.version += 1;
+        }
+        data.lotHolds.push({
+          id: randomUUID(),
+          organizationId: userContext.organizationId,
+          lotId: sample.lotId,
+          qualityEventId: qualityEvent?.id ?? null,
+          status: "active",
+          reason: `Automatic hold from ${method.name} out-of-spec result.`,
+          heldBy: userContext.userId,
+          heldAt: now,
+          decision: null,
+          decisionBy: null,
+          decisionAt: null,
+          decisionReason: null,
+          evidence: input.evidence?.[0]?.fileName ?? input.comments ?? null,
+          createdAt: now,
+          updatedAt: now,
+          version: 1
+        });
+      }
+      const labResult: LabResultRecord = {
+        id: randomUUID(),
+        organizationId: userContext.organizationId,
+        sampleId: sample.id,
+        sampleTestId: sampleTest.id,
+        qcResultId: null,
+        testMethodId: sampleTest.testMethodId,
+        retestOfResultId: input.retestOfResultId ?? null,
+        resultNumber: nextLimsNumber("LAB", data.labResults.length),
+        valueNumber: input.valueNumber ?? null,
+        valueText: input.valueText ?? null,
+        valueBoolean: input.valueBoolean ?? null,
+        unit: input.unit?.trim() || sampleTest.unit,
+        evaluatedStatus: disposition.evaluatedStatus,
+        reviewStatus: disposition.evaluatedStatus,
+        reason: input.reason?.trim() || null,
+        comments: input.comments?.trim() || (disposition.reasons.length > 0 ? disposition.reasons.join(" ") : null),
+        evidence: input.evidence ?? [],
+        enteredBy: userContext.userId,
+        enteredAt: now,
+        reviewedBy: null,
+        reviewedAt: null,
+        invalidatedBy: null,
+        invalidatedAt: null,
+        invalidationReason: null,
+        qualityEventId: qualityEvent?.id ?? null,
+        createdAt: now,
+        updatedAt: now,
+        version: 1
+      };
+      data.labResults.push(labResult);
+      sampleTest.status = disposition.evaluatedStatus === "pass" ? "awaiting_review" : "failed";
+      sampleTest.updatedAt = now;
+      sampleTest.version += 1;
+      sample.status = disposition.evaluatedStatus === "pass" ? "awaiting_review" : "failed";
+      sample.updatedAt = now;
+      sample.version += 1;
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: input.retestOfResultId ? "lims.lab_result_retest_entered" : "lims.lab_result_entered",
+        subjectType: "sample",
+        subjectId: sample.id,
+        beforeJson: null,
+        afterJson: labResult,
+        requestId
+      });
+      return { sample: sampleDetail(sample), labResult, qualityEvent };
+    },
+
+    async reviewLabResult(userContext, labResultId, input: QcReviewInput, requestId) {
+      const result = data.labResults.find((candidate) => candidate.id === labResultId && candidate.organizationId === userContext.organizationId);
+      if (!result) {
+        return null;
+      }
+      const before = structuredClone(result);
+      const now = new Date();
+      result.reviewStatus = input.status === "approved" && result.evaluatedStatus === "pass" ? "approved" : "rejected";
+      result.reviewedBy = userContext.userId;
+      result.reviewedAt = now;
+      result.comments = input.reviewComments?.trim() || result.comments;
+      result.updatedAt = now;
+      result.version += 1;
+      const test = data.sampleTests.find((candidate) => candidate.id === result.sampleTestId);
+      const sample = data.samples.find((candidate) => candidate.id === result.sampleId);
+      if (test) {
+        test.status = result.reviewStatus === "approved" ? "approved" : "failed";
+        test.updatedAt = now;
+        test.version += 1;
+      }
+      if (sample) {
+        const sampleResults = data.labResults.filter((candidate) => candidate.sampleId === sample.id && candidate.invalidatedAt === null);
+        sample.status = sampleResults.some((candidate) => candidate.evaluatedStatus === "fail")
+          ? "failed"
+          : sampleResults.every((candidate) => candidate.reviewStatus === "approved")
+            ? "approved"
+            : "awaiting_review";
+        sample.updatedAt = now;
+        sample.version += 1;
+      }
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: "lims.lab_result_reviewed",
+        subjectType: "lab_result",
+        subjectId: result.id,
+        beforeJson: before,
+        afterJson: result,
+        requestId
+      });
+      return sample ? sampleDetail(sample) : null;
+    },
+
+    async invalidateLabResult(userContext, labResultId, input, requestId) {
+      const result = data.labResults.find((candidate) => candidate.id === labResultId && candidate.organizationId === userContext.organizationId);
+      if (!result) {
+        return null;
+      }
+      if (input.reason.trim().length < 3) {
+        throw new Error("invalidation_reason_required");
+      }
+      const now = new Date();
+      result.reviewStatus = "rejected";
+      result.invalidatedBy = userContext.userId;
+      result.invalidatedAt = now;
+      result.invalidationReason = input.reason.trim();
+      result.updatedAt = now;
+      result.version += 1;
+      const sample = data.samples.find((candidate) => candidate.id === result.sampleId);
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: "lims.lab_result_invalidated",
+        subjectType: "lab_result",
+        subjectId: result.id,
+        beforeJson: null,
+        afterJson: result,
+        requestId
+      });
+      return sample ? sampleDetail(sample) : null;
+    },
+
+    async createRetainedSample(userContext, input: RetainedSampleInput, requestId) {
+      const lot = data.lots.find((candidate) => candidate.id === input.lotId && candidate.organizationId === userContext.organizationId);
+      if (!lot) {
+        throw new Error("unknown_lot");
+      }
+      const state = retainedSampleInventory({
+        initialQuantity: input.initialQuantity,
+        pulledQuantity: 0,
+        disposedQuantity: 0,
+        expiresAt: input.expiresAt ?? null
+      });
+      const now = new Date();
+      const record: RetainedSampleRecord = {
+        id: randomUUID(),
+        organizationId: userContext.organizationId,
+        retainedSampleNumber: nextLimsNumber("RET", data.retainedSamples.length),
+        lotId: lot.id,
+        sampleId: input.sampleId ?? null,
+        storageLocationId: input.storageLocationId ?? null,
+        initialQuantity: input.initialQuantity,
+        remainingQuantity: state.remainingQuantity,
+        uom: input.uom.trim(),
+        expiresAt: input.expiresAt ?? lot.expiresAt,
+        status: state.status,
+        metadataJson: {},
+        createdAt: now,
+        updatedAt: now,
+        version: 1
+      };
+      data.retainedSamples.push(record);
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: "lims.retained_sample_created",
+        subjectType: "retained_sample",
+        subjectId: record.id,
+        beforeJson: null,
+        afterJson: record,
+        requestId
+      });
+      return record;
+    },
+
+    async pullRetainedSample(userContext, retainedSampleId, input: RetainedSamplePullInput, requestId) {
+      const retained = data.retainedSamples.find(
+        (candidate) => candidate.id === retainedSampleId && candidate.organizationId === userContext.organizationId
+      );
+      if (!retained) {
+        throw new Error("unknown_retained_sample");
+      }
+      const pulledSoFar = data.retainedSamplePulls
+        .filter((pull) => pull.retainedSampleId === retained.id)
+        .reduce((sum, pull) => sum + pull.quantity, 0);
+      const state = retainedSampleInventory({
+        initialQuantity: retained.initialQuantity,
+        pulledQuantity: pulledSoFar + input.quantity,
+        disposedQuantity: 0,
+        expiresAt: retained.expiresAt
+      });
+      const now = new Date();
+      let sample: SampleRecord | null = null;
+      if (input.createSample) {
+        sample = {
+          id: randomUUID(),
+          organizationId: userContext.organizationId,
+          sampleNumber: nextLimsNumber("SMP", data.samples.length),
+          sourceType: "retained_sample",
+          sourceId: retained.id,
+          inspectionType: "retained",
+          samplingPlanId: null,
+          lotId: retained.lotId,
+          receiptId: null,
+          supplierId: null,
+          processingBatchId: null,
+          productionOrderId: null,
+          stabilityStudyId: null,
+          retainedSampleId: retained.id,
+          itemType: data.lots.find((lot) => lot.id === retained.lotId)?.itemType ?? null,
+          itemId: data.lots.find((lot) => lot.id === retained.lotId)?.itemId ?? null,
+          status: "collected",
+          sampleSize: input.quantity,
+          uom: retained.uom,
+          containerCount: null,
+          storageLocationId: retained.storageLocationId,
+          dueAt: now,
+          collectedAt: now,
+          collectedBy: userContext.userId,
+          notes: input.purpose,
+          metadataJson: {},
+          createdAt: now,
+          updatedAt: now,
+          version: 1
+        };
+        data.samples.push(sample);
+      }
+      const pull: RetainedSamplePullRecord = {
+        id: randomUUID(),
+        organizationId: userContext.organizationId,
+        retainedSampleId: retained.id,
+        sampleId: sample?.id ?? null,
+        quantity: input.quantity,
+        uom: retained.uom,
+        purpose: input.purpose.trim(),
+        pulledBy: userContext.userId,
+        pulledAt: now,
+        disposition: input.disposition?.trim() || null,
+        evidence: input.evidence ?? [],
+        createdAt: now,
+        updatedAt: now,
+        version: 1
+      };
+      data.retainedSamplePulls.push(pull);
+      retained.remainingQuantity = state.remainingQuantity;
+      retained.status = state.status;
+      retained.updatedAt = now;
+      retained.version += 1;
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: "lims.retained_sample_pulled",
+        subjectType: "retained_sample",
+        subjectId: retained.id,
+        beforeJson: null,
+        afterJson: { retained, pull },
+        requestId
+      });
+      return { retainedSample: retained, pull, sample: sample ? sampleDetail(sample) : null };
+    },
+
+    async createStabilityStudy(userContext, input: StabilityStudyInput, requestId) {
+      const lot = data.lots.find((candidate) => candidate.id === input.lotId && candidate.organizationId === userContext.organizationId);
+      if (!lot) {
+        throw new Error("unknown_lot");
+      }
+      const now = new Date();
+      const study: StabilityStudyRecord = {
+        id: randomUUID(),
+        organizationId: userContext.organizationId,
+        studyNumber: nextLimsNumber("STAB", data.stabilityStudies.length),
+        lotId: lot.id,
+        productVariantId: input.productVariantId ?? (lot.itemType === "product_variant" ? lot.itemId : null),
+        protocolName: input.protocolName.trim(),
+        storageCondition: input.storageCondition.trim(),
+        status: "active",
+        startDate: input.startDate,
+        endDate: null,
+        testPanelJson: {
+          testMethodIds: input.testMethodIds,
+          intervalsDays: input.intervalsDays,
+          ...(input.windowDays === undefined ? {} : { windowDays: input.windowDays })
+        },
+        ownerUserId: userContext.userId,
+        metadataJson: {},
+        createdAt: now,
+        updatedAt: now,
+        version: 1
+      };
+      const pulls: StabilityPullPointRecord[] = buildStabilityPullSchedule({
+        studyId: study.id,
+        startDate: input.startDate,
+        intervalsDays: input.intervalsDays,
+        ...(input.windowDays === undefined ? {} : { windowDays: input.windowDays }),
+        testPanelId: input.testMethodIds.join(",")
+      }).map((pull) => ({
+        id: randomUUID(),
+        organizationId: userContext.organizationId,
+        stabilityStudyId: study.id,
+        sampleId: null,
+        sequence: pull.sequence,
+        intervalDays: pull.intervalDays,
+        scheduledPullAt: pull.scheduledPullAt,
+        windowStartAt: pull.windowStartAt,
+        windowEndAt: pull.windowEndAt,
+        status: pull.status,
+        pulledAt: null,
+        pulledBy: null,
+        alertTaskId: null,
+        metadataJson: { testMethodIds: input.testMethodIds },
+        createdAt: now,
+        updatedAt: now,
+        version: 1
+      }));
+      data.stabilityStudies.push(study);
+      data.stabilityPullPoints.push(...pulls);
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: "lims.stability_study_created",
+        subjectType: "stability_study",
+        subjectId: study.id,
+        beforeJson: null,
+        afterJson: { study, pullPoints: pulls },
+        requestId
+      });
+      return { ...study, pullPoints: pulls };
+    },
+
+    async pullStabilityPoint(userContext, pullPointId, requestId) {
+      const pull = data.stabilityPullPoints.find(
+        (candidate) => candidate.id === pullPointId && candidate.organizationId === userContext.organizationId
+      );
+      if (!pull) {
+        return null;
+      }
+      const study = data.stabilityStudies.find((candidate) => candidate.id === pull.stabilityStudyId);
+      if (!study) {
+        return null;
+      }
+      const lot = data.lots.find((candidate) => candidate.id === study.lotId);
+      const now = new Date();
+      const sample: SampleRecord = {
+        id: randomUUID(),
+        organizationId: userContext.organizationId,
+        sampleNumber: nextLimsNumber("SMP", data.samples.length),
+        sourceType: "stability_pull",
+        sourceId: pull.id,
+        inspectionType: "stability",
+        samplingPlanId: null,
+        lotId: study.lotId,
+        receiptId: null,
+        supplierId: null,
+        processingBatchId: null,
+        productionOrderId: null,
+        stabilityStudyId: study.id,
+        retainedSampleId: null,
+        itemType: lot?.itemType ?? null,
+        itemId: lot?.itemId ?? null,
+        status: "collected",
+        sampleSize: 1,
+        uom: lot?.itemType === "product_variant" ? "each" : "g",
+        containerCount: null,
+        storageLocationId: null,
+        dueAt: now,
+        collectedAt: now,
+        collectedBy: userContext.userId,
+        notes: `${study.studyNumber} pull point ${pull.sequence}`,
+        metadataJson: { intervalDays: pull.intervalDays },
+        createdAt: now,
+        updatedAt: now,
+        version: 1
+      };
+      data.samples.push(sample);
+      pull.sampleId = sample.id;
+      pull.status = "pulled";
+      pull.pulledAt = now;
+      pull.pulledBy = userContext.userId;
+      pull.updatedAt = now;
+      pull.version += 1;
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: "lims.stability_pull_collected",
+        subjectType: "stability_pull_point",
+        subjectId: pull.id,
+        beforeJson: null,
+        afterJson: { pull, sample },
+        requestId
+      });
+      return { pullPoint: pull, sample: sampleDetail(sample) };
+    },
+
     async listDocumentTemplates(organizationId) {
       return orgDocumentTemplates(organizationId);
     },
@@ -12121,6 +18925,162 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
         document,
         downloadUrl: `/api/documents/${document.id}/content`
       };
+    },
+
+    async getComplianceDashboard(organizationId) {
+      return complianceDashboard(organizationId);
+    },
+
+    async recordSanitationCheck(userContext, input, requestId) {
+      const now = new Date();
+      const check: SanitationCheckRecord = {
+        id: randomUUID(),
+        organizationId: userContext.organizationId,
+        checklistCode: input.checklistCode ?? "SAN-MANUAL",
+        equipmentId: input.equipmentId ?? null,
+        equipmentCode: null,
+        roomId: input.roomId ?? null,
+        roomName: null,
+        productFamily: input.productFamily ?? null,
+        productionOrderId: input.productionOrderId ?? null,
+        status: input.status,
+        performedBy: userContext.userId,
+        completedAt: input.completedAt ?? now,
+        expiresAt: input.expiresAt ?? null,
+        notes: input.notes ?? null,
+        createdAt: now,
+        updatedAt: now,
+        version: 1
+      };
+      data.sanitationChecks.push(check);
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: "compliance.sanitation_check.recorded",
+        subjectType: "sanitation_check",
+        subjectId: check.id,
+        beforeJson: null,
+        afterJson: check,
+        requestId
+      });
+      return complianceDashboard(userContext.organizationId);
+    },
+
+    async recordTrainingCompletion(userContext, input, requestId) {
+      const now = new Date();
+      const requirement = data.trainingRequirements.find(
+        (candidate) => candidate.id === input.requirementId && candidate.organizationId === userContext.organizationId
+      );
+      if (!requirement) {
+        throw new Error("Training requirement not found");
+      }
+      const completedAt = input.completedAt ?? now;
+      const expiresAt =
+        input.expiresAt !== undefined
+          ? input.expiresAt
+          : requirement.retrainCadenceDays === null
+            ? null
+            : new Date(completedAt.getTime() + requirement.retrainCadenceDays * 24 * 60 * 60 * 1000);
+      const existing = data.trainingRecords.find(
+        (candidate) =>
+          candidate.organizationId === userContext.organizationId &&
+          candidate.requirementId === input.requirementId &&
+          candidate.userId === input.userId
+      );
+      const before = existing ? { ...existing } : null;
+      const record: TrainingRecordRecord = existing ?? {
+        id: randomUUID(),
+        organizationId: userContext.organizationId,
+        requirementId: input.requirementId,
+        userId: input.userId,
+        userName: data.users.find((user) => user.id === input.userId)?.displayName ?? input.userId,
+        status: "current",
+        completedAt,
+        expiresAt,
+        evidenceDocumentId: input.evidenceDocumentId ?? null,
+        createdAt: now,
+        updatedAt: now,
+        version: 0
+      };
+      record.status = "current";
+      record.completedAt = completedAt;
+      record.expiresAt = expiresAt;
+      record.evidenceDocumentId = input.evidenceDocumentId ?? record.evidenceDocumentId;
+      record.updatedAt = now;
+      record.version += 1;
+      if (!existing) {
+        data.trainingRecords.push(record);
+      }
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: "compliance.training.recorded",
+        subjectType: "training_record",
+        subjectId: record.id,
+        beforeJson: before,
+        afterJson: record,
+        requestId
+      });
+      return complianceDashboard(userContext.organizationId);
+    },
+
+    async evaluateComplianceGate(userContext, input, requestId) {
+      const gate = evaluateComplianceGateForUser(userContext, input);
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: gate.allowed ? "compliance.gate.allowed" : "compliance.gate.blocked",
+        subjectType: "compliance_gate",
+        subjectId: input.action,
+        beforeJson: null,
+        afterJson: gate,
+        requestId
+      });
+      return gate;
+    },
+
+    async generateAuditPacket(userContext, input, requestId) {
+      const now = new Date();
+      const packetNumber = `AUD-${String(data.auditPackets.length + 1).padStart(4, "0")}`;
+      const packetJson = buildAuditPacket({
+        packetNumber,
+        targetType: input.targetType,
+        targetId: input.targetId,
+        generatedBy: userContext.userId,
+        customerFacing: input.customerFacing ?? false,
+        includeInternalData: input.includeInternalData ?? false,
+        sections: buildAuditPacketSections(userContext.organizationId, input)
+      });
+      const document = createAuditPacketDocument(userContext, packetJson, input);
+      const packet: AuditPacketRecord = {
+        id: randomUUID(),
+        organizationId: userContext.organizationId,
+        packetNumber,
+        targetType: input.targetType,
+        targetId: input.targetId,
+        status: "generated",
+        customerFacing: input.customerFacing ?? false,
+        includeInternalData: input.includeInternalData ?? false,
+        generatedDocumentId: document.id,
+        generatedBy: userContext.userId,
+        generatedAt: now,
+        packetJson,
+        createdAt: now,
+        updatedAt: now,
+        version: 1
+      };
+      data.auditPackets.push(packet);
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: "compliance.audit_packet.generated",
+        subjectType: "audit_packet",
+        subjectId: packet.id,
+        beforeJson: null,
+        afterJson: { packet, document },
+        requestId
+      });
+      return { packet, document };
     },
 
     async listQualityEvents(organizationId) {
@@ -12444,6 +19404,13 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
       if (input.routingTemplateId && !data.routingTemplates.some((template) => template.id === input.routingTemplateId && template.organizationId === organizationId)) {
         throw new Error("unknown_routing_template");
       }
+      const generatedLotItem =
+        input.autoGenerateLots && input.productVariantId
+          ? itemSnapshot("product_variant", input.productVariantId)
+          : null;
+      if (input.autoGenerateLots && (!input.productVariantId || !generatedLotItem)) {
+        throw new Error("auto_lot_generation_requires_product_variant");
+      }
       const now = new Date();
       const order: ProductionOrderRecord = {
         id: randomUUID(),
@@ -12466,6 +19433,45 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
         version: 1
       };
       data.productionOrders.push(order);
+      if (input.autoGenerateLots) {
+        const item = generatedLotItem;
+        const productVariantId = order.productVariantId;
+        if (!item || !productVariantId) {
+          throw new Error("auto_lot_generation_requires_product_variant");
+        }
+        const manufacturedAt = order.plannedStartAt ?? now;
+        const shelfLifeDays = input.lotExpirationDays ?? 365;
+        const lot: LotRecord = {
+          id: randomUUID(),
+          organizationId,
+          lotCode: nextProductionLotCode(organizationId, item.sku, order.orderNumber),
+          itemType: "product_variant",
+          itemId: productVariantId,
+          itemName: item.name,
+          itemSku: item.sku,
+          sourceType: "production_order",
+          sourceId: order.id,
+          manufacturedAt,
+          receivedAt: null,
+          expiresAt: new Date(manufacturedAt.getTime() + shelfLifeDays * 24 * 60 * 60 * 1000),
+          qcStatus: "pending",
+          status: "active",
+          parentLotId: null,
+          metadataJson: {
+            productionOrderId: order.id,
+            generatedFromProductionOrder: true,
+            lotExpirationDays: shelfLifeDays
+          },
+          createdAt: now,
+          updatedAt: now,
+          version: 1
+        };
+        data.lots.push(lot);
+        ensureQcTasksForLot(lot, "lot", {
+          productionStage: "finished_goods",
+          createdAt: now
+        });
+      }
       return order;
     },
 
@@ -12549,6 +19555,7 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
         nextCalibrationDueAt: input.nextCalibrationDueAt ?? null,
         lastMaintenanceAt: null,
         nextMaintenanceDueAt: input.nextMaintenanceDueAt ?? null,
+        metadataJson: input.metadataJson ?? {},
         createdAt: now,
         updatedAt: now,
         version: 1
@@ -12654,6 +19661,232 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
         subjectId: equipment.id,
         beforeJson: null,
         afterJson: maintenance,
+        requestId
+      });
+      return equipmentDashboard(userContext.organizationId);
+    },
+
+    async recordEquipmentReading(userContext, input: EquipmentReadingInput, requestId) {
+      const equipment = equipmentForUse(userContext.organizationId, input.equipmentId);
+      if (!equipment) {
+        throw new Error("unknown_equipment");
+      }
+      const now = new Date();
+      const recordedAt = input.recordedAt ?? now;
+      const source = input.source ?? "manual";
+      const evaluation = evaluateProcessReading({
+        equipmentId: equipment.id,
+        parameterType: input.parameterType,
+        parameterName: input.parameterName ?? null,
+        value: input.value,
+        unit: input.unit,
+        actorUserId: source === "manual" ? userContext.userId : null,
+        source,
+        recordedAt,
+        limits: {
+          minValue: input.minValue ?? null,
+          maxValue: input.maxValue ?? null,
+          warningMinValue: input.warningMinValue ?? null,
+          warningMaxValue: input.warningMaxValue ?? null
+        }
+      });
+      const reading: EquipmentReadingRecord = {
+        id: randomUUID(),
+        organizationId: userContext.organizationId,
+        equipmentId: equipment.id,
+        productionOrderId: input.productionOrderId ?? null,
+        processingBatchId: input.processingBatchId ?? null,
+        ebrExecutionId: input.ebrExecutionId ?? null,
+        ebrStepResultId: input.ebrStepResultId ?? null,
+        routingOperationId: input.routingOperationId ?? null,
+        parameterType: input.parameterType,
+        parameterName: input.parameterName?.trim() || null,
+        value: input.value,
+        unit: input.unit.trim(),
+        source,
+        actorUserId: source === "manual" ? userContext.userId : null,
+        recordedAt,
+        minValue: input.minValue ?? null,
+        maxValue: input.maxValue ?? null,
+        warningMinValue: input.warningMinValue ?? null,
+        warningMaxValue: input.warningMaxValue ?? null,
+        limitStatus: evaluation.status,
+        qualityEventId: null,
+        rawPayload: input.rawPayload ?? {},
+        createdAt: now
+      };
+      if (evaluation.qualityEventRequired) {
+        reading.qualityEventId = createReadingQualityEvent(userContext, equipment, reading, evaluation.messages, requestId).id;
+      }
+      data.equipmentReadings.push(reading);
+      recordEquipmentEvent(userContext.organizationId, equipment.id, {
+        eventType: source === "mock_plc" ? "mock_plc_reading" : "manual_reading",
+        severity: evaluation.outOfLimit ? "critical" : evaluation.warning ? "warning" : "info",
+        title: `${equipment.code} ${input.parameterName?.trim() || input.parameterType} reading ${evaluation.status.replaceAll("_", " ")}`,
+        details: {
+          readingId: reading.id,
+          value: reading.value,
+          unit: reading.unit,
+          limitStatus: reading.limitStatus,
+          messages: evaluation.messages,
+          qualityEventId: reading.qualityEventId
+        },
+        actorUserId: userContext.userId,
+        occurredAt: recordedAt
+      });
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: "equipment.reading_recorded",
+        subjectType: "equipment",
+        subjectId: equipment.id,
+        beforeJson: null,
+        afterJson: reading,
+        requestId
+      });
+      return equipmentDashboard(userContext.organizationId);
+    },
+
+    async completeEquipmentPreUseCheck(userContext, input: EquipmentPreUseCheckInput, requestId) {
+      const equipment = equipmentForUse(userContext.organizationId, input.equipmentId);
+      if (!equipment) {
+        throw new Error("unknown_equipment");
+      }
+      const template = preUseTemplateFor(equipment, input.routingOperationId ?? null);
+      if (input.templateId !== template.id) {
+        throw new Error("unknown_preuse_template");
+      }
+      const now = new Date();
+      const completedAt = input.completedAt ?? now;
+      assertPreUseCheckComplete({
+        template,
+        checkedItemIds: input.checkedItems.filter((item) => item.passed).map((item) => item.itemId),
+        actorUserId: userContext.userId,
+        completedAt
+      });
+      const check: EquipmentPreUseCheckRecord = {
+        id: randomUUID(),
+        organizationId: userContext.organizationId,
+        equipmentId: equipment.id,
+        templateId: template.id,
+        routingOperationId: input.routingOperationId ?? null,
+        productionOrderId: input.productionOrderId ?? null,
+        ebrExecutionId: input.ebrExecutionId ?? null,
+        status: "completed",
+        checkedItems: input.checkedItems.map((item) => ({
+          itemId: item.itemId,
+          label: item.label,
+          passed: item.passed,
+          required: item.required ?? template.items.some((templateItem) => templateItem.id === item.itemId && templateItem.required)
+        })),
+        performedBy: userContext.userId,
+        completedAt,
+        notes: input.notes?.trim() || null,
+        createdAt: now
+      };
+      data.equipmentPreUseChecks.push(check);
+      recordEquipmentEvent(userContext.organizationId, equipment.id, {
+        eventType: "inspection_recorded",
+        severity: "info",
+        title: `${equipment.code} pre-use check completed`,
+        details: { preUseCheckId: check.id, templateId: template.id },
+        actorUserId: userContext.userId,
+        occurredAt: completedAt
+      });
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: "equipment.preuse_check_completed",
+        subjectType: "equipment",
+        subjectId: equipment.id,
+        beforeJson: null,
+        afterJson: check,
+        requestId
+      });
+      return equipmentDashboard(userContext.organizationId);
+    },
+
+    async recordEquipmentCleaning(userContext, input: EquipmentCleaningLogInput, requestId) {
+      const equipment = equipmentForUse(userContext.organizationId, input.equipmentId);
+      if (!equipment) {
+        throw new Error("unknown_equipment");
+      }
+      const now = new Date();
+      const cleanedAt = input.cleanedAt ?? now;
+      const cleaning: EquipmentCleaningLogRecord = {
+        id: randomUUID(),
+        organizationId: userContext.organizationId,
+        equipmentId: equipment.id,
+        cleaningType: input.cleaningType,
+        status: input.status ?? "clean",
+        cleanedBy: userContext.userId,
+        cleanedAt,
+        expiresAt: input.expiresAt ?? null,
+        productionOrderId: input.productionOrderId ?? null,
+        ebrExecutionId: input.ebrExecutionId ?? null,
+        procedureId: input.procedureId?.trim() || null,
+        notes: input.notes?.trim() || null,
+        createdAt: now
+      };
+      data.equipmentCleaningLogs.push(cleaning);
+      recordEquipmentEvent(userContext.organizationId, equipment.id, {
+        eventType: "cleaning_recorded",
+        severity: cleaning.status === "clean" ? "info" : "warning",
+        title: `${equipment.code} cleaning ${cleaning.status}`,
+        details: { cleaningLogId: cleaning.id, cleaningType: cleaning.cleaningType, expiresAt: cleaning.expiresAt },
+        actorUserId: userContext.userId,
+        occurredAt: cleanedAt
+      });
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: "equipment.cleaning_recorded",
+        subjectType: "equipment",
+        subjectId: equipment.id,
+        beforeJson: null,
+        afterJson: cleaning,
+        requestId
+      });
+      return equipmentDashboard(userContext.organizationId);
+    },
+
+    async recordEquipmentDowntime(userContext, input: EquipmentDowntimeInput, requestId) {
+      const equipment = equipmentForUse(userContext.organizationId, input.equipmentId);
+      if (!equipment) {
+        throw new Error("unknown_equipment");
+      }
+      if (input.endedAt && input.endedAt.getTime() <= input.startedAt.getTime()) {
+        throw new DomainConflictError("Equipment downtime end must be after the start time.", {
+          equipmentId: equipment.id
+        });
+      }
+      const now = new Date();
+      equipment.status = input.endedAt ? "available" : "offline";
+      equipment.updatedAt = now;
+      equipment.version += 1;
+      recordEquipmentEvent(userContext.organizationId, equipment.id, {
+        eventType: "downtime_recorded",
+        severity: input.endedAt ? "warning" : "critical",
+        title: `${equipment.code} downtime ${input.endedAt ? "closed" : "started"}`,
+        details: {
+          reasonCode: input.reasonCode.trim(),
+          productionOrderId: input.productionOrderId ?? null,
+          routingOperationId: input.routingOperationId ?? null,
+          startedAt: input.startedAt,
+          endedAt: input.endedAt ?? null,
+          notes: input.notes?.trim() || null
+        },
+        actorUserId: userContext.userId,
+        occurredAt: input.endedAt ?? input.startedAt
+      });
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: "equipment.downtime_recorded",
+        subjectType: "equipment",
+        subjectId: equipment.id,
+        beforeJson: null,
+        afterJson: { ...input, equipmentId: equipment.id },
         requestId
       });
       return equipmentDashboard(userContext.organizationId);
@@ -12806,8 +20039,9 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
         const totalMinutes = operation.queueTimeMinutes + operation.setupTimeMinutes + operation.runTimeMinutes + operation.moveTimeMinutes;
         const scheduledStartAt = scheduledCursor;
         const scheduledEndAt = new Date(scheduledStartAt.getTime() + totalMinutes * 60000);
+        const operationRunId = randomUUID();
         data.productionOperationRuns.push({
-          id: randomUUID(),
+          id: operationRunId,
           organizationId: userContext.organizationId,
           productionOrderId,
           routingOperationId: operation.id,
@@ -12818,6 +20052,11 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
           laborRoleId: operation.laborRoleId,
           ebrExecutionId: data.ebrExecutions.find((execution) => execution.productionOrderId === productionOrderId)?.id ?? null,
           status: index === 0 ? "ready" : "pending",
+          allowNonsequentialReporting: false,
+          supervisorApprovalStatus: "not_required",
+          supervisorApprovedBy: null,
+          supervisorApprovedAt: null,
+          skippedOperationIds: [],
           scheduledStartAt,
           scheduledEndAt,
           startedAt: null,
@@ -12828,6 +20067,20 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
           reworkQuantity: 0,
           uom: order.uom,
           notes: null,
+          createdAt: now,
+          updatedAt: now,
+          version: 1
+        });
+        data.operationControlPoints.push({
+          id: randomUUID(),
+          organizationId: userContext.organizationId,
+          operationRunId,
+          sequence: operation.sequence,
+          purpose: "final_completion",
+          required: true,
+          completedAt: null,
+          completedBy: null,
+          notes: "Final completion requires control-point release.",
           createdAt: now,
           updatedAt: now,
           version: 1
@@ -12858,6 +20111,17 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
         .map((run) => operationRunDetail(run));
     },
 
+    async getProductionControlDashboard(organizationId) {
+      const runs = await this.listProductionOperationRuns(organizationId);
+      return {
+        runs,
+        wipSummaries: data.productionOrders
+          .filter((order) => order.organizationId === organizationId)
+          .map((order) => productionWipSummary(order)),
+        supervisorQueue: productionSupervisorQueue(organizationId)
+      };
+    },
+
     async transitionProductionOperationRun(userContext, operationRunId, input: OperationRunTransitionInput, requestId) {
       const run = data.productionOperationRuns.find(
         (candidate) => candidate.id === operationRunId && candidate.organizationId === userContext.organizationId
@@ -12867,6 +20131,54 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
       }
       const before = { ...run };
       const occurredAt = input.occurredAt ?? new Date();
+      const reportingDecision = evaluateOperationReporting({
+        runs: data.productionOperationRuns
+          .filter((candidate) => candidate.productionOrderId === run.productionOrderId)
+          .map((candidate) => ({ id: candidate.id, sequence: candidate.sequence, status: candidate.status })),
+        targetRunId: run.id,
+        controlPoints: data.operationControlPoints
+          .filter((point) => point.organizationId === userContext.organizationId)
+          .map((point) => ({
+            id: point.id,
+            operationRunId: point.operationRunId,
+            sequence: point.sequence,
+            purpose: point.purpose,
+            required: point.required,
+            completedAt: point.completedAt
+          })),
+        policy: {
+          allowNonsequentialReporting: input.allowNonsequentialReporting ?? run.allowNonsequentialReporting,
+          requireSupervisorApprovalForSkippedOperations: true
+        }
+      });
+      if (input.completeControlPointPurposes) {
+        for (const purpose of input.completeControlPointPurposes) {
+          for (const point of data.operationControlPoints.filter(
+            (candidate) => candidate.operationRunId === run.id && candidate.purpose === purpose
+          )) {
+            point.completedAt = occurredAt;
+            point.completedBy = userContext.userId;
+            point.updatedAt = occurredAt;
+            point.version += 1;
+          }
+        }
+      }
+      if (input.action === "complete") {
+        assertControlPointsSatisfied(
+          data.operationControlPoints
+            .filter((point) => point.organizationId === userContext.organizationId)
+            .map((point) => ({
+              id: point.id,
+              operationRunId: point.operationRunId,
+              sequence: point.sequence,
+              purpose: point.purpose,
+              required: point.required,
+              completedAt: point.completedAt
+            })),
+          run.id,
+          "final_completion"
+        );
+      }
       if (input.action === "start" || input.action === "resume") {
         assertEquipmentUsableForStep(
           userContext,
@@ -12894,6 +20206,9 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
         scrapQuantity: next.scrapQuantity,
         reworkQuantity: next.reworkQuantity,
         notes: input.notes ?? run.notes,
+        allowNonsequentialReporting: input.allowNonsequentialReporting ?? run.allowNonsequentialReporting,
+        skippedOperationIds: reportingDecision.skippedRequiredOperationIds,
+        supervisorApprovalStatus: reportingDecision.supervisorApprovalRequired ? "pending" : run.supervisorApprovalStatus,
         updatedAt: occurredAt,
         version: run.version + 1
       });
@@ -12905,10 +20220,17 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
           operationRunId: run.id,
           userId: userContext.userId,
           laborRoleId: run.laborRoleId,
+          entryType: "direct",
+          crewName: null,
+          crewSize: 1,
+          indirectCode: null,
           startedAt: occurredAt,
           endedAt: null,
           durationMinutes: 0,
-          sourceAction: input.action
+          sourceAction: input.action,
+          approvalStatus: "not_required",
+          approvedBy: null,
+          approvedAt: null
         });
         if (run.equipmentId) {
           data.machineTimeEntries.push({
@@ -12962,6 +20284,257 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
         requestId
       });
       return operationRunDetail(run);
+    },
+
+    async recordProductionLabor(userContext, input: ProductionLaborCaptureInput, requestId) {
+      const run = data.productionOperationRuns.find(
+        (candidate) => candidate.id === input.operationRunId && candidate.organizationId === userContext.organizationId
+      );
+      if (!run) {
+        throw new Error("unknown_operation_run");
+      }
+      const startedAt = input.startedAt ?? new Date();
+      const endedAt = input.endedAt ?? null;
+      const durationMinutes = endedAt ? calculateOperationDurationMinutes(startedAt, endedAt) : 0;
+      const approvalStatus = input.requiresSupervisorApproval || input.entryType === "indirect" ? "pending" : "not_required";
+      const entry: LaborTimeEntryRecord = {
+        id: randomUUID(),
+        organizationId: userContext.organizationId,
+        operationRunId: run.id,
+        userId: userContext.userId,
+        laborRoleId: input.laborRoleId ?? run.laborRoleId,
+        entryType: input.entryType ?? "direct",
+        crewName: input.crewName ?? null,
+        crewSize: input.crewSize ?? 1,
+        indirectCode: input.indirectCode ?? null,
+        startedAt,
+        endedAt,
+        durationMinutes,
+        sourceAction: run.status === "in_progress" ? "resume" : "start",
+        approvalStatus,
+        approvedBy: null,
+        approvedAt: null
+      };
+      data.laborTimeEntries.push(entry);
+      if (entry.crewName || entry.crewSize > 1) {
+        data.crewTimeEntries.push({
+          id: randomUUID(),
+          organizationId: userContext.organizationId,
+          operationRunId: run.id,
+          crewName: entry.crewName ?? "Crew",
+          laborRoleId: entry.laborRoleId,
+          crewSize: entry.crewSize,
+          startedAt,
+          endedAt,
+          durationMinutes,
+          approvalStatus,
+          approvedBy: null,
+          approvedAt: null
+        });
+      }
+      if (input.downtimeReasonCode) {
+        data.downtimeEvents.push({
+          id: randomUUID(),
+          organizationId: userContext.organizationId,
+          operationRunId: run.id,
+          reasonCode: input.downtimeReasonCode,
+          startedAt,
+          endedAt,
+          durationMinutes,
+          notes: input.notes ?? null,
+          approvalStatus: "pending",
+          approvedBy: null,
+          approvedAt: null
+        });
+      }
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: "production_labor.recorded",
+        subjectType: "production_operation_run",
+        subjectId: run.id,
+        beforeJson: null,
+        afterJson: { laborTimeEntryId: entry.id, downtimeReasonCode: input.downtimeReasonCode ?? null },
+        requestId
+      });
+      return operationRunDetail(run);
+    },
+
+    async recordProductionDisposition(userContext, input: ProductionDispositionInputRecord, requestId) {
+      const run = data.productionOperationRuns.find(
+        (candidate) => candidate.id === input.operationRunId && candidate.organizationId === userContext.organizationId
+      );
+      if (!run) {
+        throw new Error("unknown_operation_run");
+      }
+      const order = data.productionOrders.find((candidate) => candidate.id === run.productionOrderId);
+      if (!order) {
+        throw new Error("unknown_production_order");
+      }
+      const occurredAt = input.occurredAt ?? new Date();
+      const locationId = input.locationId ?? order.locationId;
+      if (!locationId) {
+        throw new Error("production_location_required");
+      }
+      const requiresApproval = supervisorApprovalRequired({
+        scrapQuantity: input.dispositionType === "scrap" || input.dispositionType === "waste" ? input.quantity : 0,
+        reworkQuantity: input.dispositionType === "rework" ? input.quantity : 0,
+        highRiskReasonCode: input.reasonCode.startsWith("high-risk")
+      });
+      const generated = generateProductionInventoryTransaction({
+        dispositionType: input.dispositionType,
+        itemType: input.itemType,
+        itemId: input.itemId,
+        lotId: input.lotId ?? null,
+        locationId,
+        quantity: input.quantity,
+        uom: input.uom,
+        reasonCode: input.reasonCode,
+        sourceType: "production_operation_run",
+        sourceId: run.id,
+        occurredAt,
+        notes: input.notes ?? null
+      });
+      const movementResult = await applyInventoryMovement(
+        userContext,
+        {
+          movementType: generated.movementType,
+          clientTransactionId: generated.clientTransactionId,
+          itemType: generated.itemType,
+          itemId: generated.itemId,
+          lotId: generated.lotId,
+          fromLocationId: generated.fromLocationId,
+          toLocationId: generated.toLocationId,
+          quantity: generated.quantity,
+          uom: generated.uom,
+          occurredAt: generated.occurredAt,
+          sourceType: generated.sourceType,
+          sourceId: generated.sourceId,
+          reasonCode: generated.reasonCode,
+          notes: generated.notes,
+          metadata: generated.metadata,
+          adminOverrideReason:
+            input.dispositionType === "scrap" || input.dispositionType === "waste" || input.dispositionType === "rework"
+              ? "Production disposition consumes potentially unreleased WIP under controlled workflow."
+              : null
+        },
+        requestId
+      );
+      const qualityEventId =
+        input.qualityEventId ?? (input.dispositionType === "rework" ? createProductionReworkQualityEvent(userContext, run, input, requestId).id : null);
+      const scrapEvent: ScrapEventRecord = {
+        id: randomUUID(),
+        organizationId: userContext.organizationId,
+        operationRunId: run.id,
+        productionOrderId: run.productionOrderId,
+        dispositionType: input.dispositionType,
+        itemType: input.itemType,
+        itemId: input.itemId,
+        lotId: input.lotId ?? null,
+        locationId,
+        quantity: input.quantity,
+        uom: input.uom,
+        reasonCode: input.reasonCode,
+        stockMovementId: movementResult.movement.id,
+        qualityEventId,
+        requiresSupervisorApproval: requiresApproval,
+        approvalStatus: requiresApproval ? "pending" : "not_required",
+        approvedBy: null,
+        approvedAt: null,
+        notes: input.notes ?? null,
+        occurredAt,
+        recordedBy: userContext.userId
+      };
+      data.scrapEvents.push(scrapEvent);
+      if (input.dispositionType === "scrap" || input.dispositionType === "waste") {
+        run.scrapQuantity += input.quantity;
+      }
+      if (input.dispositionType === "rework") {
+        run.reworkQuantity += input.quantity;
+        data.reworkOrders.push({
+          id: randomUUID(),
+          organizationId: userContext.organizationId,
+          reworkOrderNumber: `RW-${String(data.reworkOrders.length + 1).padStart(4, "0")}`,
+          originalLotId: input.lotId ?? null,
+          qualityEventId,
+          productionOrderId: run.productionOrderId,
+          sourceOperationRunId: run.id,
+          status: "open",
+          quantity: input.quantity,
+          uom: input.uom,
+          reasonCode: input.reasonCode,
+          notes: input.notes ?? null,
+          createdAt: occurredAt,
+          updatedAt: occurredAt,
+          version: 1
+        });
+      }
+      run.updatedAt = occurredAt;
+      run.version += 1;
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: `production_disposition.${input.dispositionType}`,
+        subjectType: "production_operation_run",
+        subjectId: run.id,
+        beforeJson: null,
+        afterJson: { scrapEventId: scrapEvent.id, stockMovementId: movementResult.movement.id, qualityEventId },
+        requestId
+      });
+      return operationRunDetail(run);
+    },
+
+    async approveProductionException(userContext, input: SupervisorApprovalInputRecord, requestId) {
+      const now = new Date();
+      const approvalStatus = input.decision;
+      const approveFields = { approvalStatus, approvedBy: userContext.userId, approvedAt: now };
+      switch (input.subjectType) {
+        case "operation_run": {
+          const run = data.productionOperationRuns.find(
+            (candidate) => candidate.id === input.subjectId && candidate.organizationId === userContext.organizationId
+          );
+          if (!run) {
+            throw new Error("unknown_operation_run");
+          }
+          run.supervisorApprovalStatus = approvalStatus;
+          run.supervisorApprovedBy = userContext.userId;
+          run.supervisorApprovedAt = now;
+          run.updatedAt = now;
+          run.version += 1;
+          break;
+        }
+        case "labor_time_entry": {
+          Object.assign(requireRecord(data.laborTimeEntries, input.subjectId), approveFields);
+          break;
+        }
+        case "crew_time_entry": {
+          Object.assign(requireRecord(data.crewTimeEntries, input.subjectId), approveFields);
+          break;
+        }
+        case "downtime_event": {
+          Object.assign(requireRecord(data.downtimeEvents, input.subjectId), approveFields);
+          break;
+        }
+        case "scrap_event": {
+          Object.assign(requireRecord(data.scrapEvents, input.subjectId), approveFields);
+          break;
+        }
+        case "rework_order": {
+          requireRecord(data.reworkOrders, input.subjectId).status = input.decision === "approved" ? "in_progress" : "cancelled";
+          break;
+        }
+      }
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: `production_supervisor.${input.decision}`,
+        subjectType: input.subjectType,
+        subjectId: input.subjectId,
+        beforeJson: null,
+        afterJson: { decision: input.decision, comment: input.comment ?? null },
+        requestId
+      });
+      return this.getProductionControlDashboard(userContext.organizationId);
     },
 
     async getProductionProgressByWorkCenter(organizationId) {
@@ -13032,6 +20605,10 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
         formulaRevisionId: input.formulaRevisionId ?? null,
         versionCode: input.versionCode,
         status: input.status ?? "draft",
+        bomKind: input.bomKind ?? "standard",
+        activeRevisionLocked: false,
+        alternateGroupCode: input.alternateGroupCode?.trim() || null,
+        planningPercent: input.planningPercent ?? 100,
         yieldQuantity: input.yieldQuantity,
         yieldUom: input.yieldUom,
         effectiveFrom: input.effectiveFrom ?? null,
@@ -13056,6 +20633,137 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
       }
       Object.assign(bom, input, { updatedAt: new Date(), version: bom.version + 1 });
       return bom;
+    },
+
+    async copyBillOfMaterialsRevision(organizationId, bomId, input) {
+      const source = data.billOfMaterials.find((candidate) => candidate.id === bomId && candidate.organizationId === organizationId);
+      if (!source) {
+        return null;
+      }
+      if (
+        data.billOfMaterials.some(
+          (bom) =>
+            bom.productVariantId === source.productVariantId &&
+            bom.versionCode.toLocaleLowerCase() === input.versionCode.trim().toLocaleLowerCase()
+        )
+      ) {
+        throw new Error("duplicate_bom_version");
+      }
+      const now = new Date();
+      const copy: BillOfMaterialsRecord = {
+        ...source,
+        id: randomUUID(),
+        versionCode: input.versionCode.trim(),
+        status: "draft",
+        activeRevisionLocked: false,
+        effectiveFrom: input.effectiveFrom ?? null,
+        effectiveTo: null,
+        createdAt: now,
+        updatedAt: now,
+        version: 1
+      };
+      data.billOfMaterials.push(copy);
+
+      const operations = data.bomOperations.filter((operation) => operation.bomId === source.id);
+      const operationIdMap = new Map<string, string>();
+      for (const operation of operations) {
+        const id = randomUUID();
+        operationIdMap.set(operation.id, id);
+        data.bomOperations.push({ ...operation, id, bomId: copy.id, createdAt: now, updatedAt: now, version: 1 });
+      }
+
+      for (const step of data.bomOperationSteps.filter((step) => operationIdMap.has(step.bomOperationId))) {
+        data.bomOperationSteps.push({
+          ...step,
+          id: randomUUID(),
+          bomOperationId: operationIdMap.get(step.bomOperationId)!,
+          createdAt: now,
+          updatedAt: now,
+          version: 1
+        });
+      }
+
+      const materialIdMap = new Map<string, string>();
+      for (const material of data.bomOperationMaterials.filter((material) => operationIdMap.has(material.bomOperationId))) {
+        const id = randomUUID();
+        materialIdMap.set(material.id, id);
+        data.bomOperationMaterials.push({
+          ...material,
+          id,
+          bomOperationId: operationIdMap.get(material.bomOperationId)!,
+          createdAt: now,
+          updatedAt: now,
+          version: 1
+        });
+      }
+
+      for (const output of data.bomOperationOutputs.filter((output) => operationIdMap.has(output.bomOperationId))) {
+        data.bomOperationOutputs.push({
+          ...output,
+          id: randomUUID(),
+          bomOperationId: operationIdMap.get(output.bomOperationId)!,
+          createdAt: now,
+          updatedAt: now,
+          version: 1
+        });
+      }
+      for (const substitute of data.bomSubstitutes.filter((substitute) => materialIdMap.has(substitute.bomOperationMaterialId))) {
+        data.bomSubstitutes.push({
+          ...substitute,
+          id: randomUUID(),
+          bomOperationMaterialId: materialIdMap.get(substitute.bomOperationMaterialId)!,
+          createdAt: now,
+          updatedAt: now,
+          version: 1
+        });
+      }
+      for (const cost of data.bomOperationCosts.filter((cost) => operationIdMap.has(cost.bomOperationId))) {
+        data.bomOperationCosts.push({
+          ...cost,
+          id: randomUUID(),
+          bomOperationId: operationIdMap.get(cost.bomOperationId)!,
+          createdAt: now,
+          updatedAt: now,
+          version: 1
+        });
+      }
+      for (const equipment of data.bomOperationEquipment.filter((equipment) => operationIdMap.has(equipment.bomOperationId))) {
+        data.bomOperationEquipment.push({
+          ...equipment,
+          id: randomUUID(),
+          bomOperationId: operationIdMap.get(equipment.bomOperationId)!,
+          createdAt: now,
+          updatedAt: now,
+          version: 1
+        });
+      }
+
+      return bomDetail(copy);
+    },
+
+    async compareBillOfMaterials(organizationId, fromBomId, toBomId) {
+      const from = data.billOfMaterials.find((candidate) => candidate.id === fromBomId && candidate.organizationId === organizationId);
+      const to = data.billOfMaterials.find((candidate) => candidate.id === toBomId && candidate.organizationId === organizationId);
+      if (!from || !to) {
+        throw new Error("unknown_bom");
+      }
+      return compareBomDefinitions(bomDefinitionForDomain(from), bomDefinitionForDomain(to));
+    },
+
+    async explodeBillOfMaterials(organizationId, input) {
+      return explodeBom({
+        rootItemId: input.productVariantId,
+        quantity: input.quantity,
+        asOf: input.asOf ?? new Date(),
+        boms: data.billOfMaterials
+          .filter((bom) => bom.organizationId === organizationId)
+          .map((bom) => bomDefinitionForDomain(bom))
+      });
+    },
+
+    async getBillOfMaterialsReadiness(organizationId, bomId, asOf) {
+      const bom = data.billOfMaterials.find((candidate) => candidate.id === bomId && candidate.organizationId === organizationId);
+      return bom ? bomReadiness(bom, asOf ?? new Date()) : null;
     },
 
     async createBomLine(bomId, input: BomLineInput) {
@@ -13139,6 +20847,11 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
       if (!operation) {
         throw new Error("unknown_bom_operation");
       }
+      const bom = data.billOfMaterials.find((candidate) => candidate.id === operation.bomId);
+      if (!bom) {
+        throw new Error("unknown_bom");
+      }
+      assertBomEditable(bom, "changeRequestId" in input ? input.changeRequestId : null);
       if (
         data.bomOperationSteps.some(
           (step) => step.bomOperationId === bomOperationId && step.sequence === input.sequence
@@ -13195,6 +20908,109 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
       };
       data.bomOperationMaterials.push(material);
       return material;
+    },
+
+    async createBomOperationOutput(bomOperationId, input: BomOperationOutputInput) {
+      const operation = data.bomOperations.find((candidate) => candidate.id === bomOperationId);
+      if (!operation) {
+        throw new Error("unknown_bom_operation");
+      }
+      const bom = data.billOfMaterials.find((candidate) => candidate.id === operation.bomId);
+      if (!bom) {
+        throw new Error("unknown_bom");
+      }
+      assertBomEditable(bom, input.changeRequestId);
+      if (input.itemType === "product_variant" || input.itemType === "material" || input.itemType === "packaging_component") {
+        assertPurchaseItemExists(bom.organizationId, input.itemType, input.itemId);
+      }
+      if ((input.outputType === "scrap" || input.outputType === "yield_loss") && input.traceInventory) {
+        throw new Error("scrap_yield_loss_cannot_trace_inventory");
+      }
+      const now = new Date();
+      const output: BomOperationOutputRecord = {
+        id: randomUUID(),
+        bomOperationId,
+        outputType: input.outputType,
+        itemType: input.itemType,
+        itemId: input.itemId,
+        quantity: input.quantity,
+        uom: input.uom,
+        scrapReasonCode: input.scrapReasonCode?.trim() || null,
+        traceInventory: input.traceInventory ?? input.outputType !== "yield_loss",
+        costCreditPercent: input.costCreditPercent ?? 0,
+        reworkRequired: input.reworkRequired ?? false,
+        createdAt: now,
+        updatedAt: now,
+        version: 1
+      };
+      data.bomOperationOutputs.push(output);
+      return output;
+    },
+
+    async createBomSubstitute(bomOperationMaterialId, input: BomSubstituteInput) {
+      const material = data.bomOperationMaterials.find((candidate) => candidate.id === bomOperationMaterialId);
+      if (!material) {
+        throw new Error("unknown_bom_operation_material");
+      }
+      const operation = data.bomOperations.find((candidate) => candidate.id === material.bomOperationId);
+      const bom = operation ? data.billOfMaterials.find((candidate) => candidate.id === operation.bomId) : null;
+      if (!bom) {
+        throw new Error("unknown_bom");
+      }
+      assertBomEditable(bom, input.changeRequestId);
+      assertBomComponentExists(bom.organizationId, input);
+      const now = new Date();
+      const substitute: BomSubstituteRecord = {
+        id: randomUUID(),
+        bomOperationMaterialId,
+        replacementType: input.replacementType,
+        componentType: input.componentType,
+        componentId: input.componentId,
+        quantity: input.quantity,
+        uom: input.uom,
+        conversionFactor: input.conversionFactor ?? null,
+        effectiveFrom: input.effectiveFrom ?? null,
+        effectiveTo: input.effectiveTo ?? null,
+        priority: input.priority ?? data.bomSubstitutes.filter((candidate) => candidate.bomOperationMaterialId === bomOperationMaterialId).length + 1,
+        approved: input.approved ?? false,
+        approvalReference: input.approvalReference?.trim() || null,
+        notes: input.notes?.trim() || null,
+        createdAt: now,
+        updatedAt: now,
+        version: 1
+      };
+      data.bomSubstitutes.push(substitute);
+      return substitute;
+    },
+
+    async createBomOperationCost(bomOperationId, input: BomOperationCostInput) {
+      const operation = data.bomOperations.find((candidate) => candidate.id === bomOperationId);
+      if (!operation) {
+        throw new Error("unknown_bom_operation");
+      }
+      const bom = data.billOfMaterials.find((candidate) => candidate.id === operation.bomId);
+      if (!bom) {
+        throw new Error("unknown_bom");
+      }
+      assertBomEditable(bom, input.changeRequestId);
+      const now = new Date();
+      const cost: BomOperationCostRecord = {
+        id: randomUUID(),
+        bomOperationId,
+        costType: input.costType,
+        costCode: input.costCode.trim(),
+        description: input.description.trim(),
+        quantity: input.quantity,
+        uom: input.uom,
+        unitCost: input.unitCost,
+        currency: input.currency ?? "EUR",
+        backflush: input.backflush ?? false,
+        createdAt: now,
+        updatedAt: now,
+        version: 1
+      };
+      data.bomOperationCosts.push(cost);
+      return cost;
     },
 
     async createBomOperationEquipment(bomOperationId, input: BomOperationEquipmentInput) {
@@ -13585,7 +21401,7 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
         );
       });
 
-      const stagedLots = input.outputs.map((output, index): { lot: LotRecord; quantity: number; uom: string } => {
+      const stagedLots = input.outputs.map((output, index): { lot: LotRecord; quantity: number; uom: string; traceInventory: boolean } => {
         if (
           data.lots.some(
             (lot) =>
@@ -13614,10 +21430,14 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
           receivedAt: null,
           expiresAt: output.expiresAt ?? null,
           qcStatus: "pending",
-          status: "active",
+          status: output.traceInventory === false ? "consumed" : "active",
           parentLotId: input.inputs[0]?.sourceLotId ?? null,
           metadataJson: {
             ...(output.metadataJson ?? {}),
+            outputType: output.outputType ?? "primary",
+            scrapReasonCode: output.scrapReasonCode ?? null,
+            traceInventory: output.traceInventory ?? true,
+            reworkRequired: output.reworkRequired ?? false,
             productionOrderId: batch.productionOrderId,
             processingBatchId: batch.id
           },
@@ -13625,27 +21445,30 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
           updatedAt: now,
           version: 1
         };
-        normalizedMovements.push(
-          normalizeInventoryMovement({
-            movementType: "produce",
-            clientTransactionId: `${input.clientTransactionId}:output:${index + 1}`,
-            itemType: output.itemType,
-            itemId: output.itemId,
-            lotId,
-            toLocationId: batch.locationId,
-            quantity: output.quantity,
-            uom: output.uom,
-            occurredAt: input.endedAt ?? now,
-            sourceType: "processing_batch",
-            sourceId: batch.id,
-            reasonCode: "production_output",
-            metadata: {
-              rootClientTransactionId: input.clientTransactionId,
-              productionOrderId: batch.productionOrderId
-            }
-          })
-        );
-        return { lot, quantity: output.quantity, uom: output.uom };
+        if (output.traceInventory !== false) {
+          normalizedMovements.push(
+            normalizeInventoryMovement({
+              movementType: "produce",
+              clientTransactionId: `${input.clientTransactionId}:output:${index + 1}`,
+              itemType: output.itemType,
+              itemId: output.itemId,
+              lotId,
+              toLocationId: batch.locationId,
+              quantity: output.quantity,
+              uom: output.uom,
+              occurredAt: input.endedAt ?? now,
+              sourceType: "processing_batch",
+              sourceId: batch.id,
+              reasonCode: output.outputType === "by_product" || output.outputType === "co_product" ? "production_by_product" : "production_output",
+              metadata: {
+                rootClientTransactionId: input.clientTransactionId,
+                productionOrderId: batch.productionOrderId,
+                outputType: output.outputType ?? "primary"
+              }
+            })
+          );
+        }
+        return { lot, quantity: output.quantity, uom: output.uom, traceInventory: output.traceInventory ?? true };
       });
 
       const allDeltas = normalizedMovements.flatMap((movement) =>
@@ -14437,6 +22260,377 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
       return execution ? ebrPacket(execution) : null;
     },
 
+    async listWeighDispenseSessions(organizationId) {
+      return data.weighDispenseSessions
+        .filter((session) => session.organizationId === organizationId)
+        .sort((left, right) => right.startedAt.getTime() - left.startedAt.getTime())
+        .map((session) => weighDispenseSessionDetail(session));
+    },
+
+    async createWeighDispenseSession(userContext, input: WeighDispenseSessionInput, requestId) {
+      if (data.weighDispenseSessions.some((session) => session.organizationId === userContext.organizationId && session.sessionCode.toLocaleLowerCase() === input.sessionCode.trim().toLocaleLowerCase())) {
+        throw new Error("duplicate_weigh_dispense_session");
+      }
+      assertProductionOrderExists(userContext.organizationId, input.productionOrderId);
+      if (input.processingBatchId && !data.processingBatches.some((batch) => batch.id === input.processingBatchId && batch.organizationId === userContext.organizationId)) {
+        throw new Error("unknown_processing_batch");
+      }
+      if (input.ebrExecutionId && !data.ebrExecutions.some((execution) => execution.id === input.ebrExecutionId && execution.organizationId === userContext.organizationId)) {
+        throw new Error("unknown_ebr_execution");
+      }
+      if (!data.locations.some((location) => location.id === input.locationId && location.organizationId === userContext.organizationId)) {
+        throw new Error("unknown_location");
+      }
+
+      const now = new Date();
+      const sourceLines = weighDispenseSourceLines({
+        organizationId: userContext.organizationId,
+        ...(input.bomId !== undefined ? { bomId: input.bomId } : {}),
+        ...(input.formulaRevisionId !== undefined ? { formulaRevisionId: input.formulaRevisionId } : {})
+      });
+      if (sourceLines.length === 0) {
+        throw new Error("weigh_dispense_lines_required");
+      }
+
+      const bom = input.bomId ? data.billOfMaterials.find((candidate) => candidate.id === input.bomId) : null;
+      const formula = input.formulaRevisionId ? data.formulaRevisions.find((candidate) => candidate.id === input.formulaRevisionId) : null;
+      const basisQuantity = bom?.yieldQuantity ?? formula?.targetOutputQuantity ?? null;
+      const scaleFactor = input.targetOutputQuantity && basisQuantity ? input.targetOutputQuantity / basisQuantity : 1;
+      const targets = buildWeighDispenseTargets({
+        lines: sourceLines,
+        scaleFactor,
+        defaultTolerancePercent: input.defaultTolerancePercent ?? 2
+      });
+
+      const session: WeighDispenseSessionRecord = {
+        id: randomUUID(),
+        organizationId: userContext.organizationId,
+        sessionCode: input.sessionCode.trim(),
+        status: "open",
+        productionOrderId: input.productionOrderId ?? null,
+        processingBatchId: input.processingBatchId ?? null,
+        ebrExecutionId: input.ebrExecutionId ?? null,
+        bomId: input.bomId ?? null,
+        formulaRevisionId: input.formulaRevisionId ?? null,
+        locationId: input.locationId,
+        startedBy: userContext.userId,
+        startedAt: now,
+        completedAt: null,
+        createdAt: now,
+        updatedAt: now,
+        version: 1
+      };
+      data.weighDispenseSessions.push(session);
+      data.weighDispenseLines.push(
+        ...targets.map((target, index): WeighDispenseLineRecord => ({
+          id: randomUUID(),
+          sessionId: session.id,
+          sequence: (index + 1) * 10,
+          sourceType: target.source,
+          sourceId: target.sourceLineId,
+          componentType: target.componentType,
+          componentId: target.componentId,
+          componentName: target.componentName,
+          targetQuantity: target.targetQuantity,
+          targetUom: target.targetUom,
+          potencyAdjustedTargetQuantity: null,
+          potencyBasis: target.potencyBasis,
+          potencyAssay: null,
+          potencyQcResultId: null,
+          tolerancePercent: target.tolerancePercent,
+          toleranceQuantity: target.toleranceQuantity,
+          minQuantity: target.minQuantity,
+          maxQuantity: target.maxQuantity,
+          isCritical: target.isCritical,
+          requiresPotencyAdjustment: target.requiresPotencyAdjustment,
+          status: "pending",
+          lotId: null,
+          locationId: null,
+          containerId: null,
+          scaleAdapterId: null,
+          equipmentId: null,
+          calibrationStatus: null,
+          tareQuantity: null,
+          grossQuantity: null,
+          netQuantity: null,
+          varianceQuantity: null,
+          variancePercent: null,
+          withinTolerance: null,
+          overrideReason: null,
+          overrideBy: null,
+          overrideAt: null,
+          verifiedBy: null,
+          verifiedAt: null,
+          stockMovementId: null,
+          ebrStepResultId: null,
+          completedBy: null,
+          completedAt: null,
+          createdAt: now,
+          updatedAt: now,
+          version: 1
+        }))
+      );
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: "weigh_dispense.session_created",
+        subjectType: "weigh_dispense_session",
+        subjectId: session.id,
+        beforeJson: null,
+        afterJson: weighDispenseSessionDetail(session),
+        requestId
+      });
+      return weighDispenseSessionDetail(session);
+    },
+
+    async completeWeighDispenseLine(userContext, sessionId, lineId, input: WeighDispenseLineCompletionInput, requestId) {
+      const session = data.weighDispenseSessions.find(
+        (candidate) => candidate.id === sessionId && candidate.organizationId === userContext.organizationId
+      );
+      if (!session) {
+        throw new Error("unknown_weigh_dispense_session");
+      }
+      if (session.status !== "open") {
+        throw new Error("weigh_dispense_session_not_open");
+      }
+      const line = data.weighDispenseLines.find((candidate) => candidate.id === lineId && candidate.sessionId === session.id);
+      if (!line) {
+        throw new Error("unknown_weigh_dispense_line");
+      }
+      if (line.status === "complete") {
+        throw new Error("weigh_dispense_line_already_complete");
+      }
+      const lot = data.lots.find((candidate) => candidate.id === input.lotId && candidate.organizationId === userContext.organizationId);
+      if (!lot) {
+        throw new Error("unknown_lot");
+      }
+      const balance = data.inventoryBalances.find(
+        (candidate) =>
+          candidate.organizationId === userContext.organizationId &&
+          candidate.locationId === input.locationId &&
+          candidate.lotId === lot.id &&
+          candidate.itemType === lot.itemType &&
+          candidate.itemId === lot.itemId
+      );
+      const equipmentId = input.equipmentId ?? line.equipmentId;
+      const equipment = equipmentForUse(userContext.organizationId, equipmentId);
+      const readiness = assertEquipmentUsableForStep(
+        userContext,
+        equipment,
+        line.isCritical,
+        input.overrideReason ?? null,
+        { type: "ebr_step", id: input.ebrStepId ?? line.id },
+        requestId
+      );
+      const potencyResult = line.requiresPotencyAdjustment ? latestApprovedPotencyResult(userContext.organizationId, lot.id) : null;
+      const completion = completeWeighDispenseLineDomain({
+        target: {
+          sourceLineId: line.sourceId,
+          source: line.sourceType,
+          componentType: line.componentType,
+          componentId: line.componentId,
+          componentName: line.componentName,
+          targetQuantity: line.targetQuantity,
+          targetUom: line.targetUom,
+          tolerancePercent: line.tolerancePercent,
+          toleranceQuantity: line.toleranceQuantity,
+          minQuantity: line.minQuantity,
+          maxQuantity: line.maxQuantity,
+          isCritical: line.isCritical,
+          requiresPotencyAdjustment: line.requiresPotencyAdjustment,
+          potencyBasis: line.potencyBasis
+        },
+        lot: {
+          id: lot.id,
+          lotCode: lot.lotCode,
+          itemType: lot.itemType,
+          itemId: lot.itemId,
+          qcStatus: effectiveQcStatus(lot),
+          status: lot.status,
+          expiresAt: lot.expiresAt,
+          barcode: typeof lot.metadataJson.barcode === "string" ? lot.metadataJson.barcode : null,
+          containerId: typeof lot.metadataJson.containerId === "string" ? lot.metadataJson.containerId : null,
+          metadataJson: lot.metadataJson
+        },
+        balance: balance ? domainBalance(balance) : null,
+        locationId: input.locationId,
+        capture: {
+          tareQuantity: input.tareQuantity,
+          grossQuantity: input.grossQuantity,
+          netQuantity: input.netQuantity ?? null,
+          uom: input.uom
+        },
+        actorUserId: userContext.userId,
+        capturedAt: new Date(),
+        equipmentId,
+        scaleAdapterId: input.scaleAdapterId ?? "manual",
+        potencyResult: potencyResult
+          ? {
+              id: potencyResult.id,
+              lotId: lot.id,
+              valueNumber: potencyResult.valueNumber,
+              unit: potencyResult.unit,
+              status: potencyResult.status,
+              reviewedAt: potencyResult.reviewedAt
+            }
+          : null,
+        override: input.overrideReason
+          ? {
+              permitted: hasOwnerAdmin(userContext),
+              reason: input.overrideReason,
+              actorUserId: userContext.userId
+            }
+          : null,
+        verifier: input.verifierUserId
+          ? {
+              verifierUserId: input.verifierUserId,
+              meaning: input.verificationMeaning ?? "Dispense verification",
+              verifiedAt: new Date()
+            }
+          : null
+      });
+      const posted = await applyInventoryMovement(
+        userContext,
+        {
+          movementType: "consume",
+          clientTransactionId: input.clientTransactionId,
+          itemType: line.componentType,
+          itemId: line.componentId,
+          lotId: lot.id,
+          fromLocationId: input.locationId,
+          quantity: completion.netQuantity,
+          uom: completion.targetUom,
+          occurredAt: new Date(),
+          sourceType: "weigh_dispense_line",
+          sourceId: line.id,
+          reasonCode: completion.overrideUsed ? "dispense_override" : "dispense_complete",
+          notes: input.overrideReason ?? null,
+          metadata: {
+            sessionId: session.id,
+            targetQuantity: completion.targetQuantity,
+            tareQuantity: completion.tareQuantity,
+            grossQuantity: completion.grossQuantity,
+            varianceQuantity: completion.varianceQuantity,
+            potencyAdjusted: completion.potencyAdjusted
+          }
+        },
+        requestId
+      );
+
+      let ebrStepResultId: string | null = null;
+      if ((input.ebrExecutionId ?? session.ebrExecutionId) && input.ebrStepId) {
+        const execution = data.ebrExecutions.find(
+          (candidate) => candidate.id === (input.ebrExecutionId ?? session.ebrExecutionId) && candidate.organizationId === userContext.organizationId
+        );
+        const step = execution
+          ? data.ebrTemplateSteps.find((candidate) => candidate.id === input.ebrStepId && candidate.templateId === execution.templateId)
+          : null;
+        if (execution && step && !data.ebrStepResults.some((result) => result.executionId === execution.id && result.templateStepId === step.id)) {
+          const now = new Date();
+          const previousHash =
+            data.ebrStepResults
+              .filter((result) => result.executionId === execution.id)
+              .sort((left, right) => left.completedAt.getTime() - right.completedAt.getTime())
+              .at(-1)?.auditHash ?? null;
+          const result: EbrStepResultRecord = {
+            id: randomUUID(),
+            executionId: execution.id,
+            templateStepId: step.id,
+            performedBy: userContext.userId,
+            performedAt: now,
+            acknowledgedAt: now,
+            scannedLotId: lot.id,
+            weighedQuantity: completion.netQuantity,
+            uom: completion.targetUom,
+            equipmentId,
+            scaleAdapterId: input.scaleAdapterId ?? "manual",
+            targetQuantity: completion.targetQuantity,
+            tolerancePercent: line.tolerancePercent,
+            toleranceQuantity: completion.toleranceQuantity,
+            varianceQuantity: completion.varianceQuantity,
+            withinTolerance: completion.withinTolerance,
+            adminOverrideReason: input.overrideReason?.trim() || null,
+            adminOverrideBy: input.overrideReason ? userContext.userId : null,
+            adminOverrideAt: input.overrideReason ? now : null,
+            enteredValue: null,
+            evidenceFileName: null,
+            qcStatus: null,
+            supervisorApproved: null,
+            branchDecision: null,
+            notes: "Captured by weigh/dispense station.",
+            completedAt: now,
+            auditHash: ebrResultHash(
+              {
+                stepId: step.id,
+                weighDispenseLineId: line.id,
+                lotId: lot.id,
+                equipmentId,
+                netQuantity: completion.netQuantity,
+                targetQuantity: completion.targetQuantity,
+                calibrationStatus: readiness?.calibrationStatus ?? null
+              },
+              previousHash
+            ),
+            createdAt: now,
+            updatedAt: now,
+            version: 1
+          };
+          data.ebrStepResults.push(result);
+          ebrStepResultId = result.id;
+        }
+      }
+
+      const now = new Date();
+      Object.assign(line, {
+        status: "complete" as const,
+        lotId: lot.id,
+        locationId: input.locationId,
+        containerId: input.containerId ?? input.scannedContainerId ?? null,
+        scaleAdapterId: input.scaleAdapterId ?? "manual",
+        equipmentId,
+        calibrationStatus: readiness?.calibrationStatus ?? null,
+        potencyAdjustedTargetQuantity: completion.potencyAdjusted ? completion.targetQuantity : null,
+        potencyAssay: completion.potencyAssay,
+        potencyQcResultId: potencyResult?.id ?? null,
+        tareQuantity: completion.tareQuantity,
+        grossQuantity: completion.grossQuantity,
+        netQuantity: completion.netQuantity,
+        varianceQuantity: completion.varianceQuantity,
+        variancePercent: completion.variancePercent,
+        withinTolerance: completion.withinTolerance,
+        overrideReason: input.overrideReason?.trim() || null,
+        overrideBy: input.overrideReason ? userContext.userId : null,
+        overrideAt: input.overrideReason ? now : null,
+        verifiedBy: input.verifierUserId ?? null,
+        verifiedAt: input.verifierUserId ? now : null,
+        stockMovementId: posted.movement.id,
+        ebrStepResultId,
+        completedBy: userContext.userId,
+        completedAt: now,
+        updatedAt: now,
+        version: line.version + 1
+      });
+
+      const lines = data.weighDispenseLines.filter((candidate) => candidate.sessionId === session.id);
+      if (lines.every((candidate) => candidate.status === "complete")) {
+        session.status = "completed";
+        session.completedAt = now;
+      }
+      session.updatedAt = now;
+      session.version += 1;
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: completion.overrideUsed ? "weigh_dispense.line_completed_with_override" : "weigh_dispense.line_completed",
+        subjectType: "weigh_dispense_line",
+        subjectId: line.id,
+        beforeJson: null,
+        afterJson: { line, stockMovementId: posted.movement.id },
+        requestId
+      });
+      return weighDispenseSessionDetail(session);
+    },
+
     async getCostingDashboard(organizationId) {
       return {
         settings: costingSettings(organizationId),
@@ -14494,6 +22688,127 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
 
     async getMarginSimulation(organizationId) {
       return marginSimulationForOrganization(organizationId);
+    },
+
+    async getFinanceDashboard(organizationId) {
+      const snapshots = data.inventoryValuationSnapshots
+        .filter((snapshot) => snapshot.organizationId === organizationId)
+        .sort((left, right) => right.asOf.getTime() - left.asOf.getTime());
+      return {
+        landedCosts: data.landedCosts.filter((cost) => cost.organizationId === organizationId),
+        valuationSnapshots: snapshots,
+        latestValuationComparison: snapshots.length >= 2 ? compareInventoryValuationSnapshots(snapshots[1]!, snapshots[0]!) : null,
+        latestPeriodClose: latestPeriodClose(organizationId),
+        exportBatches: data.financeExportBatches
+          .filter((batch) => batch.organizationId === organizationId)
+          .sort((left, right) => right.generatedAt.getTime() - left.generatedAt.getTime()),
+        mappingTemplates: data.exportMappingTemplates.filter((template) => template.id && template.sourceType),
+        reconciliations: financeReconciliations(organizationId)
+      } satisfies FinanceDashboardRecord;
+    },
+
+    async allocateLandedCost(userContext, input: LandedCostAllocationInput, requestId) {
+      const result = allocateLandedCost({
+        landedCostId: randomUUID(),
+        components: input.components,
+        receiptLines: input.receiptLines
+      });
+      const now = new Date();
+      const record: LandedCostAllocationRecord = {
+        ...result,
+        id: result.landedCostId,
+        organizationId: userContext.organizationId,
+        landedCostNumber: input.landedCostNumber ?? `LC-${String(data.landedCosts.length + 1).padStart(6, "0")}`,
+        supplierId: input.supplierId ?? null,
+        sourceDocumentNumber: input.sourceDocumentNumber ?? null,
+        status: "allocated",
+        allocatedAt: now
+      };
+      data.landedCosts.push(record);
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: "finance.landed_cost.allocated",
+        subjectType: "landed_cost",
+        subjectId: record.id,
+        beforeJson: null,
+        afterJson: record,
+        requestId
+      });
+      return record;
+    },
+
+    async createInventoryValuationSnapshot(userContext, input: InventoryValuationSnapshotInput, requestId) {
+      const snapshot = createValuationSnapshotRecord(userContext.organizationId, input);
+      data.inventoryValuationSnapshots.push(snapshot);
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: "finance.valuation_snapshot.created",
+        subjectType: "inventory_valuation_snapshot",
+        subjectId: snapshot.id,
+        beforeJson: null,
+        afterJson: snapshot,
+        requestId
+      });
+      return snapshot;
+    },
+
+    async runPeriodClose(userContext, input: PeriodCloseInputRecord, requestId) {
+      const run = buildPeriodCloseRun(userContext.organizationId, input.period);
+      data.periodCloseRuns.push(run);
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: "finance.period_close.checked",
+        subjectType: "period_close_run",
+        subjectId: run.id,
+        beforeJson: null,
+        afterJson: run,
+        requestId
+      });
+      return run;
+    },
+
+    async createFinanceExportBatch(userContext, input: FinanceExportBatchInput, requestId) {
+      const mappingTemplate =
+        data.exportMappingTemplates.find((template) => template.id === input.mappingTemplateId) ??
+        data.exportMappingTemplates[0];
+      if (!mappingTemplate) {
+        throw new Error("missing_export_mapping_template");
+      }
+      const batch = buildFinanceExportBatch({
+        id: randomUUID(),
+        organizationId: userContext.organizationId,
+        batchNumber: `FIN-${new Date().toISOString().slice(0, 10)}-${String(data.financeExportBatches.length + 1).padStart(3, "0")}`,
+        version: data.financeExportBatches.length + 1,
+        format: input.format ?? "csv",
+        generatedAt: new Date(),
+        generatedBy: userContext.userId,
+        mappingTemplate,
+        records: financeExportRecords(userContext.organizationId, input.sourceTypes),
+        repeatedFromBatchId: input.repeatedFromBatchId ?? null
+      });
+      data.financeExportBatches.push(batch);
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: "finance.export_batch.generated",
+        subjectType: "finance_export_batch",
+        subjectId: batch.id,
+        beforeJson: null,
+        afterJson: batch.audit,
+        requestId
+      });
+      return batch;
+    },
+
+    async listExportMappingTemplates(organizationId) {
+      return data.exportMappingTemplates.filter((template) => template.id && organizationId);
+    },
+
+    async listFinanceReconciliations(organizationId) {
+      return financeReconciliations(organizationId);
     },
 
     async searchTraceability(organizationId, query) {
@@ -15917,6 +24232,484 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
       return dashboardWidgetsFor(userContext);
     },
 
+    async getWorkspaceSnapshot(userContext, previewRoleCode = null) {
+      const canPreview = userRoleCodes(userContext).includes("owner_admin");
+      const effectivePreview = canPreview ? previewRoleCode : null;
+      return {
+        preferences: workspacePreferencesFor(userContext),
+        pinnedItems: visiblePinnedItems(userContext),
+        savedViews: visibleSavedViews(userContext),
+        colorRules: visibleColorRules(userContext),
+        navigation: filterNavigationForRole(workspaceNavigation, userRoleCodes(userContext), effectivePreview),
+        previewRoleCode: effectivePreview
+      };
+    },
+
+    async updateUserPreferences(userContext, input: UserPreferenceUpdateInput, requestId) {
+      const preference = workspacePreferencesFor(userContext);
+      const beforeJson = structuredClone(preference);
+      const merged = mergeWorkspacePreferences(preference, input);
+      Object.assign(preference, merged);
+      if (input.savedFilters !== undefined) {
+        preference.savedFilters = input.savedFilters;
+      }
+      preference.updatedAt = new Date();
+      preference.version += 1;
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: "workspace.preferences.updated",
+        subjectType: "user_preferences",
+        subjectId: preference.id,
+        beforeJson,
+        afterJson: preference,
+        requestId
+      });
+      return preference;
+    },
+
+    async pinWorkspaceItem(userContext, input: PinnedItemInput, requestId) {
+      const now = new Date();
+      const existing = data.pinnedItems.find(
+        (pin) =>
+          pin.organizationId === userContext.organizationId &&
+          pin.userId === userContext.userId &&
+          pin.pinKind === input.pinKind &&
+          pin.targetType === input.targetType &&
+          pin.targetId === input.targetId
+      );
+      const beforeJson = existing ? structuredClone(existing) : null;
+      const pin: PinnedItemRecord = existing ?? {
+        id: randomUUID(),
+        organizationId: userContext.organizationId,
+        userId: userContext.userId,
+        pinKind: input.pinKind,
+        targetType: input.targetType,
+        targetId: input.targetId,
+        label: input.label.trim(),
+        href: input.href,
+        metadataJson: input.metadataJson ?? {},
+        sortOrder: input.sortOrder ?? visiblePinnedItems(userContext).length + 1,
+        createdAt: now,
+        updatedAt: now,
+        version: 0
+      };
+      pin.label = input.label.trim();
+      pin.href = input.href;
+      pin.metadataJson = input.metadataJson ?? pin.metadataJson;
+      pin.sortOrder = input.sortOrder ?? pin.sortOrder;
+      pin.updatedAt = now;
+      pin.version += 1;
+      if (!existing) {
+        data.pinnedItems.push(pin);
+      }
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: existing ? "workspace.pin.updated" : "workspace.pin.created",
+        subjectType: "pinned_items",
+        subjectId: pin.id,
+        beforeJson,
+        afterJson: pin,
+        requestId
+      });
+      return pin;
+    },
+
+    async unpinWorkspaceItem(userContext, pinId, requestId) {
+      const index = data.pinnedItems.findIndex(
+        (pin) => pin.organizationId === userContext.organizationId && pin.userId === userContext.userId && pin.id === pinId
+      );
+      if (index < 0) {
+        return false;
+      }
+      const removed = data.pinnedItems.splice(index, 1)[0];
+      if (!removed) {
+        return false;
+      }
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: "workspace.pin.deleted",
+        subjectType: "pinned_items",
+        subjectId: removed.id,
+        beforeJson: removed,
+        afterJson: null,
+        requestId
+      });
+      return true;
+    },
+
+    async saveGridView(userContext, input: SavedViewInput, requestId) {
+      const now = new Date();
+      const sharedRoleCodes = input.sharedRoleCodes ?? [];
+      const scope = input.scope ?? "private";
+      if (scope === "role_shared" && !userRoleCodes(userContext).includes("owner_admin")) {
+        throw new Error("admin_required_for_shared_view");
+      }
+      const existing = data.savedViews.find(
+        (view) =>
+          view.organizationId === userContext.organizationId &&
+          view.ownerUserId === userContext.userId &&
+          view.gridKey === input.gridKey &&
+          view.name.toLocaleLowerCase() === input.name.trim().toLocaleLowerCase()
+      );
+      const beforeJson = existing ? structuredClone(existing) : null;
+      const view: SavedViewRecord = existing ?? {
+        id: randomUUID(),
+        organizationId: userContext.organizationId,
+        ownerUserId: userContext.userId,
+        gridKey: input.gridKey,
+        name: input.name.trim(),
+        scope,
+        sharedRoleCodes,
+        filters: input.filters ?? {},
+        sort: input.sort ?? [],
+        grouping: input.grouping ?? [],
+        columns: input.columns ?? [],
+        colorRuleIds: input.colorRuleIds ?? [],
+        isDefault: input.isDefault ?? false,
+        createdAt: now,
+        updatedAt: now,
+        version: 0
+      };
+      Object.assign(view, {
+        gridKey: input.gridKey,
+        name: input.name.trim(),
+        scope,
+        sharedRoleCodes,
+        filters: input.filters ?? view.filters,
+        sort: input.sort ?? view.sort,
+        grouping: input.grouping ?? view.grouping,
+        columns: input.columns ?? view.columns,
+        colorRuleIds: input.colorRuleIds ?? view.colorRuleIds,
+        isDefault: input.isDefault ?? view.isDefault,
+        updatedAt: now,
+        version: view.version + 1
+      });
+      if (!existing) {
+        data.savedViews.push(view);
+      }
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: existing ? "workspace.saved_view.updated" : "workspace.saved_view.created",
+        subjectType: "saved_views",
+        subjectId: view.id,
+        beforeJson,
+        afterJson: view,
+        requestId
+      });
+      return view;
+    },
+
+    async deleteGridView(userContext, savedViewId, requestId) {
+      const index = data.savedViews.findIndex(
+        (view) =>
+          view.organizationId === userContext.organizationId &&
+          view.id === savedViewId &&
+          (view.ownerUserId === userContext.userId || userRoleCodes(userContext).includes("owner_admin"))
+      );
+      if (index < 0) {
+        return false;
+      }
+      const removed = data.savedViews.splice(index, 1)[0];
+      if (!removed) {
+        return false;
+      }
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: "workspace.saved_view.deleted",
+        subjectType: "saved_views",
+        subjectId: removed.id,
+        beforeJson: removed,
+        afterJson: null,
+        requestId
+      });
+      return true;
+    },
+
+    async saveColorRule(userContext, input: ColorRuleInput, requestId) {
+      const now = new Date();
+      const accessible = ensureAccessibleColorRule({ id: randomUUID(), ...input });
+      const rule: ColorRuleRecord = {
+        ...accessible,
+        id: randomUUID(),
+        organizationId: userContext.organizationId,
+        userId: userContext.userId,
+        createdAt: now,
+        updatedAt: now,
+        version: 1
+      };
+      data.colorRules.push(rule);
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: "workspace.color_rule.created",
+        subjectType: "color_rules",
+        subjectId: rule.id,
+        beforeJson: null,
+        afterJson: rule,
+        requestId
+      });
+      return rule;
+    },
+
+    async deleteColorRule(userContext, colorRuleId, requestId) {
+      const index = data.colorRules.findIndex(
+        (rule) =>
+          rule.organizationId === userContext.organizationId &&
+          rule.id === colorRuleId &&
+          (rule.userId === userContext.userId || userRoleCodes(userContext).includes("owner_admin"))
+      );
+      if (index < 0) {
+        return false;
+      }
+      const removed = data.colorRules.splice(index, 1)[0];
+      if (!removed) {
+        return false;
+      }
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: "workspace.color_rule.deleted",
+        subjectType: "color_rules",
+        subjectId: removed.id,
+        beforeJson: removed,
+        afterJson: null,
+        requestId
+      });
+      return true;
+    },
+
+    async listWorkflowGuides(userContext) {
+      return workflowGuidesFor(userContext);
+    },
+
+    async getWorkflowGuide(userContext, workflowId) {
+      return workflowGuidesFor(userContext).find((guide) => guide.id === workflowId) ?? null;
+    },
+
+    async listWorkflowDefinitions(userContext) {
+      return workflowDefinitionsFor(userContext);
+    },
+
+    async getWorkflowDefinition(userContext, workflowDefinitionId) {
+      return workflowDefinitionsFor(userContext).find((definition) => definition.id === workflowDefinitionId) ?? null;
+    },
+
+    async resolveWorkflowActions(userContext, workflowDefinitionId, record) {
+      const definition = workflowDefinitionsFor(userContext).find((candidate) => candidate.id === workflowDefinitionId);
+      return definition ? workflowActionAvailability(userContext, definition, record) : null;
+    },
+
+    async requestWorkflowTransition(userContext, workflowDefinitionId, input: WorkflowTransitionCommand, requestId) {
+      const definition = workflowDefinitionsFor(userContext).find((candidate) => candidate.id === workflowDefinitionId);
+      if (!definition) {
+        return null;
+      }
+      const result = executeWorkflowTransition({
+        definition,
+        record: input.record,
+        actionId: input.actionId,
+        actor: actorPermission(userContext),
+        ...(input.dialogValues === undefined ? {} : { dialogValues: input.dialogValues }),
+        ...(input.metadata === undefined ? {} : { metadata: input.metadata })
+      });
+      const now = new Date();
+      const requests = result.approvalRequests.map((approval): WorkflowApprovalRequestRecord => ({
+        ...approval,
+        organizationId: userContext.organizationId,
+        requestedAt: now,
+        updatedAt: now
+      }));
+      data.approvalRequests.push(...requests);
+      for (const auditEvent of result.auditEvents) {
+        await transactionClient.insertAuditEvent({
+          organizationId: userContext.organizationId,
+          actorUserId: userContext.userId,
+          eventType: auditEvent.eventType,
+          subjectType: auditEvent.subjectType,
+          subjectId: auditEvent.subjectId,
+          beforeJson: auditEvent.beforeJson,
+          afterJson: auditEvent.afterJson,
+          requestId
+        });
+      }
+      return {
+        ...result,
+        approvalRequests: requests
+      } satisfies WorkflowTransitionRecord;
+    },
+
+    async listApprovalInbox(userContext) {
+      return approvalInboxFor(userContext);
+    },
+
+    async startWorkflowRun(userContext, input, requestId) {
+      const guide = workflowGuidesFor(userContext).find((candidate) => candidate.id === input.workflowId);
+      if (!guide) {
+        throw new Error("workflow_unavailable");
+      }
+      const availability = workflowAvailabilityForRoles(guide, roleCodesFor(userContext));
+      if (!availability.available && input.mode !== "show_me") {
+        throw new Error("workflow_permission_required");
+      }
+
+      const now = new Date();
+      const run: WorkflowRunRecord = {
+        id: randomUUID(),
+        organizationId: userContext.organizationId,
+        workflowId: guide.id,
+        userId: userContext.userId,
+        mode: input.mode,
+        status: "active",
+        currentStepId: guide.steps[0]?.id ?? null,
+        practiceSeedJson:
+          input.mode === "practice"
+            ? {
+                demoData: true,
+                seed: input.practiceSeedJson ?? {},
+                rollbackPolicy: "Practice runs record events only and never write live operational records."
+              }
+            : input.practiceSeedJson ?? {},
+        rollbackSummary: null,
+        startedAt: now,
+        completedAt: null,
+        createdAt: now,
+        updatedAt: now,
+        version: 1
+      };
+      data.workflowRuns.push(run);
+      data.workflowRunEvents.push({
+        id: randomUUID(),
+        organizationId: userContext.organizationId,
+        runId: run.id,
+        workflowId: run.workflowId,
+        stepId: run.currentStepId,
+        eventType: "started",
+        message: `${guide.title} started in ${input.mode} mode.`,
+        metadataJson: { mode: input.mode },
+        occurredAt: now
+      });
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: "workflow_run.started",
+        subjectType: "workflow_run",
+        subjectId: run.id,
+        beforeJson: null,
+        afterJson: run,
+        requestId
+      });
+      const detail = workflowRunDetail(run);
+      if (!detail) {
+        throw new Error("workflow_run_not_hydrated");
+      }
+      return detail;
+    },
+
+    async getWorkflowRun(userContext, runId) {
+      const run = data.workflowRuns.find(
+        (candidate) => candidate.organizationId === userContext.organizationId && candidate.id === runId
+      );
+      return run ? workflowRunDetail(run) : null;
+    },
+
+    async listWorkflowRuns(userContext) {
+      return data.workflowRuns
+        .filter((run) => run.organizationId === userContext.organizationId && run.userId === userContext.userId)
+        .sort((left, right) => right.startedAt.getTime() - left.startedAt.getTime())
+        .map((run) => workflowRunDetail(run))
+        .filter((detail): detail is WorkflowRunDetailRecord => Boolean(detail));
+    },
+
+    async recordWorkflowRunEvent(userContext, runId, input: WorkflowRunEventInput, requestId) {
+      const run = data.workflowRuns.find(
+        (candidate) => candidate.organizationId === userContext.organizationId && candidate.id === runId
+      );
+      if (!run) {
+        return null;
+      }
+      if (run.status !== "active") {
+        throw new Error("workflow_run_not_active");
+      }
+      const guide = data.workflowGuides.find((candidate) => candidate.id === run.workflowId);
+      const step = input.stepId ? guide?.steps.find((candidate) => candidate.id === input.stepId) : null;
+      const now = new Date();
+      if (step && input.eventType === "step_confirmed") {
+        const stepIndex = guide?.steps.findIndex((candidate) => candidate.id === step.id) ?? -1;
+        run.currentStepId = guide?.steps[stepIndex + 1]?.id ?? step.id;
+      } else if (step) {
+        run.currentStepId = step.id;
+      }
+      run.updatedAt = now;
+      run.version += 1;
+      data.workflowRunEvents.push({
+        id: randomUUID(),
+        organizationId: userContext.organizationId,
+        runId,
+        workflowId: run.workflowId,
+        stepId: input.stepId ?? null,
+        eventType: input.eventType,
+        message: input.message ?? step?.title ?? input.eventType,
+        metadataJson: input.metadataJson ?? {},
+        occurredAt: now
+      });
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: `workflow_run.${input.eventType}`,
+        subjectType: "workflow_run",
+        subjectId: run.id,
+        beforeJson: null,
+        afterJson: { runId, eventType: input.eventType, stepId: input.stepId ?? null },
+        requestId
+      });
+      return workflowRunDetail(run);
+    },
+
+    async completeWorkflowRun(userContext, runId, requestId) {
+      const run = data.workflowRuns.find(
+        (candidate) => candidate.organizationId === userContext.organizationId && candidate.id === runId
+      );
+      if (!run) {
+        return null;
+      }
+      const now = new Date();
+      run.status = run.mode === "practice" ? "rolled_back" : "completed";
+      run.completedAt = now;
+      run.updatedAt = now;
+      run.rollbackSummary =
+        run.mode === "practice"
+          ? "Practice mode completed with demo data only; no live operational records were changed."
+          : null;
+      run.version += 1;
+      data.workflowRunEvents.push({
+        id: randomUUID(),
+        organizationId: userContext.organizationId,
+        runId,
+        workflowId: run.workflowId,
+        stepId: run.currentStepId,
+        eventType: run.mode === "practice" ? "rolled_back" : "completed",
+        message: run.rollbackSummary ?? "Workflow completed.",
+        metadataJson: { mode: run.mode },
+        occurredAt: now
+      });
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: run.mode === "practice" ? "workflow_run.rolled_back" : "workflow_run.completed",
+        subjectType: "workflow_run",
+        subjectId: run.id,
+        beforeJson: null,
+        afterJson: run,
+        requestId
+      });
+      return workflowRunDetail(run);
+    },
+
     async getFeedbackInsights(organizationId) {
       return feedbackInsights(organizationId);
     },
@@ -16281,6 +25074,173 @@ export function createMemoryDataStore(seed: MemoryDataStoreSeed = defaultMemoryS
 
     async getOperationalReport(organizationId, reportId: ReportId, filters: ReportFilters = {}) {
       return buildOperationalReport(reportId, reportDataSet(organizationId), filters);
+    },
+
+    async listReportDatasets(userContext) {
+      return visibleReportDatasets({
+        effectivePermissions: effectivePermissionsFor(userContext),
+        roleCodes: roleCodesFor(userContext)
+      });
+    },
+
+    async listGenericInquiries(userContext) {
+      return data.genericInquiries
+        .filter((inquiry) => inquiry.organizationId === userContext.organizationId)
+        .filter((inquiry) => inquiryVisibleToUser(inquiry, userContext))
+        .sort((left, right) => left.name.localeCompare(right.name));
+    },
+
+    async saveGenericInquiry(userContext, input) {
+      const now = new Date().toISOString();
+      const inquiry: GenericInquiry = {
+        id: randomUUID(),
+        organizationId: userContext.organizationId,
+        ownerUserId: userContext.userId,
+        name: input.name.trim(),
+        description: input.description.trim(),
+        datasetId: input.datasetId,
+        visibility: input.visibility,
+        sharedRoleCodes: input.sharedRoleCodes,
+        columns: input.columns,
+        filters: input.filters,
+        sorts: input.sorts,
+        groupBy: input.groupBy,
+        calculations: input.calculations,
+        parameters: input.parameters,
+        chart: input.chart ?? null,
+        published: input.published,
+        createdAt: now,
+        updatedAt: now
+      };
+      executeGenericInquiry({
+        inquiry,
+        data: reportDataSet(userContext.organizationId),
+        effectivePermissions: effectivePermissionsFor(userContext),
+        fieldRules: data.fieldPermissionRules
+      });
+      data.genericInquiries.push(inquiry);
+      await transactionClient.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: inquiry.visibility === "role_shared" ? "generic_inquiry.published" : "generic_inquiry.saved",
+        subjectType: "generic_inquiry",
+        subjectId: inquiry.id,
+        beforeJson: null,
+        afterJson: inquiry,
+        requestId: null
+      });
+      return inquiry;
+    },
+
+    async getGenericInquiry(userContext, inquiryId) {
+      const inquiry = data.genericInquiries.find(
+        (candidate) => candidate.organizationId === userContext.organizationId && candidate.id === inquiryId
+      );
+      return inquiry && inquiryVisibleToUser(inquiry, userContext) ? inquiry : null;
+    },
+
+    async runGenericInquiry(userContext, inquiryId) {
+      const inquiry = data.genericInquiries.find(
+        (candidate) => candidate.organizationId === userContext.organizationId && candidate.id === inquiryId
+      );
+      if (!inquiry || !inquiryVisibleToUser(inquiry, userContext)) {
+        return null;
+      }
+      return executeGenericInquiry({
+        inquiry,
+        data: reportDataSet(userContext.organizationId),
+        effectivePermissions: effectivePermissionsFor(userContext),
+        fieldRules: data.fieldPermissionRules
+      });
+    },
+
+    async exportGenericInquiry(userContext, inquiryId, format: ExportFormat, scheduleId = null) {
+      const inquiry = data.genericInquiries.find(
+        (candidate) => candidate.organizationId === userContext.organizationId && candidate.id === inquiryId
+      );
+      if (!inquiry || !inquiryVisibleToUser(inquiry, userContext)) {
+        return null;
+      }
+      const result = executeGenericInquiry({
+        inquiry,
+        data: reportDataSet(userContext.organizationId),
+        effectivePermissions: effectivePermissionsFor(userContext),
+        fieldRules: data.fieldPermissionRules
+      });
+      const generated = createReportExport({
+        id: randomUUID(),
+        organizationId: userContext.organizationId,
+        inquiry,
+        result,
+        format,
+        generatedBy: userContext.userId,
+        scheduleId
+      });
+      data.reportExports.push(generated.exportRecord);
+      if (generated.auditEvent) {
+        await transactionClient.insertAuditEvent({
+          organizationId: userContext.organizationId,
+          actorUserId: userContext.userId,
+          eventType: generated.auditEvent.eventType,
+          subjectType: generated.auditEvent.subjectType,
+          subjectId: generated.auditEvent.subjectId,
+          beforeJson: null,
+          afterJson: generated.auditEvent.afterJson,
+          requestId: null
+        });
+      }
+      return generated.exportRecord;
+    },
+
+    async listReportSchedules(userContext) {
+      const visibleInquiryIds = new Set(
+        data.genericInquiries
+          .filter((inquiry) => inquiry.organizationId === userContext.organizationId)
+          .filter((inquiry) => inquiryVisibleToUser(inquiry, userContext))
+          .map((inquiry) => inquiry.id)
+      );
+      return data.reportSchedules
+        .filter((schedule) => schedule.organizationId === userContext.organizationId && visibleInquiryIds.has(schedule.inquiryId))
+        .sort((left, right) => left.nextRunAt.localeCompare(right.nextRunAt));
+    },
+
+    async saveReportSchedule(userContext, input) {
+      const inquiry = data.genericInquiries.find(
+        (candidate) => candidate.organizationId === userContext.organizationId && candidate.id === input.inquiryId
+      );
+      if (!inquiry || !inquiryVisibleToUser(inquiry, userContext)) {
+        throw new Error("unknown_inquiry");
+      }
+      const now = new Date().toISOString();
+      const schedule: ReportSchedule = {
+        id: randomUUID(),
+        organizationId: userContext.organizationId,
+        inquiryId: input.inquiryId,
+        name: input.name.trim(),
+        format: input.format,
+        cadence: input.cadence,
+        timezone: input.timezone,
+        parameters: input.parameters,
+        active: input.active,
+        nextRunAt: input.nextRunAt,
+        createdBy: userContext.userId,
+        createdAt: now,
+        updatedAt: now
+      };
+      data.reportSchedules.push(schedule);
+      return schedule;
+    },
+
+    async listReportExports(userContext) {
+      const visibleInquiryIds = new Set(
+        data.genericInquiries
+          .filter((inquiry) => inquiry.organizationId === userContext.organizationId)
+          .filter((inquiry) => inquiryVisibleToUser(inquiry, userContext))
+          .map((inquiry) => inquiry.id)
+      );
+      return data.reportExports
+        .filter((reportExport) => reportExport.organizationId === userContext.organizationId && visibleInquiryIds.has(reportExport.inquiryId))
+        .sort((left, right) => right.generatedAt.localeCompare(left.generatedAt));
     },
 
     async listReportPresets(_organizationId, userId) {

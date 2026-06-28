@@ -1,15 +1,17 @@
 import { Link, useParams } from "@tanstack/react-router";
-import { AlertTriangle, CheckCircle2, Printer, Save, ScanLine, UploadCloud } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ClipboardCheck, PackageCheck, Printer, Route, Save, ScanLine, Send, UploadCloud } from "lucide-react";
 import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Badge, Button, EmptyState, Input, useToast } from "./components/ui";
 import { Scanner } from "./components/Scanner";
 import { useAuth } from "./auth";
 import {
   balanceToPrintableLabel,
+  containerToPrintableLabel,
   decodeLabelPayload,
   encodeLabelPayload,
   locationToPrintableLabel,
   renderBarcodeSvg,
+  stagingToPrintableLabel,
   variantToPrintableLabel,
   type LabelPayload,
   type LabelSymbology,
@@ -17,6 +19,8 @@ import {
 } from "./labels";
 import {
   getStockCountSession,
+  getWmsDashboard,
+  executeWmsScanCommand,
   listInventoryBalances,
   listLocations,
   listMasterData,
@@ -26,14 +30,33 @@ import {
   syncPendingStockCounts
 } from "./lib/api";
 import { useI18n } from "./i18n/I18nProvider";
-import type { InventoryBalance, Location, ProductVariant, StockCountSession, StockCountSessionDetail } from "./types";
+import type {
+  InventoryBalance,
+  Location,
+  ProductVariant,
+  StockCountSession,
+  StockCountSessionDetail,
+  WmsDashboard,
+  WmsScanCommandResult,
+  WmsScanMode
+} from "./types";
 
 export function ScanScreen() {
   const auth = useAuth();
+  const { formatNumber } = useI18n();
+  const { showToast } = useToast();
   const [manualCode, setManualCode] = useState("");
   const [active, setActive] = useState(false);
   const [payload, setPayload] = useState<LabelPayload | null>(null);
   const [message, setMessage] = useState("No scan captured.");
+  const [dashboard, setDashboard] = useState<WmsDashboard | null>(null);
+  const [scanMode, setScanMode] = useState<WmsScanMode>("storage_lookup");
+  const [quantity, setQuantity] = useState("2");
+  const [fromLocationId, setFromLocationId] = useState("");
+  const [toLocationId, setToLocationId] = useState("");
+  const [overrideReason, setOverrideReason] = useState("");
+  const [commandResult, setCommandResult] = useState<WmsScanCommandResult | null>(null);
+  const [commandError, setCommandError] = useState<string | null>(null);
 
   function acceptCode(value: string) {
     setManualCode(value);
@@ -42,12 +65,52 @@ export function ScanScreen() {
     setMessage(decoded ? `${decoded.type} ${decoded.code}` : "Code captured as a manual lookup value.");
   }
 
+  async function loadWms() {
+    if (!auth.session) {
+      return;
+    }
+    const response = await getWmsDashboard(auth.session.accessToken);
+    setDashboard(response.dashboard);
+    setFromLocationId((current) => current || response.dashboard.containers[0]?.locationId || "");
+    setToLocationId((current) => current || response.dashboard.putawayTasks[0]?.suggestedLocationId || response.dashboard.containers[0]?.locationId || "");
+  }
+
+  useEffect(() => {
+    void loadWms();
+  }, [auth.session]);
+
+  async function submitCommand(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!auth.session) {
+      return;
+    }
+    setCommandError(null);
+    try {
+      const selectedBalance = dashboard?.pickSuggestion?.suggestions[0] ?? null;
+      const response = await executeWmsScanCommand(auth.session.accessToken, {
+        mode: scanMode,
+        code: manualCode || payload?.code || dashboard?.putawayTasks[0]?.containerCode || dashboard?.pickTasks[0]?.taskNumber || "LP-PAL-LM-001",
+        quantity: quantity ? Number(quantity) : null,
+        uom: dashboard?.putawayTasks[0]?.uom ?? selectedBalance?.uom ?? null,
+        fromLocationId: ["transfer", "issue", "count", "pick", "put_away"].includes(scanMode) ? fromLocationId || null : null,
+        toLocationId: ["transfer", "put_away"].includes(scanMode) ? toLocationId || null : null,
+        overrideReason: overrideReason || null,
+        clientTransactionId: crypto.randomUUID()
+      });
+      setCommandResult(response.result);
+      showToast({ title: "WMS command complete", description: response.result.message });
+      await loadWms();
+    } catch (error) {
+      setCommandError(error instanceof Error ? error.message : "WMS command failed.");
+    }
+  }
+
   return (
     <section className="screen-grid" aria-labelledby="scan-title">
       <div className="screen-heading">
         <p className="eyebrow">Mobile scan</p>
-        <h2 id="scan-title">Scan labels</h2>
-        <p>Camera scan and manual entry resolve the same Mushroom Compadres label payload.</p>
+        <h2 id="scan-title">WMS scan command center</h2>
+        <p>Receive, put away, transfer, count, pick, pack, ship, and look up warehouse records from the same scan-first surface.</p>
       </div>
 
       <div className="scan-layout">
@@ -102,8 +165,174 @@ export function ScanScreen() {
           </div>
         </aside>
       </div>
+
+      <form className="table-panel compact-form-grid" onSubmit={submitCommand}>
+        <div className="panel-heading">
+          <h3>Scan command</h3>
+          <Badge tone="info">{dashboard?.scanModes.length ?? 0} modes</Badge>
+        </div>
+        <label className="select-field">
+          <span>Mode</span>
+          <select value={scanMode} onChange={(event) => setScanMode(event.target.value as WmsScanMode)}>
+            {[
+              ["receive", "Receive"],
+              ["put_away", "Put away"],
+              ["transfer", "Transfer"],
+              ["issue", "Issue"],
+              ["count", "Count"],
+              ["pick", "Pick"],
+              ["pack", "Pack"],
+              ["ship", "Ship"],
+              ["storage_lookup", "Storage lookup"],
+              ["item_lookup", "Item lookup"],
+              ["container_lookup", "Container lookup"]
+            ].map(([value, label]) => (
+              <option key={value} value={value}>{label}</option>
+            ))}
+          </select>
+        </label>
+        <Input label="Quantity" inputMode="decimal" value={quantity} onChange={(event) => setQuantity(event.target.value)} />
+        <label className="select-field">
+          <span>From</span>
+          <select value={fromLocationId} onChange={(event) => setFromLocationId(event.target.value)}>
+            <option value="">Select source</option>
+            {(dashboard ? uniqueLocations(dashboard) : []).map((location) => (
+              <option key={location.id} value={location.id}>{location.name}</option>
+            ))}
+          </select>
+        </label>
+        <label className="select-field">
+          <span>To</span>
+          <select value={toLocationId} onChange={(event) => setToLocationId(event.target.value)}>
+            <option value="">Select destination</option>
+            {(dashboard ? uniqueLocations(dashboard) : []).map((location) => (
+              <option key={location.id} value={location.id}>{location.name}</option>
+            ))}
+          </select>
+        </label>
+        <Input label="Override reason" value={overrideReason} onChange={(event) => setOverrideReason(event.target.value)} placeholder="Required when bypassing FEFO/FIFO suggestion" />
+        <Button type="submit" disabled={!auth.session}>
+          <Send aria-hidden="true" size={18} />
+          Execute
+        </Button>
+        {commandError ? <p className="form-error">{commandError}</p> : null}
+        {commandResult ? (
+          <div className="scan-result">
+            <Badge tone={commandResult.warnings.length > 0 ? "warning" : "success"}>{commandResult.mode}</Badge>
+            <strong>{commandResult.message}</strong>
+            <span>{commandResult.warnings[0] ?? `${commandResult.lookup.balances.length} balance match(es)`}</span>
+          </div>
+        ) : null}
+      </form>
+
+      {dashboard ? (
+        <>
+          <div className="metric-grid">
+            <article className="metric-panel">
+              <span>Open put-away</span>
+              <strong>{formatNumber(dashboard.putawayTasks.filter((task) => task.status !== "complete").length)}</strong>
+            </article>
+            <article className="metric-panel">
+              <span>Wave picks</span>
+              <strong>{formatNumber(dashboard.pickTasks.length)}</strong>
+            </article>
+            <article className="metric-panel">
+              <span>Containers</span>
+              <strong>{formatNumber(dashboard.containers.length)}</strong>
+            </article>
+          </div>
+
+          <div className="table-panel">
+            <div className="panel-heading">
+              <h3>Put-away queue</h3>
+              <PackageCheck aria-hidden="true" size={18} />
+            </div>
+            <table className="list-table">
+              <thead><tr><th>Task</th><th>Container</th><th>Lot</th><th>Suggestion</th><th>Status</th></tr></thead>
+              <tbody>
+                {dashboard.putawayTasks.map((task) => (
+                  <tr key={task.id}>
+                    <td>{task.taskNumber}</td>
+                    <td>{task.containerCode ?? "-"}</td>
+                    <td>{task.lotCode ?? task.itemId}</td>
+                    <td>{task.suggestions[0]?.locationName ?? task.suggestedLocationId ?? "None"}</td>
+                    <td><Badge tone={task.status === "complete" ? "success" : "warning"}>{task.status}</Badge></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="table-panel">
+            <div className="panel-heading">
+              <h3>Wave pick board</h3>
+              <Route aria-hidden="true" size={18} />
+            </div>
+            <table className="list-table">
+              <thead><tr><th>Seq</th><th>Task</th><th>Lot</th><th>Tote</th><th>Suggestion</th><th>Status</th></tr></thead>
+              <tbody>
+                {dashboard.pickTasks.map((task) => (
+                  <tr key={task.id}>
+                    <td>{task.sequence}</td>
+                    <td>{task.taskNumber}</td>
+                    <td>{task.lotCode ?? task.itemId}</td>
+                    <td>{task.toteCode ?? "-"}</td>
+                    <td>{task.suggestionReason}</td>
+                    <td><Badge tone={task.status === "complete" ? "success" : "info"}>{task.status}</Badge></td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+
+          <div className="table-panel">
+            <div className="panel-heading">
+              <h3>Pack verification</h3>
+              <ClipboardCheck aria-hidden="true" size={18} />
+            </div>
+            <table className="list-table">
+              <thead><tr><th>Session</th><th>Status</th><th>Verified</th><th>Exception</th></tr></thead>
+              <tbody>
+                {dashboard.packSessions.map((session) => (
+                  <tr key={session.id}>
+                    <td>{session.sessionNumber}</td>
+                    <td><Badge tone={session.status === "verified" || session.status === "shipped" ? "success" : session.status === "exception" ? "warning" : "info"}>{session.status}</Badge></td>
+                    <td>{formatNumber(session.verifiedLineCount)}</td>
+                    <td>{session.exceptionReason ?? "None"}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </>
+      ) : null}
     </section>
   );
+}
+
+function uniqueLocations(dashboard: WmsDashboard): Location[] {
+  const locations = new Map<string, Location>();
+  for (const container of dashboard.containers) {
+    locations.set(container.locationId, {
+      id: container.locationId,
+      code: container.locationId,
+      name: container.locationName ?? container.locationId,
+      type: "warehouse",
+      isActive: true
+    });
+  }
+  for (const task of dashboard.putawayTasks) {
+    for (const suggestion of task.suggestions) {
+      locations.set(suggestion.locationId, {
+        id: suggestion.locationId,
+        code: suggestion.locationId,
+        name: suggestion.locationName,
+        type: suggestion.zoneType,
+        isActive: true
+      });
+    }
+  }
+  return [...locations.values()];
 }
 
 export function LabelPrintScreen() {
@@ -111,6 +340,7 @@ export function LabelPrintScreen() {
   const [balances, setBalances] = useState<InventoryBalance[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [variants, setVariants] = useState<ProductVariant[]>([]);
+  const [wms, setWms] = useState<WmsDashboard | null>(null);
   const [symbology, setSymbology] = useState<LabelSymbology>("qrcode");
 
   useEffect(() => {
@@ -120,11 +350,13 @@ export function LabelPrintScreen() {
     Promise.all([
       listInventoryBalances(auth.session.accessToken),
       listLocations(auth.session.accessToken),
-      listMasterData(auth.session.accessToken)
-    ]).then(([balanceResponse, locationResponse, masterData]) => {
+      listMasterData(auth.session.accessToken),
+      getWmsDashboard(auth.session.accessToken)
+    ]).then(([balanceResponse, locationResponse, masterData, wmsResponse]) => {
       setBalances(balanceResponse.balances);
       setLocations(locationResponse.locations);
       setVariants(masterData.productVariants);
+      setWms(wmsResponse.dashboard);
     });
   }, [auth.session]);
 
@@ -132,9 +364,11 @@ export function LabelPrintScreen() {
     return [
       ...balances.slice(0, 6).map(balanceToPrintableLabel),
       ...variants.slice(0, 3).map(variantToPrintableLabel),
-      ...locations.slice(0, 4).map(locationToPrintableLabel)
+      ...locations.slice(0, 4).map(locationToPrintableLabel),
+      ...(wms?.containers.slice(0, 4).map(containerToPrintableLabel) ?? []),
+      ...(wms?.packSessions.slice(0, 2).map(stagingToPrintableLabel) ?? [])
     ];
-  }, [balances, locations, variants]);
+  }, [balances, locations, variants, wms]);
 
   return (
     <section className="screen-grid" aria-labelledby="labels-title">

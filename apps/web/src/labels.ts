@@ -1,7 +1,7 @@
 import bwipjs from "bwip-js";
-import type { InventoryBalance, Location, Lot, ProductVariant } from "./types";
+import type { InventoryBalance, Location, Lot, ProductVariant, PackSession, WmsContainer } from "./types";
 
-export type LabelEntityType = "lot" | "item" | "location";
+export type LabelEntityType = "lot" | "item" | "location" | "container" | "pallet" | "bin" | "staging";
 export type LabelSymbology = "qrcode" | "datamatrix" | "code128";
 
 export type LabelPayload = {
@@ -39,7 +39,7 @@ export function decodeLabelPayload(value: string): LabelPayload | null {
     if (
       version !== 1 ||
       !parsed.type ||
-      !["lot", "item", "location"].includes(parsed.type) ||
+      !["lot", "item", "location", "container", "pallet", "bin", "staging"].includes(parsed.type) ||
       !id ||
       !parsed.code
     ) {
@@ -130,6 +130,39 @@ export function locationToPrintableLabel(location: Location): PrintableLabel {
       id: location.id,
       code: location.code,
       name: location.name
+    }
+  };
+}
+
+export function containerToPrintableLabel(container: WmsContainer): PrintableLabel {
+  const type = container.containerType === "pallet" ? "pallet" : container.containerType === "bin" ? "bin" : "container";
+  return {
+    id: container.id,
+    title: container.containerCode,
+    subtitle: `${container.containerType} / ${container.locationName ?? container.locationId}`,
+    humanCode: container.containerCode,
+    payload: {
+      v: 1,
+      type,
+      id: container.id,
+      code: container.containerCode,
+      name: container.locationName ?? container.containerType
+    }
+  };
+}
+
+export function stagingToPrintableLabel(session: PackSession): PrintableLabel {
+  return {
+    id: session.id,
+    title: session.sessionNumber,
+    subtitle: `Pack ${session.status}`,
+    humanCode: session.sessionNumber,
+    payload: {
+      v: 1,
+      type: "staging",
+      id: session.id,
+      code: session.sessionNumber,
+      name: session.status
     }
   };
 }

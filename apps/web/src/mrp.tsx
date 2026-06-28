@@ -3,6 +3,7 @@ import {
   BarChart3,
   CalendarClock,
   ClipboardCheck,
+  GripVertical,
   Factory,
   GitCompare,
   PackagePlus,
@@ -14,8 +15,19 @@ import { useEffect, useMemo, useState } from "react";
 import { Badge, Button, Input, Tabs, useToast } from "./components/ui";
 import { useAuth } from "./auth";
 import { useI18n } from "./i18n/I18nProvider";
-import { convertMrpSuggestion, listLocations, runMrp } from "./lib/api";
-import type { CapacityLoadLine, CtpResult, Location, MrpBucketLine, MrpPlan, MrpShortage, MrpSuggestion } from "./types";
+import { convertMrpSuggestion, listLocations, regenerateFiniteSchedule, resequenceScheduleOperation, runMrp } from "./lib/api";
+import type {
+  CapacityLoadLine,
+  CtpResult,
+  DispatchBoardLine,
+  Location,
+  MaterialAvailabilityConstraint,
+  MrpBucketLine,
+  MrpPlan,
+  MrpShortage,
+  MrpSuggestion,
+  RoughCutCapacityLine
+} from "./types";
 
 function suggestionTone(type: MrpSuggestion["suggestionType"]): "info" | "success" {
   return type === "production_order" ? "info" : "success";
@@ -114,6 +126,51 @@ export function MrpScreen() {
     }
   }
 
+  async function regenerateSchedule() {
+    if (!auth.session) {
+      return;
+    }
+    setLoading(true);
+    setError(null);
+    try {
+      const horizonEnd = new Date(`${horizonDate}T23:59:59.000Z`).toISOString();
+      const response = await regenerateFiniteSchedule(auth.session.accessToken, {
+        horizonEnd,
+        bucket: bucketGranularity,
+        ...(locationId ? { locationId } : {})
+      });
+      setPlan(response.plan);
+      toast.showToast({
+        title: "Schedule regenerated",
+        description: `${response.plan.scheduleRun.operationCount} operations recalculated`
+      });
+    } catch (scheduleError) {
+      setError(scheduleError instanceof Error ? scheduleError.message : "Schedule could not be regenerated.");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function resequenceOperation(operationId: string, afterOperationId: string | null) {
+    if (!auth.session) {
+      return;
+    }
+    setError(null);
+    try {
+      const horizonEnd = new Date(`${horizonDate}T23:59:59.000Z`).toISOString();
+      const response = await resequenceScheduleOperation(auth.session.accessToken, {
+        operationId,
+        afterOperationId,
+        reason: "Planner drag/resequence from dispatch board",
+        horizonEnd
+      });
+      setPlan(response.plan);
+      toast.showToast({ title: "Operation resequenced", description: "Dependent operations and warnings recalculated" });
+    } catch (scheduleError) {
+      setError(scheduleError instanceof Error ? scheduleError.message : "Operation could not be resequenced.");
+    }
+  }
+
   return (
     <section className="screen-grid" aria-labelledby="mrp-title">
       <div className="screen-heading">
@@ -156,7 +213,11 @@ export function MrpScreen() {
           </select>
         </label>
         <div className="form-actions">
-          <Button type="submit" disabled={loading}>
+          <Button type="button" variant="secondary" disabled={loading || !plan} onClick={() => void regenerateSchedule()}>
+            <CalendarClock aria-hidden="true" size={18} />
+            Regenerate schedule
+          </Button>
+          <Button type="submit" disabled={loading} data-guide="mrp.run">
             <RefreshCw aria-hidden="true" size={18} />
             {loading ? "Calculating" : "Run MRP"}
           </Button>
@@ -196,7 +257,7 @@ export function MrpScreen() {
             id: "shortages",
             label: "Shortages",
             content: (
-              <div className="table-panel">
+              <div className="table-panel" data-guide="mrp.review-table">
                 <div className="panel-heading">
                   <h3>Shortage report</h3>
                   <Badge tone="warning">
@@ -274,9 +335,47 @@ export function MrpScreen() {
             )
           },
           {
+            id: "finite-board",
+            label: "Finite board",
+            content: (
+              <FiniteScheduleBoard
+                plan={plan}
+                formatNumber={formatNumber}
+                formatDateTime={formatDateTime}
+              />
+            )
+          },
+          {
+            id: "dispatch",
+            label: "Dispatch",
+            content: (
+              <DispatchBoard
+                rows={plan?.dispatchBoard ?? []}
+                formatNumber={formatNumber}
+                formatDateTime={formatDateTime}
+                onResequence={(operationId, afterOperationId) => void resequenceOperation(operationId, afterOperationId)}
+              />
+            )
+          },
+          {
+            id: "rough-cut",
+            label: "Rough cut",
+            content: <RoughCutCapacityView lines={plan?.roughCutCapacity ?? []} formatNumber={formatNumber} formatDate={formatDate} />
+          },
+          {
+            id: "materials",
+            label: "Materials",
+            content: <MaterialConstraintView rows={plan?.materialConstraints ?? []} formatNumber={formatNumber} formatDateTime={formatDateTime} />
+          },
+          {
             id: "ctp",
             label: "CTP",
             content: <CapableToPromiseView rows={plan?.capableToPromise ?? []} formatNumber={formatNumber} formatDateTime={formatDateTime} />
+          },
+          {
+            id: "history",
+            label: "Run history",
+            content: <ScheduleRunHistory plan={plan} formatDateTime={formatDateTime} />
           },
           {
             id: "scenarios",
@@ -333,6 +432,7 @@ export function MrpScreen() {
                             type="button"
                             onClick={() => void convertSuggestion(suggestion)}
                             disabled={convertingId === suggestion.id}
+                            data-guide="mrp.create-draft"
                           >
                             <PackagePlus aria-hidden="true" size={16} />
                             {convertingId === suggestion.id ? "Converting" : "Create draft"}
@@ -462,6 +562,262 @@ function CapacityView({
               </tr>
             ))}
             {suggestions.length === 0 ? <tr><td colSpan={3}>No finite-capacity moves suggested.</td></tr> : null}
+          </tbody>
+        </table>
+      </div>
+    </div>
+  );
+}
+
+function FiniteScheduleBoard({
+  plan,
+  formatNumber,
+  formatDateTime
+}: {
+  plan: MrpPlan | null;
+  formatNumber: (value: number) => string;
+  formatDateTime: (value: Date) => string;
+}) {
+  const operations = plan?.scheduleOperations ?? [];
+  return (
+    <div className="split-grid">
+      <div className="table-panel">
+        <div className="panel-heading">
+          <h3>Finite schedule board</h3>
+          <Badge tone={(plan?.scheduleRun.overloadCount ?? 0) > 0 ? "warning" : "success"}>
+            <CalendarClock aria-hidden="true" size={16} />
+            {plan?.scheduleRun.runNumber ?? "No run"}
+          </Badge>
+        </div>
+        <table className="list-table">
+          <thead><tr><th>Operation</th><th>Finite slot</th><th>Resources</th><th>Warnings</th></tr></thead>
+          <tbody>
+            {operations.map((operation) => (
+              <tr key={operation.id}>
+                <td>
+                  {operation.orderNumber} / {operation.operationCode}
+                  <div className="muted-line">{operation.description}</div>
+                </td>
+                <td>
+                  {operation.finiteStartAt ? formatDateTime(new Date(operation.finiteStartAt)) : "Unscheduled"}
+                  <div className="muted-line">{formatNumber(operation.blockMinutes)} min block</div>
+                </td>
+                <td>
+                  {operation.workCenterName}
+                  <div className="muted-line">{[operation.equipmentName, operation.laborRoleName].filter(Boolean).join(" / ")}</div>
+                </td>
+                <td>
+                  {operation.warnings.length > 0 ? (
+                    <>
+                      {operation.warnings.map((warning) => (
+                        <Badge key={`${operation.id}-${warning.type}`} tone={warning.severity === "critical" ? "warning" : "info"}>
+                          {sourceLabel(warning.type)}
+                        </Badge>
+                      ))}
+                      <div className="muted-line">{operation.warnings.map((warning) => warning.message).join(" ")}</div>
+                    </>
+                  ) : (
+                    <Badge tone="success">Clear</Badge>
+                  )}
+                </td>
+              </tr>
+            ))}
+            {operations.length === 0 ? <tr><td colSpan={4}>No operations scheduled in this horizon.</td></tr> : null}
+          </tbody>
+        </table>
+      </div>
+      <div className="table-panel">
+        <div className="panel-heading">
+          <h3>Promise-date explanation</h3>
+          <Badge tone="info"><ShieldCheck aria-hidden="true" size={16} /> CTP</Badge>
+        </div>
+        {(plan?.capableToPromise ?? []).slice(0, 3).map((row) => (
+          <div key={row.id} className="stacked-summary-row">
+            <strong>{row.orderNumber}</strong>
+            <span>{row.promisedAt ? formatDateTime(new Date(row.promisedAt)) : "No promise inside horizon"}</span>
+            <p className="muted-line">{row.explanation.join(" ")}</p>
+          </div>
+        ))}
+        {(plan?.capableToPromise.length ?? 0) === 0 ? <p>No CTP rows in scope.</p> : null}
+      </div>
+    </div>
+  );
+}
+
+function DispatchBoard({
+  rows,
+  formatNumber,
+  formatDateTime,
+  onResequence
+}: {
+  rows: DispatchBoardLine[];
+  formatNumber: (value: number) => string;
+  formatDateTime: (value: Date) => string;
+  onResequence: (operationId: string, afterOperationId: string | null) => void;
+}) {
+  return (
+    <div className="table-panel">
+      <div className="panel-heading">
+        <h3>Dispatch board</h3>
+        <Badge tone="info"><GripVertical aria-hidden="true" size={16} /> Resequence</Badge>
+      </div>
+      <table className="list-table">
+        <thead><tr><th>Rank</th><th>Operation</th><th>Ready</th><th>Priority</th><th>Action</th></tr></thead>
+        <tbody>
+          {rows.map((row, index) => (
+            <tr key={row.id}>
+              <td>{row.dispatchRank}</td>
+              <td>
+                {row.orderNumber} / {row.operationCode}
+                <div className="muted-line">{row.constraintSummary}</div>
+              </td>
+              <td>{row.readyAt ? formatDateTime(new Date(row.readyAt)) : "Open"}</td>
+              <td>{formatNumber(row.dispatchPriority)}</td>
+              <td>
+                <Button
+                  size="sm"
+                  type="button"
+                  variant="secondary"
+                  disabled={row.status === "completed"}
+                  onClick={() => onResequence(row.id, rows[Math.max(0, index - 1)]?.id ?? null)}
+                >
+                  <GripVertical aria-hidden="true" size={16} />
+                  Move here
+                </Button>
+              </td>
+            </tr>
+          ))}
+          {rows.length === 0 ? <tr><td colSpan={5}>No dispatch rows in this horizon.</td></tr> : null}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function RoughCutCapacityView({
+  lines,
+  formatNumber,
+  formatDate
+}: {
+  lines: RoughCutCapacityLine[];
+  formatNumber: (value: number) => string;
+  formatDate: (value: Date) => string;
+}) {
+  return (
+    <div className="table-panel">
+      <div className="panel-heading">
+        <h3>Rough-cut capacity</h3>
+        <Badge tone="warning"><BarChart3 aria-hidden="true" size={16} /> {formatNumber(lines.filter((line) => line.overloadMinutes > 0).length)} overloads</Badge>
+      </div>
+      <table className="list-table">
+        <thead><tr><th>Resource</th><th>Date</th><th>Planned</th><th>Open</th><th>Utilization</th></tr></thead>
+        <tbody>
+          {lines.map((line) => (
+            <tr key={line.id}>
+              <td>
+                {line.resourceName}
+                <div className="muted-line">{sourceLabel(line.resourceType)}</div>
+              </td>
+              <td>{formatDate(new Date(line.bucketStart))}</td>
+              <td>{formatNumber(line.plannedMinutes)} min</td>
+              <td>{formatNumber(line.openMinutes)} min</td>
+              <td>
+                <Badge tone={line.overloadMinutes > 0 ? "warning" : "success"}>{formatNumber(line.utilizationPercent)}%</Badge>
+              </td>
+            </tr>
+          ))}
+          {lines.length === 0 ? <tr><td colSpan={5}>No rough-cut capacity in scope.</td></tr> : null}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function MaterialConstraintView({
+  rows,
+  formatNumber,
+  formatDateTime
+}: {
+  rows: MaterialAvailabilityConstraint[];
+  formatNumber: (value: number) => string;
+  formatDateTime: (value: Date) => string;
+}) {
+  return (
+    <div className="table-panel">
+      <div className="panel-heading">
+        <h3>Material constraints</h3>
+        <Badge tone={rows.length > 0 ? "warning" : "success"}><AlertTriangle aria-hidden="true" size={16} /> {formatNumber(rows.length)} holds</Badge>
+      </div>
+      <table className="list-table">
+        <thead><tr><th>Item</th><th>Shortage</th><th>Constrained start</th><th>Explanation</th></tr></thead>
+        <tbody>
+          {rows.map((row) => (
+            <tr key={row.id}>
+              <td>
+                {row.name}
+                <div className="muted-line">{row.sku ?? row.itemId}</div>
+              </td>
+              <td>{formatNumber(row.shortageQuantity)} {row.uom}</td>
+              <td>{row.constrainedStartAt ? formatDateTime(new Date(row.constrainedStartAt)) : "Open"}</td>
+              <td>{row.explanation}</td>
+            </tr>
+          ))}
+          {rows.length === 0 ? <tr><td colSpan={4}>No material constraints on open production starts.</td></tr> : null}
+        </tbody>
+      </table>
+    </div>
+  );
+}
+
+function ScheduleRunHistory({
+  plan,
+  formatDateTime
+}: {
+  plan: MrpPlan | null;
+  formatDateTime: (value: Date) => string;
+}) {
+  return (
+    <div className="split-grid">
+      <div className="table-panel">
+        <div className="panel-heading">
+          <h3>Schedule run history</h3>
+          <Badge tone="info"><CalendarClock aria-hidden="true" size={16} /> {plan?.scheduleRun.status ?? "No run"}</Badge>
+        </div>
+        {plan?.scheduleRun ? (
+          <table className="list-table">
+            <thead><tr><th>Run</th><th>Generated</th><th>Operations</th><th>Warnings</th></tr></thead>
+            <tbody>
+              <tr>
+                <td>{plan.scheduleRun.runNumber}</td>
+                <td>{formatDateTime(new Date(plan.scheduleRun.generatedAt))}</td>
+                <td>{plan.scheduleRun.operationCount}</td>
+                <td>
+                  {plan.scheduleRun.overloadCount} overloads / {plan.scheduleRun.materialConstraintCount} material holds / {plan.scheduleRun.lateOperationCount} late
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        ) : (
+          <p>No schedule runs in scope.</p>
+        )}
+        <div className="muted-line">{plan?.scheduleRun.explanation.join(" ")}</div>
+      </div>
+      <div className="table-panel">
+        <div className="panel-heading">
+          <h3>Schedule audit trail</h3>
+          <Badge tone="info">{plan?.scheduleAudits.length ?? 0}</Badge>
+        </div>
+        <table className="list-table">
+          <thead><tr><th>Event</th><th>Subject</th><th>Occurred</th></tr></thead>
+          <tbody>
+            {(plan?.scheduleAudits ?? []).map((audit) => (
+              <tr key={audit.id}>
+                <td>{sourceLabel(audit.eventType)}</td>
+                <td>{audit.subjectId}</td>
+                <td>{formatDateTime(new Date(audit.occurredAt))}</td>
+              </tr>
+            ))}
+            {(plan?.scheduleAudits.length ?? 0) === 0 ? <tr><td colSpan={3}>No schedule audit events in scope.</td></tr> : null}
           </tbody>
         </table>
       </div>

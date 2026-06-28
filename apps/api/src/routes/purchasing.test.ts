@@ -78,10 +78,15 @@ describe("purchasing API", () => {
           lot: expect.objectContaining({
             lotCode: "ALC-RCV-TEST-001",
             sourceType: "receipt",
-            qcStatus: "pending",
+            qcStatus: "released",
             metadataJson: expect.objectContaining({
               supplierLotNumber: "SUP-ALC-TEST-001"
             })
+          }),
+          acceptedQuantity: 10,
+          quarantinedQuantity: 0,
+          receivingLabel: expect.objectContaining({
+            status: "released"
           }),
           coaAttachments: [
             expect.objectContaining({
@@ -122,6 +127,99 @@ describe("purchasing API", () => {
           lotCode: "ALC-RCV-TEST-001",
           availableQuantity: 10,
           uom: "l"
+        })
+      ])
+    );
+  });
+
+  it("keeps quarantined receipt quantities held until QC releases the lot hold", async () => {
+    const receiptResponse = await app.inject({
+      method: "POST",
+      url: "/api/purchasing/receipts",
+      headers: authHeaders("owner-token"),
+      payload: {
+        receiptNumber: "RCPT-QUAR-001",
+        purchaseOrderId: "purchase-order-alcohol-001",
+        supplierId: "supplier-bio-farms",
+        receivedAt: "2026-06-26T14:00:00.000Z",
+        locationId: "loc-pack",
+        billOfLadingNumber: "BOL-TEST-QUAR-001",
+        carrier: "DHL Freight",
+        packingSlipNumber: "PS-TEST-QUAR-001",
+        clientTransactionId: "tx-receive-quarantine-001",
+        lines: [
+          {
+            purchaseOrderLineId: "purchase-order-line-alcohol-001",
+            lotCode: "ALC-QUAR-TEST-001",
+            supplierLotNumber: "SUP-ALC-QUAR-001",
+            receivedQuantity: 8,
+            acceptedQuantity: 3,
+            quarantinedQuantity: 5,
+            rejectedQuantity: 0,
+            damagedQuantity: 0,
+            disposition: "partial",
+            dispositionReason: "COA package missing page two.",
+            uom: "l",
+            expiryDate: "2027-08-31T00:00:00.000Z"
+          }
+        ]
+      }
+    });
+
+    expect(receiptResponse.statusCode).toBe(201);
+    const line = receiptResponse.json().receipt.lines[0];
+    expect(line).toMatchObject({
+      acceptedQuantity: 3,
+      quarantinedQuantity: 5,
+      lotHoldId: expect.any(String),
+      receivingLabel: expect.objectContaining({ status: "partial" }),
+      stockMovement: expect.objectContaining({ movementType: "receipt", quantity: 8 })
+    });
+
+    const heldBalances = await app.inject({
+      method: "GET",
+      url: "/api/inventory/balances",
+      headers: authHeaders("owner-token")
+    });
+    expect(heldBalances.json().balances).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          lotCode: "ALC-QUAR-TEST-001",
+          availableQuantity: 3,
+          heldQuantity: 5
+        })
+      ])
+    );
+
+    const releaseResponse = await app.inject({
+      method: "POST",
+      url: `/api/quality/holds/${line.lotHoldId}/decision`,
+      headers: authHeaders("owner-token"),
+      payload: {
+        decision: "release",
+        reason: "COA evidence reviewed and accepted.",
+        evidence: "coa-review-approved"
+      }
+    });
+
+    expect(releaseResponse.statusCode).toBe(200);
+    expect(releaseResponse.json().hold).toMatchObject({
+      status: "released",
+      decision: "release",
+      evidence: "coa-review-approved"
+    });
+
+    const releasedBalances = await app.inject({
+      method: "GET",
+      url: "/api/inventory/balances",
+      headers: authHeaders("owner-token")
+    });
+    expect(releasedBalances.json().balances).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          lotCode: "ALC-QUAR-TEST-001",
+          availableQuantity: 8,
+          heldQuantity: 0
         })
       ])
     );

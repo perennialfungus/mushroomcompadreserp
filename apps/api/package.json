@@ -15,7 +15,7 @@
     "build": "node ../../node_modules/typescript/lib/tsc.js -p tsconfig.build.json",
     "dev": "node ../../node_modules/tsx/dist/cli.mjs watch src/server.ts",
     "lint": "node ../../node_modules/eslint/bin/eslint.js src/index.ts src/index.test.ts",
-    "test": "node ../../node_modules/vitest/vitest.mjs run --environment node src/index.test.ts src/routes/shopify.test.ts src/routes/reports.test.ts src/routes/crm.test.ts src/routes/mock-recalls.test.ts src/routes/ebr.test.ts src/routes/costing.test.ts src/routes/change-control.test.ts src/routes/import-center.test.ts src/routes/dashboards.test.ts",
+    "test": "node ../../node_modules/vitest/vitest.mjs run --environment node src/index.test.ts src/routes/shopify.test.ts src/routes/reports.test.ts src/routes/crm.test.ts src/routes/mock-recalls.test.ts src/routes/ebr.test.ts src/routes/costing.test.ts src/routes/change-control.test.ts src/routes/import-center.test.ts src/routes/dashboards.test.ts src/routes/workflows.test.ts src/routes/planning.test.ts src/routes/weigh-dispense.test.ts src/routes/edi.test.ts",
     "typecheck": "node ../../node_modules/typescript/lib/tsc.js -p tsconfig.json --noEmit"
   },
   "dependencies": {

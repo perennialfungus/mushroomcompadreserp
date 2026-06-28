@@ -1,7 +1,8 @@
 import type { FastifyInstance, FastifyReply, preHandlerHookHandler } from "fastify";
+import { redactFieldsForPermissions } from "@mushroom-compadres/domain";
 import { z } from "zod";
 import { writeAuditEvent } from "../audit.js";
-import { requireRoles } from "../rbac.js";
+import { requirePermission, requireRoles } from "../rbac.js";
 import type {
   ApiDataStore,
   AuthenticatedRequest,
@@ -296,12 +297,13 @@ export async function masterDataRoutes(app: FastifyInstance, options: MasterData
   const readMasterData = requireRoles({
     anyOf: ["owner_admin", "production_farm", "packing_fulfillment", "sales_wholesale", "auditor"]
   });
+  const readMasterDataPermission = requirePermission({ permissionCode: "foundation.master_data", level: "view" });
   const adminOnly = requireRoles({ anyOf: ["owner_admin"] });
 
   app.get(
     "/api/master-data",
     {
-      preHandler: [options.requireUserContext, readMasterData],
+      preHandler: [options.requireUserContext, readMasterData, readMasterDataPermission],
       schema: {
         tags: ["master-data"],
         summary: "List organization master data",
@@ -310,7 +312,25 @@ export async function masterDataRoutes(app: FastifyInstance, options: MasterData
     },
     async (request) => {
       const userContext = (request as AuthenticatedRequest).userContext;
-      return options.dataStore.listMasterData(userContext.organizationId);
+      const snapshot = await options.dataStore.listMasterData(userContext.organizationId);
+      const matrix = await options.dataStore.listPermissionMatrix(userContext.organizationId);
+      return {
+        ...snapshot,
+        productVariants: snapshot.productVariants.map((variant) =>
+          redactFieldsForPermissions(
+            variant as unknown as Record<string, unknown>,
+            matrix.fieldRules,
+            userContext.effectivePermissions ?? []
+          )
+        ),
+        locations: snapshot.locations.map((location) =>
+          redactFieldsForPermissions(
+            location as unknown as Record<string, unknown>,
+            matrix.fieldRules,
+            userContext.effectivePermissions ?? []
+          )
+        )
+      };
     }
   );
 

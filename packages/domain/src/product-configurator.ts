@@ -60,6 +60,16 @@ export type ProductTemplate = {
   defaultQcTests: string[];
   shopifyPlaceholders: string[];
   labelFields: string[];
+  templateVersion?: string;
+  approvalStatus?: ConfiguratorApprovalStatus;
+  changeRequestId?: string | null;
+  basePrice?: number;
+  baseExpectedCost?: number;
+  currency?: string;
+  optionGroups?: ConfiguratorOptionGroup[];
+  options?: ConfiguratorOption[];
+  configuratorRules?: ConfiguratorRule[];
+  ruleTests?: ConfiguratorRuleTest[];
 };
 
 export type ProductTemplateFormulaLine = {
@@ -69,6 +79,7 @@ export type ProductTemplateFormulaLine = {
   uom: string;
   wastePercent?: number;
   critical?: boolean;
+  unitCost?: number;
 };
 
 export type ProductConfigurationInput = {
@@ -85,9 +96,157 @@ export type ProductConfigurationInput = {
   channel: ProductChannel;
   labelData?: Record<string, string | null | undefined>;
   shopifyFields?: Record<string, string | null | undefined>;
+  selectedOptions?: Record<string, string | string[] | null | undefined>;
   previewLayout?: Partial<ProductPreviewLayoutConfig>;
   skuOverride?: string | null;
   adminOverrideReason?: string | null;
+};
+
+export type ConfiguratorApprovalStatus = "draft" | "pending_approval" | "approved" | "active" | "retired";
+
+export type ConfiguratorOptionGroup = {
+  id: string;
+  templateId: string;
+  code: string;
+  name: string;
+  required: boolean;
+  minSelections: number;
+  maxSelections: number;
+  defaultOptionIds: string[];
+  displayOrder: number;
+};
+
+export type ConfiguratorOption = {
+  id: string;
+  groupId: string;
+  code: string;
+  label: string;
+  skuCode?: string;
+  priceDelta?: number;
+  expectedCostDelta?: number;
+  formulaLines?: ProductTemplateFormulaLine[];
+  routingOperations?: ConfiguratorRoutingOperation[];
+  labelFields?: string[];
+  qcTests?: string[];
+  packaging?: string[];
+  supplementalItems?: SupplementalItem[];
+  requiresShopifyMapping?: boolean;
+  dependsOn?: ConfiguratorOptionCondition[];
+  incompatibleWith?: string[];
+};
+
+export type ConfiguratorOptionCondition = {
+  groupCode: string;
+  optionCodes: string[];
+};
+
+export type ConfiguratorRoutingOperation = {
+  operationId: string;
+  name: string;
+  runtimeMinutes: number;
+  controlPoint?: boolean;
+};
+
+export type ConfiguratorRuleStatus = "draft" | "pending_approval" | "approved" | "active" | "retired";
+
+export type ConfiguratorRule = {
+  id: string;
+  templateId: string;
+  name: string;
+  status: ConfiguratorRuleStatus;
+  changeRequestId?: string | null;
+  appliesWhen: ConfiguratorOptionCondition[];
+  effects: ConfiguratorRuleEffects;
+};
+
+export type ConfiguratorRuleEffects = {
+  skuSuffix?: string;
+  formulaLines?: ProductTemplateFormulaLine[];
+  routingOperations?: ConfiguratorRoutingOperation[];
+  labelFields?: string[];
+  qcTests?: string[];
+  packaging?: string[];
+  supplementalItems?: SupplementalItem[];
+  priceDelta?: number;
+  expectedCostDelta?: number;
+  shopifyMappingRequired?: boolean;
+};
+
+export type SupplementalItem = {
+  id: string;
+  code: string;
+  name: string;
+  kind: "packaging_insert" | "bundle_component" | "accessory" | "sample" | "required_add_on";
+  quantity: number;
+  uom: string;
+  priceDelta?: number;
+  expectedCostDelta?: number;
+  required: boolean;
+};
+
+export type ConfiguratorQuotePreview = {
+  currency: string;
+  basePrice: number;
+  price: number;
+  expectedCost: number;
+  margin: number;
+  marginPercent: number;
+  priceEffects: ConfiguratorEffectLine[];
+  costEffects: ConfiguratorEffectLine[];
+};
+
+export type ConfiguratorEffectLine = {
+  sourceType: "template" | "option" | "rule" | "supplemental_item" | "formula_line";
+  sourceId: string;
+  label: string;
+  amount: number;
+};
+
+export type ConfiguratorOptionResolution = {
+  selectedOptionIds: string[];
+  selectedOptionCodes: string[];
+  defaultedOptionIds: string[];
+  appliedRuleIds: string[];
+  invalidReasons: ProductReadinessGap[];
+};
+
+export type GeneratedProductionDefinition = {
+  formulaLines: ProductTemplateFormulaLine[];
+  routingOperations: ConfiguratorRoutingOperation[];
+  labelFields: string[];
+  qcTests: string[];
+  packaging: string[];
+  supplementalItems: SupplementalItem[];
+  shopifyMappingReady: boolean;
+  sourceRuleIds: string[];
+};
+
+export type ConfiguratorRuleTest = {
+  id: string;
+  templateId: string;
+  name: string;
+  input: Omit<ProductConfigurationInput, "templateId" | "family"> & {
+    templateId?: string;
+    family?: ProductFamily;
+  };
+  expectedValid: boolean;
+  expectedSkuIncludes?: string[];
+  expectedSupplementalItemCodes?: string[];
+  expectedPrice?: number;
+  expectedCost?: number;
+  expectedGapCodes?: ProductReadinessGap["code"][];
+};
+
+export type ConfiguratorRuleTestResult = {
+  testId: string;
+  name: string;
+  passed: boolean;
+  expectedValid: boolean;
+  actualValid: boolean;
+  sku: string;
+  price: number;
+  expectedCost: number;
+  messages: string[];
 };
 
 export type ProductBomLayout = "operation_tree" | "materials_first";
@@ -183,6 +342,17 @@ export type GeneratedProductPackage = {
   };
   bomDraft: GeneratedBomDraft;
   previewLayout: ProductPreviewLayoutConfig;
+  optionResolution: ConfiguratorOptionResolution;
+  quotePreview: ConfiguratorQuotePreview;
+  supplementalItems: SupplementalItem[];
+  generatedProductionDefinition: GeneratedProductionDefinition;
+  missingData: ProductReadinessGap[];
+  activation: {
+    templateVersion: string;
+    approvalStatus: ConfiguratorApprovalStatus;
+    changeRequestId: string | null;
+    activeRulesApproved: boolean;
+  };
   qcSpecification: {
     specCode: string;
     status: "draft";
@@ -218,7 +388,11 @@ export type ProductReadinessGap = {
     | "missing_bom"
     | "missing_qc_spec"
     | "missing_label_data"
-    | "missing_shopify_field";
+    | "missing_shopify_field"
+    | "required_option_missing"
+    | "option_dependency_missing"
+    | "option_incompatible"
+    | "change_control_approval_required";
   severity: "blocker" | "warning";
   message: string;
   field?: string;
@@ -319,13 +493,257 @@ export const defaultProductTemplates: ProductTemplate[] = [
     trackLots: true,
     trackExpiry: true,
     defaultFormulaLines: [
-      { lineType: "extract", componentName: "Mushroom dual extract", quantity: 50, uom: "ml", critical: true },
-      { lineType: "packaging", componentName: "Amber dropper bottle", quantity: 1, uom: "each", wastePercent: 2, critical: true },
-      { lineType: "packaging", componentName: "Finished goods label", quantity: 1, uom: "each", wastePercent: 1, critical: true }
+      { lineType: "extract", componentName: "Mushroom dual extract", quantity: 50, uom: "ml", critical: true, unitCost: 0.04 },
+      { lineType: "packaging", componentName: "Amber dropper bottle", quantity: 1, uom: "each", wastePercent: 2, critical: true, unitCost: 0.82 },
+      { lineType: "packaging", componentName: "Finished goods label", quantity: 1, uom: "each", wastePercent: 1, critical: true, unitCost: 0.16 }
     ],
     defaultQcTests: ["identity", "visual", "fill_volume", "potency", "microbiology", "label_check"],
     shopifyPlaceholders: ["shopifyProductGid", "shopifyVariantGid", "shopifyInventoryItemGid", "seoTitle", "seoDescription"],
-    labelFields: ["product_name", "net_quantity", "ingredients", "directions", "warnings", "storage"]
+    labelFields: ["product_name", "net_quantity", "ingredients", "directions", "warnings", "storage"],
+    templateVersion: "TINCTURE-CFG-001",
+    approvalStatus: "active",
+    changeRequestId: "cr-configurator-tincture-v1",
+    basePrice: 22,
+    baseExpectedCost: 4.1,
+    currency: "EUR",
+    optionGroups: [
+      {
+        id: "og-tincture-extract",
+        templateId: "template-tincture",
+        code: "extract_style",
+        name: "Extract style",
+        required: true,
+        minSelections: 1,
+        maxSelections: 1,
+        defaultOptionIds: ["opt-tincture-dual"],
+        displayOrder: 10
+      },
+      {
+        id: "og-tincture-packaging",
+        templateId: "template-tincture",
+        code: "packaging",
+        name: "Packaging",
+        required: true,
+        minSelections: 1,
+        maxSelections: 1,
+        defaultOptionIds: ["opt-amber-bottle"],
+        displayOrder: 20
+      },
+      {
+        id: "og-tincture-addons",
+        templateId: "template-tincture",
+        code: "add_on",
+        name: "Supplemental item",
+        required: false,
+        minSelections: 0,
+        maxSelections: 2,
+        defaultOptionIds: [],
+        displayOrder: 30
+      }
+    ],
+    options: [
+      {
+        id: "opt-tincture-dual",
+        groupId: "og-tincture-extract",
+        code: "dual_extract",
+        label: "Dual extract",
+        priceDelta: 2,
+        expectedCostDelta: 0.7,
+        formulaLines: [
+          { lineType: "extract", componentName: "Dual extraction validation sample", quantity: 1, uom: "each", critical: true, unitCost: 0.15 }
+        ],
+        qcTests: ["dual_extract_ratio"]
+      },
+      {
+        id: "opt-tincture-glycerite",
+        groupId: "og-tincture-extract",
+        code: "glycerite",
+        label: "Alcohol-free glycerite",
+        skuCode: "GLY",
+        priceDelta: 3,
+        expectedCostDelta: 1.2,
+        formulaLines: [
+          { lineType: "ingredient", componentName: "Vegetable glycerine", quantity: 20, uom: "ml", critical: true, unitCost: 0.03 }
+        ],
+        labelFields: ["alcohol_free_statement"],
+        qcTests: ["preservative_review"],
+        incompatibleWith: ["opt-insert-alcohol-warning"]
+      },
+      {
+        id: "opt-amber-bottle",
+        groupId: "og-tincture-packaging",
+        code: "amber_bottle",
+        label: "Amber bottle",
+        priceDelta: 0,
+        expectedCostDelta: 0
+      },
+      {
+        id: "opt-gift-box",
+        groupId: "og-tincture-packaging",
+        code: "gift_box",
+        label: "Gift box",
+        skuCode: "GFT",
+        priceDelta: 4,
+        expectedCostDelta: 1.35,
+        packaging: ["Gift carton", "Tamper seal"],
+        supplementalItems: [
+          {
+            id: "supp-gift-card",
+            code: "GIFT-CARD",
+            name: "Gift insert card",
+            kind: "packaging_insert",
+            quantity: 1,
+            uom: "each",
+            expectedCostDelta: 0.18,
+            required: true
+          }
+        ],
+        labelFields: ["gift_box_barcode"]
+      },
+      {
+        id: "opt-sample-sachet",
+        groupId: "og-tincture-addons",
+        code: "sample_sachet",
+        label: "Add sample sachet",
+        supplementalItems: [
+          {
+            id: "supp-sample-sachet",
+            code: "SAMPLE-SACHET",
+            name: "Functional mushroom sample sachet",
+            kind: "sample",
+            quantity: 1,
+            uom: "each",
+            priceDelta: 1.5,
+            expectedCostDelta: 0.55,
+            required: false
+          }
+        ]
+      },
+      {
+        id: "opt-insert-alcohol-warning",
+        groupId: "og-tincture-addons",
+        code: "alcohol_warning_insert",
+        label: "Alcohol warning insert",
+        supplementalItems: [
+          {
+            id: "supp-alcohol-warning",
+            code: "ALC-WARN-INSERT",
+            name: "Alcohol warning insert",
+            kind: "packaging_insert",
+            quantity: 1,
+            uom: "each",
+            expectedCostDelta: 0.08,
+            required: true
+          }
+        ],
+        dependsOn: [{ groupCode: "extract_style", optionCodes: ["dual_extract"] }]
+      }
+    ],
+    configuratorRules: [
+      {
+        id: "rule-gift-box-routing",
+        templateId: "template-tincture",
+        name: "Gift box packout and QC",
+        status: "active",
+        changeRequestId: "cr-configurator-tincture-v1",
+        appliesWhen: [{ groupCode: "packaging", optionCodes: ["gift_box"] }],
+        effects: {
+          skuSuffix: "BOX",
+          routingOperations: [{ operationId: "gift-pack", name: "Gift box assembly", runtimeMinutes: 8, controlPoint: true }],
+          labelFields: ["gift_box_barcode"],
+          qcTests: ["gift_pack_visual"],
+          priceDelta: 1,
+          expectedCostDelta: 0.25,
+          shopifyMappingRequired: true
+        }
+      },
+      {
+        id: "rule-glycerite-market-review",
+        templateId: "template-tincture",
+        name: "Glycerite market review",
+        status: "approved",
+        changeRequestId: "cr-configurator-tincture-v1",
+        appliesWhen: [{ groupCode: "extract_style", optionCodes: ["glycerite"] }],
+        effects: {
+          skuSuffix: "AF",
+          qcTests: ["shelf_life_review"],
+          labelFields: ["alcohol_free_statement"],
+          expectedCostDelta: 0.2
+        }
+      }
+    ],
+    ruleTests: [
+      {
+        id: "test-tincture-gift-box",
+        templateId: "template-tincture",
+        name: "Gift box adds packaging, routing, price, and Shopify warning",
+        input: {
+          productName: "Rule Test Reishi Tincture",
+          speciesBlend: "reishi",
+          format: "tincture",
+          strength: "dual extract",
+          size: "50 ml",
+          packCount: 1,
+          market: "EU",
+          language: "en",
+          channel: "shopify",
+          selectedOptions: { extract_style: "dual_extract", packaging: "gift_box" },
+          labelData: {
+            product_name: "Rule Test Reishi Tincture",
+            net_quantity: "50 ml",
+            ingredients: "Reishi extract, water, alcohol",
+            directions: "Take as directed.",
+            warnings: "Keep out of reach of children.",
+            storage: "Store cool and dry.",
+            lot_code: "Applied at packing",
+            expiry_date: "Applied at packing",
+            business_operator: "Mushroom Compadres",
+            country_of_origin: "Portugal",
+            language_compliance: "English label",
+            food_business_operator: "Mushroom Compadres",
+            eu_contact_address: "Rogil, Portugal",
+            retail_barcode: "5600000000011",
+            online_title: "Rule Test Reishi Tincture",
+            online_description: "Rule test",
+            extraction_ratio: "1:3",
+            gift_box_barcode: "5600000000999"
+          },
+          shopifyFields: {
+            shopifyProductGid: "gid://shopify/Product/test",
+            shopifyVariantGid: "gid://shopify/ProductVariant/test",
+            shopifyInventoryItemGid: "gid://shopify/InventoryItem/test",
+            seoTitle: "Rule Test Reishi",
+            seoDescription: "Rule test"
+          }
+        },
+        expectedValid: true,
+        expectedSkuIncludes: ["GFT", "BOX"],
+        expectedSupplementalItemCodes: ["GIFT-CARD"],
+        expectedPrice: 29,
+        expectedCost: 6.73
+      },
+      {
+        id: "test-tincture-invalid-glycerite-warning",
+        templateId: "template-tincture",
+        name: "Glycerite cannot use alcohol warning insert",
+        input: {
+          productName: "Rule Test Glycerite",
+          speciesBlend: "reishi",
+          format: "tincture",
+          strength: "standard",
+          size: "50 ml",
+          packCount: 1,
+          market: "EU",
+          language: "en",
+          channel: "shopify",
+          selectedOptions: { extract_style: "glycerite", packaging: "amber_bottle", add_on: "alcohol_warning_insert" },
+          labelData: {},
+          shopifyFields: {}
+        },
+        expectedValid: false,
+        expectedGapCodes: ["option_incompatible", "missing_label_data", "missing_shopify_field"]
+      }
+    ]
   },
   {
     id: "template-capsules",
@@ -515,25 +933,42 @@ export function generateProductPackage(
     });
   }
 
-  const generatedSku = generateSku(input, rule);
+  const optionResolution = resolveConfiguratorOptions(input, template);
+  const selectedOptions = selectedTemplateOptions(optionResolution.selectedOptionIds, template);
+  const appliedRules = appliedConfiguratorRules(optionResolution.selectedOptionCodes, template);
+  const productionDefinition = buildGeneratedProductionDefinition(template, selectedOptions, appliedRules);
+  const resolvedTemplate: ProductTemplate = {
+    ...template,
+    defaultFormulaLines: productionDefinition.formulaLines,
+    defaultQcTests: productionDefinition.qcTests,
+    labelFields: productionDefinition.labelFields
+  };
+  const generatedSku = applySkuEffects(generateSku(input, rule), selectedOptions, appliedRules, rule.separator, rule.uppercase);
   const overrideSku = normalizeOptional(input.skuOverride);
   const sku = overrideSku ?? generatedSku;
   const skuEdited = Boolean(overrideSku && overrideSku !== generatedSku);
-  const labelChecklist = labelRequirementsFor(input, template);
+  const labelChecklist = labelRequirementsFor(input, resolvedTemplate);
   const formulaRevisionCode = `${sku}-F-DRAFT`;
   const previewLayout = resolvePreviewLayout(input.previewLayout);
-  const bomDraft = buildProductBomDraft({ input, sku, formulaRevisionCode, template });
+  const bomDraft = buildProductBomDraft({ input, sku, formulaRevisionCode, template: resolvedTemplate });
+  const quotePreview = buildConfiguratorQuotePreview(template, selectedOptions, appliedRules, productionDefinition.supplementalItems);
+  const activeRulesApproved = configuratorActiveRulesApproved(template);
   const readinessGaps = validateProductPackageReadiness({
     sku,
     generatedSku,
     skuEdited,
     adminOverrideReason: input.adminOverrideReason ?? null,
     existingSkus: options.existingSkus ?? [],
-    formulaLines: template.defaultFormulaLines,
-    qcTests: template.defaultQcTests,
+    formulaLines: productionDefinition.formulaLines,
+    qcTests: productionDefinition.qcTests,
     labelChecklist,
-    shopifyPlaceholders: template.shopifyPlaceholders,
-    shopifyFields: input.shopifyFields ?? {}
+    shopifyPlaceholders: productionDefinition.shopifyMappingReady
+      ? template.shopifyPlaceholders
+      : unique([...template.shopifyPlaceholders, "shopifyMappingApproval"]),
+    shopifyFields: input.shopifyFields ?? {},
+    optionGaps: optionResolution.invalidReasons,
+    activeRulesApproved,
+    templateApprovalStatus: template.approvalStatus ?? "draft"
   });
 
   return {
@@ -569,14 +1004,25 @@ export function generateProductPackage(
     formulaRevision: {
       revisionCode: formulaRevisionCode,
       status: "draft",
-      lines: template.defaultFormulaLines
+      lines: productionDefinition.formulaLines
     },
     bomDraft,
     previewLayout,
+    optionResolution,
+    quotePreview,
+    supplementalItems: productionDefinition.supplementalItems,
+    generatedProductionDefinition: productionDefinition,
+    missingData: readinessGaps,
+    activation: {
+      templateVersion: template.templateVersion ?? "draft",
+      approvalStatus: template.approvalStatus ?? "draft",
+      changeRequestId: template.changeRequestId ?? null,
+      activeRulesApproved
+    },
     qcSpecification: {
       specCode: `${sku}-QC-DRAFT`,
       status: "draft",
-      tests: template.defaultQcTests
+      tests: productionDefinition.qcTests
     },
     labelChecklist,
     shopifyMappingPlaceholders: template.shopifyPlaceholders,
@@ -595,8 +1041,11 @@ export function validateProductPackageReadiness(input: {
   labelChecklist: LabelRequirement[];
   shopifyPlaceholders: string[];
   shopifyFields: Record<string, string | null | undefined>;
+  optionGaps?: ProductReadinessGap[];
+  activeRulesApproved?: boolean;
+  templateApprovalStatus?: ConfiguratorApprovalStatus;
 }): ProductReadinessGap[] {
-  const gaps: ProductReadinessGap[] = [];
+  const gaps: ProductReadinessGap[] = [...(input.optionGaps ?? [])];
 
   if (detectDuplicateSku(input.sku, input.existingSkus)) {
     gaps.push({
@@ -646,8 +1095,359 @@ export function validateProductPackageReadiness(input: {
       });
     }
   }
+  if (input.templateApprovalStatus === "active" && input.activeRulesApproved === false) {
+    gaps.push({
+      code: "change_control_approval_required",
+      severity: "blocker",
+      message: "Active configurator templates and rules must be approved through change control before generation."
+    });
+  }
 
   return gaps;
+}
+
+function resolveConfiguratorOptions(input: ProductConfigurationInput, template: ProductTemplate): ConfiguratorOptionResolution {
+  const groups = [...(template.optionGroups ?? [])].sort((left, right) => left.displayOrder - right.displayOrder);
+  const options = template.options ?? [];
+  const selectedOptionIds = new Set<string>();
+  const defaultedOptionIds = new Set<string>();
+  const invalidReasons: ProductReadinessGap[] = [];
+  const selectedByGroup = new Map<string, ConfiguratorOption[]>();
+
+  for (const group of groups) {
+    const raw = input.selectedOptions?.[group.code] ?? input.selectedOptions?.[group.id];
+    const requestedCodes = rawSelectionValues(raw);
+    const groupOptions = options.filter((option) => option.groupId === group.id);
+    let selected = requestedCodes
+      .map((code) => groupOptions.find((option) => option.id === code || option.code === code))
+      .filter((option): option is ConfiguratorOption => Boolean(option));
+
+    if (selected.length === 0 && group.defaultOptionIds.length > 0) {
+      selected = group.defaultOptionIds
+        .map((id) => groupOptions.find((option) => option.id === id))
+        .filter((option): option is ConfiguratorOption => Boolean(option));
+      for (const option of selected) {
+        defaultedOptionIds.add(option.id);
+      }
+    }
+
+    if (group.required && selected.length < group.minSelections) {
+      invalidReasons.push({
+        code: "required_option_missing",
+        severity: "blocker",
+        field: group.code,
+        message: `${group.name} requires at least ${group.minSelections} selection.`
+      });
+    }
+    if (selected.length > group.maxSelections) {
+      invalidReasons.push({
+        code: "required_option_missing",
+        severity: "blocker",
+        field: group.code,
+        message: `${group.name} allows no more than ${group.maxSelections} selections.`
+      });
+    }
+
+    selectedByGroup.set(group.code, selected);
+    for (const option of selected) {
+      selectedOptionIds.add(option.id);
+    }
+  }
+
+  const selectedOptions = selectedTemplateOptions([...selectedOptionIds], template);
+  const selectedCodes = selectedGroupCodeMap(selectedOptions, template);
+
+  for (const option of selectedOptions) {
+    for (const dependency of option.dependsOn ?? []) {
+      if (!conditionMatches(dependency, selectedCodes)) {
+        invalidReasons.push({
+          code: "option_dependency_missing",
+          severity: "blocker",
+          field: option.code,
+          message: `${option.label} requires ${dependency.groupCode} to be one of ${dependency.optionCodes.join(", ")}.`
+        });
+      }
+    }
+    for (const incompatibleId of option.incompatibleWith ?? []) {
+      if (selectedOptionIds.has(incompatibleId)) {
+        const incompatible = options.find((candidate) => candidate.id === incompatibleId);
+        invalidReasons.push({
+          code: "option_incompatible",
+          severity: "blocker",
+          field: option.code,
+          message: `${option.label} cannot be combined with ${incompatible?.label ?? incompatibleId}.`
+        });
+      }
+    }
+  }
+
+  return {
+    selectedOptionIds: [...selectedOptionIds],
+    selectedOptionCodes: Object.entries(selectedCodes).flatMap(([groupCode, codes]) => codes.map((code) => `${groupCode}:${code}`)),
+    defaultedOptionIds: [...defaultedOptionIds],
+    appliedRuleIds: appliedConfiguratorRules(selectedCodes, template).map((rule) => rule.id),
+    invalidReasons
+  };
+}
+
+function rawSelectionValues(raw: string | string[] | null | undefined): string[] {
+  if (Array.isArray(raw)) {
+    return raw.map((value) => value.trim()).filter(Boolean);
+  }
+  if (typeof raw === "string" && raw.trim().length > 0) {
+    return raw.split(",").map((value) => value.trim()).filter(Boolean);
+  }
+  return [];
+}
+
+function selectedTemplateOptions(optionIds: string[], template: ProductTemplate): ConfiguratorOption[] {
+  const selected = new Set(optionIds);
+  return (template.options ?? []).filter((option) => selected.has(option.id));
+}
+
+function selectedGroupCodeMap(options: ConfiguratorOption[], template: ProductTemplate): Record<string, string[]> {
+  const groupById = new Map((template.optionGroups ?? []).map((group) => [group.id, group.code]));
+  const selected: Record<string, string[]> = {};
+  for (const option of options) {
+    const groupCode = groupById.get(option.groupId) ?? option.groupId;
+    selected[groupCode] = [...(selected[groupCode] ?? []), option.code];
+  }
+  return selected;
+}
+
+function appliedConfiguratorRules(
+  selected: Record<string, string[]> | string[],
+  template: ProductTemplate
+): ConfiguratorRule[] {
+  const selectedMap = Array.isArray(selected) ? selectedCodeStringsToMap(selected) : selected;
+  return (template.configuratorRules ?? []).filter((rule) =>
+    rule.status !== "retired" && rule.appliesWhen.every((condition) => conditionMatches(condition, selectedMap))
+  );
+}
+
+function selectedCodeStringsToMap(codes: string[]): Record<string, string[]> {
+  const selected: Record<string, string[]> = {};
+  for (const item of codes) {
+    const [groupCode, optionCode] = item.split(":");
+    if (!groupCode || !optionCode) {
+      continue;
+    }
+    selected[groupCode] = [...(selected[groupCode] ?? []), optionCode];
+  }
+  return selected;
+}
+
+function conditionMatches(condition: ConfiguratorOptionCondition, selected: Record<string, string[]>): boolean {
+  return condition.optionCodes.some((code) => selected[condition.groupCode]?.includes(code));
+}
+
+function buildGeneratedProductionDefinition(
+  template: ProductTemplate,
+  selectedOptions: ConfiguratorOption[],
+  appliedRules: ConfiguratorRule[]
+): GeneratedProductionDefinition {
+  const ruleEffects = appliedRules.map((rule) => rule.effects);
+  const formulaLines = [
+    ...template.defaultFormulaLines,
+    ...selectedOptions.flatMap((option) => option.formulaLines ?? []),
+    ...ruleEffects.flatMap((effect) => effect.formulaLines ?? [])
+  ];
+  const supplementalItems = uniqueSupplementalItems([
+    ...selectedOptions.flatMap((option) => option.supplementalItems ?? []),
+    ...ruleEffects.flatMap((effect) => effect.supplementalItems ?? [])
+  ]);
+  return {
+    formulaLines,
+    routingOperations: [
+      ...selectedOptions.flatMap((option) => option.routingOperations ?? []),
+      ...ruleEffects.flatMap((effect) => effect.routingOperations ?? [])
+    ],
+    labelFields: unique([
+      ...template.labelFields,
+      ...selectedOptions.flatMap((option) => option.labelFields ?? []),
+      ...ruleEffects.flatMap((effect) => effect.labelFields ?? [])
+    ]),
+    qcTests: unique([
+      ...template.defaultQcTests,
+      ...selectedOptions.flatMap((option) => option.qcTests ?? []),
+      ...ruleEffects.flatMap((effect) => effect.qcTests ?? [])
+    ]),
+    packaging: unique([
+      ...selectedOptions.flatMap((option) => option.packaging ?? []),
+      ...ruleEffects.flatMap((effect) => effect.packaging ?? [])
+    ]),
+    supplementalItems,
+    shopifyMappingReady:
+      !selectedOptions.some((option) => option.requiresShopifyMapping) &&
+      !ruleEffects.some((effect) => effect.shopifyMappingRequired),
+    sourceRuleIds: appliedRules.map((rule) => rule.id)
+  };
+}
+
+function uniqueSupplementalItems(items: SupplementalItem[]): SupplementalItem[] {
+  const seen = new Set<string>();
+  return items.filter((item) => {
+    const key = item.code || item.id;
+    if (seen.has(key)) {
+      return false;
+    }
+    seen.add(key);
+    return true;
+  });
+}
+
+function applySkuEffects(
+  baseSku: string,
+  selectedOptions: ConfiguratorOption[],
+  appliedRules: ConfiguratorRule[],
+  separator: string,
+  uppercase: boolean
+): string {
+  const suffixes = [
+    ...selectedOptions.map((option) => option.skuCode).filter((code): code is string => Boolean(code)),
+    ...appliedRules.map((rule) => rule.effects.skuSuffix).filter((code): code is string => Boolean(code))
+  ];
+  const sku = unique(suffixes).length > 0 ? [baseSku, ...unique(suffixes)].join(separator) : baseSku;
+  return uppercase ? sku.toUpperCase() : sku;
+}
+
+function buildConfiguratorQuotePreview(
+  template: ProductTemplate,
+  selectedOptions: ConfiguratorOption[],
+  appliedRules: ConfiguratorRule[],
+  supplementalItems: SupplementalItem[]
+): ConfiguratorQuotePreview {
+  const basePrice = template.basePrice ?? 0;
+  const baseExpectedCost = template.baseExpectedCost ?? expectedFormulaCost(template.defaultFormulaLines);
+  const priceEffects: ConfiguratorEffectLine[] = [
+    { sourceType: "template", sourceId: template.id, label: `${template.name} base price`, amount: basePrice },
+    ...selectedOptions
+      .filter((option) => typeof option.priceDelta === "number")
+      .map((option) => ({ sourceType: "option" as const, sourceId: option.id, label: option.label, amount: option.priceDelta ?? 0 })),
+    ...appliedRules
+      .filter((rule) => typeof rule.effects.priceDelta === "number")
+      .map((rule) => ({ sourceType: "rule" as const, sourceId: rule.id, label: rule.name, amount: rule.effects.priceDelta ?? 0 })),
+    ...supplementalItems
+      .filter((item) => typeof item.priceDelta === "number")
+      .map((item) => ({ sourceType: "supplemental_item" as const, sourceId: item.id, label: item.name, amount: item.priceDelta ?? 0 }))
+  ];
+  const costEffects: ConfiguratorEffectLine[] = [
+    { sourceType: "template", sourceId: template.id, label: `${template.name} base expected cost`, amount: baseExpectedCost },
+    ...selectedOptions
+      .filter((option) => typeof option.expectedCostDelta === "number")
+      .map((option) => ({ sourceType: "option" as const, sourceId: option.id, label: option.label, amount: option.expectedCostDelta ?? 0 })),
+    ...selectedOptions.flatMap((option) =>
+      (option.formulaLines ?? [])
+        .filter((line) => typeof line.unitCost === "number")
+        .map((line) => ({
+          sourceType: "formula_line" as const,
+          sourceId: option.id,
+          label: line.componentName,
+          amount: roundCurrency((line.unitCost ?? 0) * line.quantity * (1 + (line.wastePercent ?? 0) / 100))
+        }))
+    ),
+    ...appliedRules
+      .filter((rule) => typeof rule.effects.expectedCostDelta === "number")
+      .map((rule) => ({ sourceType: "rule" as const, sourceId: rule.id, label: rule.name, amount: rule.effects.expectedCostDelta ?? 0 })),
+    ...supplementalItems
+      .filter((item) => typeof item.expectedCostDelta === "number")
+      .map((item) => ({ sourceType: "supplemental_item" as const, sourceId: item.id, label: item.name, amount: item.expectedCostDelta ?? 0 }))
+  ];
+  const price = roundCurrency(sumAmounts(priceEffects));
+  const expectedCost = roundCurrency(sumAmounts(costEffects));
+  const margin = roundCurrency(price - expectedCost);
+  return {
+    currency: template.currency ?? "EUR",
+    basePrice,
+    price,
+    expectedCost,
+    margin,
+    marginPercent: price > 0 ? roundQuantity((margin / price) * 100) : 0,
+    priceEffects,
+    costEffects
+  };
+}
+
+function expectedFormulaCost(lines: ProductTemplateFormulaLine[]): number {
+  return roundCurrency(
+    lines.reduce((total, line) => total + (line.unitCost ?? 0) * line.quantity * (1 + (line.wastePercent ?? 0) / 100), 0)
+  );
+}
+
+function sumAmounts(lines: ConfiguratorEffectLine[]): number {
+  return lines.reduce((total, line) => total + line.amount, 0);
+}
+
+function roundCurrency(value: number): number {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function configuratorActiveRulesApproved(template: ProductTemplate): boolean {
+  const templateApproved = template.approvalStatus === "active" ? Boolean(template.changeRequestId) : true;
+  const rulesApproved = (template.configuratorRules ?? [])
+    .filter((rule) => rule.status === "active")
+    .every((rule) => Boolean(rule.changeRequestId) && (rule.status === "active" || rule.status === "approved"));
+  return templateApproved && rulesApproved;
+}
+
+export function runConfiguratorRuleTests(
+  template: ProductTemplate,
+  options: {
+    rule?: SkuRule;
+    existingSkus?: string[];
+  } = {}
+): ConfiguratorRuleTestResult[] {
+  return (template.ruleTests ?? []).map((test) => {
+    const input: ProductConfigurationInput = {
+      ...test.input,
+      templateId: test.input.templateId ?? template.id,
+      family: test.input.family ?? template.family
+    };
+    const productPackage = generateProductPackage(input, {
+      ...(options.rule ? { rule: options.rule } : {}),
+      templates: [template],
+      existingSkus: options.existingSkus ?? []
+    });
+    const actualValid = !productPackage.readinessGaps.some((gap) => gap.severity === "blocker");
+    const messages: string[] = [];
+
+    if (actualValid !== test.expectedValid) {
+      messages.push(`Expected valid=${test.expectedValid} but got valid=${actualValid}.`);
+    }
+    for (const expected of test.expectedSkuIncludes ?? []) {
+      if (!productPackage.sku.includes(expected)) {
+        messages.push(`Expected SKU to include ${expected}.`);
+      }
+    }
+    for (const code of test.expectedSupplementalItemCodes ?? []) {
+      if (!productPackage.supplementalItems.some((item) => item.code === code)) {
+        messages.push(`Expected supplemental item ${code}.`);
+      }
+    }
+    if (typeof test.expectedPrice === "number" && productPackage.quotePreview.price !== test.expectedPrice) {
+      messages.push(`Expected price ${test.expectedPrice}, got ${productPackage.quotePreview.price}.`);
+    }
+    if (typeof test.expectedCost === "number" && productPackage.quotePreview.expectedCost !== test.expectedCost) {
+      messages.push(`Expected cost ${test.expectedCost}, got ${productPackage.quotePreview.expectedCost}.`);
+    }
+    for (const code of test.expectedGapCodes ?? []) {
+      if (!productPackage.readinessGaps.some((gap) => gap.code === code)) {
+        messages.push(`Expected readiness gap ${code}.`);
+      }
+    }
+
+    return {
+      testId: test.id,
+      name: test.name,
+      passed: messages.length === 0,
+      expectedValid: test.expectedValid,
+      actualValid,
+      sku: productPackage.sku,
+      price: productPackage.quotePreview.price,
+      expectedCost: productPackage.quotePreview.expectedCost,
+      messages
+    };
+  });
 }
 
 function resolvePreviewLayout(input: Partial<ProductPreviewLayoutConfig> | null | undefined): ProductPreviewLayoutConfig {

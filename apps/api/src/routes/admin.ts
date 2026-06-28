@@ -1,7 +1,7 @@
 import type { FastifyInstance, preHandlerHookHandler } from "fastify";
 import { z } from "zod";
 import { writeAuditEvent } from "../audit.js";
-import { requireRoles } from "../rbac.js";
+import { requirePermission, requireRoles } from "../rbac.js";
 import type { ApiDataStore, AppUserUpdateInput, AuthenticatedRequest, RoleCode } from "../types.js";
 
 type AdminRoutesOptions = {
@@ -25,6 +25,28 @@ const userUpdateSchema = z.object({
 
 const profileUpdateSchema = z.object({
   locale: z.enum(["en", "pt"])
+});
+
+const permissionLevelSchema = z.enum(["deny", "view", "use", "manage", "approve", "export", "admin"]);
+
+const rolePermissionSetsSchema = z.object({
+  permissionSetIds: z.array(z.string().min(1))
+});
+
+const userPermissionOverrideSchema = z.object({
+  userId: z.string().min(1),
+  permissionCode: z.string().min(1),
+  level: permissionLevelSchema,
+  reason: z.string().trim().min(1).max(500),
+  scope: z.record(z.string(), z.array(z.string().min(1))).optional()
+});
+
+const accessPreviewSchema = z.object({
+  userId: z.string().min(1),
+  permissionCode: z.string().min(1),
+  requiredLevel: permissionLevelSchema,
+  locationId: z.string().min(1).nullable().optional(),
+  scope: z.record(z.string(), z.string().min(1)).optional()
 });
 
 function serializeUser(user: Awaited<ReturnType<ApiDataStore["getAppUser"]>>) {
@@ -53,6 +75,7 @@ function serializeUser(user: Awaited<ReturnType<ApiDataStore["getAppUser"]>>) {
 
 export async function adminRoutes(app: FastifyInstance, options: AdminRoutesOptions): Promise<void> {
   const adminOnly = requireRoles({ anyOf: ["owner_admin"] });
+  const accessAdmin = requirePermission({ permissionCode: "admin.access.manage", level: "admin" });
 
   app.get(
     "/api/me",
@@ -271,6 +294,129 @@ export async function adminRoutes(app: FastifyInstance, options: AdminRoutesOpti
       const userContext = (request as AuthenticatedRequest).userContext;
       const locations = await options.dataStore.listLocations(userContext.organizationId);
       return { locations };
+    }
+  );
+
+  app.get(
+    "/api/admin/permissions",
+    {
+      preHandler: [options.requireUserContext, accessAdmin],
+      schema: {
+        tags: ["admin"],
+        summary: "Permission matrix catalog, sets, assignments, effective access, and warnings",
+        security: bearerSecurity
+      }
+    },
+    async (request) => {
+      const userContext = (request as AuthenticatedRequest).userContext;
+      return { matrix: await options.dataStore.listPermissionMatrix(userContext.organizationId) };
+    }
+  );
+
+  app.patch(
+    "/api/admin/permissions/roles/:roleId/permission-sets",
+    {
+      preHandler: [options.requireUserContext, accessAdmin],
+      schema: {
+        tags: ["admin"],
+        summary: "Replace permission sets assigned to a role",
+        security: bearerSecurity
+      }
+    },
+    async (request, reply) => {
+      const parsed = rolePermissionSetsSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: "bad_request", message: "Invalid permission set assignment" });
+      }
+      const userContext = (request as AuthenticatedRequest).userContext;
+      const params = request.params as { roleId: string };
+      try {
+        const matrix = await options.dataStore.updateRolePermissionSets(
+          userContext,
+          params.roleId,
+          parsed.data.permissionSetIds,
+          request.id
+        );
+        return { matrix };
+      } catch (error) {
+        return reply.code(400).send({
+          error: "bad_request",
+          message: error instanceof Error ? error.message : "Permission sets could not be updated"
+        });
+      }
+    }
+  );
+
+  app.post(
+    "/api/admin/permissions/user-overrides",
+    {
+      preHandler: [options.requireUserContext, accessAdmin],
+      schema: {
+        tags: ["admin"],
+        summary: "Create or update a user permission override",
+        security: bearerSecurity
+      }
+    },
+    async (request, reply) => {
+      const parsed = userPermissionOverrideSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: "bad_request", message: "Invalid permission override" });
+      }
+      const userContext = (request as AuthenticatedRequest).userContext;
+      try {
+        const matrix = await options.dataStore.upsertUserPermissionOverride(userContext, parsed.data, request.id);
+        return reply.code(201).send({ matrix });
+      } catch (error) {
+        return reply.code(400).send({
+          error: "bad_request",
+          message: error instanceof Error ? error.message : "Permission override could not be saved"
+        });
+      }
+    }
+  );
+
+  app.post(
+    "/api/admin/permissions/preview",
+    {
+      preHandler: [options.requireUserContext, accessAdmin],
+      schema: {
+        tags: ["admin"],
+        summary: "Explain whether a selected user can perform an action",
+        security: bearerSecurity
+      }
+    },
+    async (request, reply) => {
+      const parsed = accessPreviewSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: "bad_request", message: "Invalid permission preview" });
+      }
+      const userContext = (request as AuthenticatedRequest).userContext;
+      const preview = await options.dataStore.previewUserAccess(userContext.organizationId, parsed.data.userId, {
+        permissionCode: parsed.data.permissionCode,
+        requiredLevel: parsed.data.requiredLevel,
+        ...(parsed.data.locationId !== undefined ? { locationId: parsed.data.locationId } : {}),
+        ...(parsed.data.scope !== undefined ? { scope: parsed.data.scope } : {})
+      });
+      if (!preview) {
+        return reply.code(404).send({ error: "not_found", message: "User was not found" });
+      }
+      return { preview };
+    }
+  );
+
+  app.get(
+    "/api/admin/permissions/history",
+    {
+      preHandler: [options.requireUserContext, accessAdmin],
+      schema: {
+        tags: ["admin"],
+        summary: "Permission change history",
+        security: bearerSecurity
+      }
+    },
+    async (request) => {
+      const userContext = (request as AuthenticatedRequest).userContext;
+      return { auditEvents: await options.dataStore.listPermissionChangeHistory(userContext.organizationId) };
     }
   );
 }

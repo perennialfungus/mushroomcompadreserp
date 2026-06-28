@@ -24,11 +24,29 @@ test("owner can filter reports, save a preset, and export CSV", async ({ page })
   await expect(page.getByText("PT-WELL-2026")).toBeVisible();
 
   await page.getByLabel("Preset name").fill("Wholesale June export");
-  await page.getByRole("button", { name: "Save" }).click();
+  await page.getByRole("button", { name: "Save", exact: true }).click();
   await expect(page.locator("strong", { hasText: "Wholesale June export" })).toBeVisible();
 
+  await expect(page.getByRole("heading", { name: "Generic inquiry builder" })).toBeVisible();
+  await page.getByLabel("Inquiry dataset").selectOption("inventory_lot_balances");
+  await page.getByLabel("Inquiry name").fill("Playwright inventory inquiry");
+  await page.getByLabel("Group by").selectOption("location_name");
+  await page.getByLabel("Value").selectOption("on_hand_quantity");
+  await page.getByLabel("Inquiry sharing").selectOption("role_shared");
+  await page.getByRole("button", { name: "Save inquiry" }).click();
+  await expect(page.locator("strong", { hasText: "Playwright inventory inquiry" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Pivot summary and chart" })).toBeVisible();
+  await expect(page.getByText("sum On hand")).toBeVisible();
+  await page.getByRole("button", { name: "Schedule" }).click();
+  await expect(page.locator("strong", { hasText: "Playwright inventory inquiry daily export" })).toBeVisible();
+
   const downloadPromise = page.waitForEvent("download");
-  await page.getByRole("button", { name: "CSV" }).click();
+  await page.getByRole("button", { name: "CSV", exact: true }).click();
   const download = await downloadPromise;
   expect(download.suggestedFilename()).toBe("wholesale_sales_export.csv");
+
+  const inquiryDownloadPromise = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Inquiry CSV" }).click();
+  const inquiryDownload = await inquiryDownloadPromise;
+  expect(inquiryDownload.suggestedFilename()).toBe("playwright-inventory-inquiry.csv");
 });

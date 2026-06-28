@@ -287,6 +287,30 @@ describe("calculateMrpPlan", () => {
       operationId: "op-1",
       suggestedStartAt: new Date("2026-07-09T08:00:00.000Z")
     });
+    expect(plan.scheduleRun).toMatchObject({
+      operationCount: 1,
+      overloadCount: 1
+    });
+    expect(plan.scheduleOperations[0]).toMatchObject({
+      id: "op-1",
+      finiteStartAt: new Date("2026-07-09T08:00:00.000Z"),
+      finiteEndAt: new Date("2026-07-09T09:30:00.000Z")
+    });
+    expect(plan.dispatchBoard[0]).toMatchObject({
+      id: "op-1",
+      dispatchRank: 1,
+      constraintSummary: expect.stringContaining("Finite capacity")
+    });
+    expect(plan.roughCutCapacity).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          resourceId: "wc-fill",
+          plannedMinutes: 0,
+          openMinutes: 90,
+          overloadMinutes: 30
+        })
+      ])
+    );
     expect(plan.capableToPromise[0]).toMatchObject({
       orderNumber: "SO-1",
       promiseStatus: "late_risk",
@@ -305,5 +329,81 @@ describe("calculateMrpPlan", () => {
       overloadDelta: -1,
       latePromiseDelta: -1
     });
+  });
+
+  it("uses material shortages to constrain finite production starts", () => {
+    const input = baseInput();
+    input.demands.push({
+      id: "prod-2-bottle",
+      sourceType: "production_order",
+      sourceId: "prod-2",
+      itemType: "packaging_component",
+      itemId: "bottle",
+      name: "Bottle",
+      sku: "PKG-BTL",
+      quantity: 20,
+      uom: "each",
+      neededAt: new Date("2026-07-08T08:00:00.000Z"),
+      locationId: "loc-pack",
+      description: "PROD-2 component demand"
+    });
+
+    const plan = calculateMrpPlan({
+      ...input,
+      planningStart: new Date("2026-07-01T00:00:00.000Z"),
+      capacityCalendars: [
+        {
+          id: "cal-pack-1",
+          resourceType: "work_center",
+          resourceId: "wc-pack",
+          resourceName: "Packing bench",
+          date: new Date("2026-07-08T00:00:00.000Z"),
+          availableMinutes: 240
+        },
+        {
+          id: "cal-pack-2",
+          resourceType: "work_center",
+          resourceId: "wc-pack",
+          resourceName: "Packing bench",
+          date: horizonEnd,
+          availableMinutes: 240
+        }
+      ],
+      productionOperations: [
+        {
+          id: "op-prod-2",
+          productionOrderId: "prod-2",
+          orderNumber: "PROD-2",
+          operationCode: "PACK",
+          description: "Pack bottles",
+          workCenterId: "wc-pack",
+          workCenterName: "Packing bench",
+          sequence: 10,
+          requiredMinutes: 60,
+          scheduledStartAt: new Date("2026-07-08T08:00:00.000Z"),
+          scheduledEndAt: new Date("2026-07-08T09:00:00.000Z"),
+          dueAt: new Date("2026-07-09T17:00:00.000Z"),
+          status: "ready"
+        }
+      ]
+    });
+
+    expect(plan.materialConstraints).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({
+          productionOrderId: "prod-2",
+          itemId: "bottle",
+          shortageQuantity: 25.8,
+          explanation: expect.stringContaining("production can start after replenishment")
+        })
+      ])
+    );
+    expect(plan.scheduleOperations[0]).toMatchObject({
+      id: "op-prod-2",
+      constrainedByMaterialUntil: new Date("2026-07-08T08:00:00.000Z")
+    });
+    expect(plan.scheduleOperations[0]?.warnings).toEqual(
+      expect.arrayContaining([expect.objectContaining({ type: "material_shortage" })])
+    );
   });
 });

@@ -113,7 +113,17 @@ const receiptLineSchema = z.object({
   itemId: z.string().trim().min(1).optional(),
   lotCode: z.string().trim().min(1).max(80),
   supplierLotNumber: nullableString,
-  quantity: z.coerce.number().finite().positive(),
+  internalLotNumber: nullableString,
+  manufactureDate: isoDate,
+  containerCount: z.coerce.number().int().positive().nullable().optional(),
+  quantity: z.coerce.number().finite().positive().optional(),
+  receivedQuantity: z.coerce.number().finite().positive().nullable().optional(),
+  damagedQuantity: z.coerce.number().finite().nonnegative().nullable().optional(),
+  acceptedQuantity: z.coerce.number().finite().nonnegative().nullable().optional(),
+  quarantinedQuantity: z.coerce.number().finite().nonnegative().nullable().optional(),
+  rejectedQuantity: z.coerce.number().finite().nonnegative().nullable().optional(),
+  disposition: z.enum(["accepted", "quarantine", "rejected", "partial"]).nullable().optional(),
+  dispositionReason: nullableString,
   uom: z.string().trim().min(1).max(24),
   expiryDate: isoDate,
   coaAttachment: z.object({
@@ -129,6 +139,12 @@ const receiptSchema = z.object({
   supplierId: z.string().trim().min(1),
   receivedAt: z.string().datetime({ offset: true }).optional(),
   locationId: z.string().trim().min(1),
+  billOfLadingNumber: nullableString,
+  carrier: nullableString,
+  packingSlipNumber: nullableString,
+  receivedByUserId: nullableString,
+  receivingNotes: nullableString,
+  supplierDocumentIds: z.array(z.string().trim().min(1)).optional(),
   clientTransactionId: z.string().trim().min(1).max(128),
   lines: z.array(receiptLineSchema).min(1)
 });
@@ -143,9 +159,9 @@ const correctionSchema = z.object({
 
 export async function purchasingRoutes(app: FastifyInstance, options: PurchasingRoutesOptions): Promise<void> {
   const canReadPurchasing = requireRoles({
-    anyOf: ["owner_admin", "production_farm", "packing_fulfillment", "sales_wholesale", "auditor"]
+    anyOf: ["owner_admin", "production_farm", "packing_fulfillment", "sales_wholesale", "purchasing", "qc", "auditor"]
   });
-  const canManagePurchasing = requireRoles({ anyOf: ["owner_admin", "production_farm", "packing_fulfillment"] });
+  const canManagePurchasing = requireRoles({ anyOf: ["owner_admin", "production_farm", "packing_fulfillment", "purchasing"] });
 
   app.get(
     "/api/purchasing/suppliers",
@@ -679,7 +695,7 @@ function serializeMovement(movement: { occurredAt: Date }) {
   return { ...movement, occurredAt: movement.occurredAt.toISOString() };
 }
 
-function serializeReceiptDetail(detail: Awaited<ReturnType<ApiDataStore["listReceipts"]>>[number]) {
+export function serializeReceiptDetail(detail: Awaited<ReturnType<ApiDataStore["listReceipts"]>>[number]) {
   return {
     ...detail,
     receipt: serializeReceipt(detail.receipt),

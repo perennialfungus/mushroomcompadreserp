@@ -5,13 +5,15 @@ export type MrpDemandSourceType =
   | "sales_order"
   | "production_order"
   | "minimum_stock"
-  | "suggested_production";
+  | "suggested_production"
+  | "forecast";
 
 export type MrpSupplySourceType = "on_hand" | "purchase_order" | "planned_production_order";
 export type MrpSuggestionType = "purchase_order" | "production_order";
 export type MrpBucketGranularity = "day" | "week";
 export type MrpAlertSeverity = "info" | "warning" | "critical";
-export type PlanningCapacityResourceType = "work_center" | "equipment";
+export type PlanningCapacityResourceType = "work_center" | "equipment" | "labor_role";
+export type CapacityBlockReason = "shift" | "holiday" | "maintenance" | "cleaning" | "changeover" | "reservation";
 
 export type MrpItemRef = {
   itemType: InventoryItemType;
@@ -57,6 +59,7 @@ export type MrpBom = {
   productVariantId: string;
   versionCode: string;
   status: "draft" | "active" | "retired";
+  bomKind?: "standard" | "phantom" | "planning" | "alternate";
   yieldQuantity: number;
   yieldUom: string;
   effectiveFrom: Date | null;
@@ -121,6 +124,12 @@ export type PlanningCapacityCalendar = {
   resourceName: string;
   date: Date;
   availableMinutes: number;
+  shiftCode?: string | null;
+  startsAt?: Date | null;
+  endsAt?: Date | null;
+  reason?: CapacityBlockReason | null;
+  unavailableMinutes?: number;
+  notes?: string | null;
 };
 
 export type ProductionOperationPlan = {
@@ -133,11 +142,18 @@ export type ProductionOperationPlan = {
   workCenterName: string;
   equipmentId?: string | null;
   equipmentName?: string | null;
+  laborRoleId?: string | null;
+  laborRoleName?: string | null;
   sequence: number;
   requiredMinutes: number;
   scheduledStartAt: Date | null;
   scheduledEndAt: Date | null;
   dueAt: Date | null;
+  dispatchPriority?: number;
+  constraintDate?: Date | null;
+  materialConstraintAt?: Date | null;
+  minBlockMinutes?: number;
+  changeoverMinutes?: number;
   status: "pending" | "ready" | "in_progress" | "paused" | "completed" | "cancelled";
 };
 
@@ -201,6 +217,87 @@ export type CtpResult = MrpItemRef & {
   }>;
 };
 
+export type MaterialAvailabilityConstraint = MrpItemRef & {
+  id: string;
+  productionOrderId: string | null;
+  sourceDemandId: string;
+  locationId: string | null;
+  shortageQuantity: number;
+  constrainedStartAt: Date | null;
+  explanation: string;
+};
+
+export type ScheduleOperationWarningType =
+  | "material_shortage"
+  | "capacity_wait"
+  | "late_to_constraint"
+  | "completed_locked"
+  | "maintenance"
+  | "changeover";
+
+export type ScheduleOperationWarning = {
+  type: ScheduleOperationWarningType;
+  severity: "info" | "warning" | "critical";
+  message: string;
+};
+
+export type ScheduleOperation = ProductionOperationPlan & {
+  scheduledStartAt: Date | null;
+  scheduledEndAt: Date | null;
+  finiteStartAt: Date | null;
+  finiteEndAt: Date | null;
+  dispatchPriority: number;
+  blockMinutes: number;
+  warnings: ScheduleOperationWarning[];
+  predecessorOperationId: string | null;
+  constrainedByMaterialUntil: Date | null;
+};
+
+export type ScheduleRun = {
+  id: string;
+  runNumber: string;
+  generatedAt: Date;
+  status: "draft" | "active" | "regenerated";
+  horizonStart: Date;
+  horizonEnd: Date;
+  operationCount: number;
+  overloadCount: number;
+  materialConstraintCount: number;
+  lateOperationCount: number;
+  explanation: string[];
+};
+
+export type RoughCutCapacityLine = {
+  id: string;
+  resourceType: PlanningCapacityResourceType;
+  resourceId: string;
+  resourceName: string;
+  bucketStart: Date;
+  bucketEnd: Date;
+  plannedMinutes: number;
+  openMinutes: number;
+  availableMinutes: number;
+  utilizationPercent: number;
+  overloadMinutes: number;
+  productionOrderIds: string[];
+};
+
+export type DispatchBoardLine = ScheduleOperation & {
+  dispatchRank: number;
+  readyAt: Date | null;
+  constraintSummary: string;
+};
+
+export type ScheduleAuditEntry = {
+  id: string;
+  eventType: "schedule.regenerated" | "schedule.resequenced";
+  subjectId: string;
+  actorUserId: string | null;
+  occurredAt: Date;
+  beforeJson: unknown | null;
+  afterJson: unknown;
+};
+
 export type MrpRiskAlert = {
   id: string;
   severity: MrpAlertSeverity;
@@ -261,6 +358,12 @@ export type MrpPlan = {
   capacityLoads: CapacityLoadLine[];
   finiteCapacitySuggestions: FiniteCapacitySuggestion[];
   capableToPromise: CtpResult[];
+  scheduleRun: ScheduleRun;
+  scheduleOperations: ScheduleOperation[];
+  roughCutCapacity: RoughCutCapacityLine[];
+  dispatchBoard: DispatchBoardLine[];
+  materialConstraints: MaterialAvailabilityConstraint[];
+  scheduleAudits: ScheduleAuditEntry[];
   alerts: MrpRiskAlert[];
   scenarioSnapshots: PlanningScenarioSnapshot[];
   scenarioComparisons: PlanningScenarioComparison[];
@@ -319,6 +422,21 @@ export function calculateMrpPlan(input: MrpPlanInput): MrpPlan {
 
       expandedProductionKeys.add(key);
       const shortageQuantity = roundQuantity(shortageFor(shortage));
+      if (bom.bomKind === "phantom") {
+        const phantomExplosion = buildSuggestion({
+          type: "production_order",
+          ref: shortage.ref,
+          quantity: shortageQuantity,
+          locationId: shortage.locationId,
+          dueAt: earliestNeededAt(shortage.demands),
+          reason: `Explode phantom ${shortage.ref.name} to cover demand within horizon`,
+          sourceDemandIds: shortage.demands.map((demand) => demand.id),
+          bomId: bom.id
+        });
+        demands.push(...explodeBomDemand(bom, { ...phantomExplosion, id: `phantom-${bom.id}-${shortage.ref.itemId}` }, itemCatalog));
+        changed = true;
+        continue;
+      }
       const suggestion = buildSuggestion({
         type: "production_order",
         ref: shortage.ref,
@@ -350,8 +468,32 @@ export function calculateMrpPlan(input: MrpPlanInput): MrpPlan {
     horizonEnd: input.horizonEnd,
     granularity: bucketGranularity
   });
+  const materialConstraints = buildMaterialConstraints([...finalBuckets.values()], suggestions, input.horizonEnd);
+  const scheduleOperations = buildFiniteSchedule({
+    operations: input.productionOperations ?? [],
+    calendars: input.capacityCalendars ?? [],
+    materialConstraints,
+    planningStart,
+    horizonEnd: input.horizonEnd
+  });
+  const scheduleRun = buildScheduleRun({
+    generatedAt,
+    planningStart,
+    horizonEnd: input.horizonEnd,
+    scheduleOperations,
+    capacityLoads,
+    materialConstraints
+  });
+  const roughCutCapacity = buildRoughCutCapacity({
+    calendars: input.capacityCalendars ?? [],
+    operations: input.productionOperations ?? [],
+    planningStart,
+    horizonEnd: input.horizonEnd,
+    granularity: bucketGranularity
+  });
+  const dispatchBoard = buildDispatchBoard(scheduleOperations);
   const finiteCapacitySuggestions = buildFiniteCapacitySuggestions(
-    input.productionOperations ?? [],
+    scheduleOperations,
     capacityLoads,
     input.capacityCalendars ?? [],
     planningStart
@@ -431,6 +573,27 @@ export function calculateMrpPlan(input: MrpPlanInput): MrpPlan {
     capacityLoads,
     finiteCapacitySuggestions,
     capableToPromise,
+    scheduleRun,
+    scheduleOperations,
+    roughCutCapacity,
+    dispatchBoard,
+    materialConstraints,
+    scheduleAudits: [
+      {
+        id: `audit:${scheduleRun.id}`,
+        eventType: "schedule.regenerated",
+        subjectId: scheduleRun.id,
+        actorUserId: null,
+        occurredAt: generatedAt,
+        beforeJson: null,
+        afterJson: {
+          operationCount: scheduleRun.operationCount,
+          overloadCount: scheduleRun.overloadCount,
+          materialConstraintCount: scheduleRun.materialConstraintCount,
+          lateOperationCount: scheduleRun.lateOperationCount
+        }
+      }
+    ],
     alerts,
     scenarioSnapshots,
     scenarioComparisons: compareScenarioSnapshots(scenarioSnapshots),
@@ -522,6 +685,9 @@ function buildCapacityLoads(input: {
     if (operation.equipmentId && operation.equipmentName) {
       resourceNames.set(operation.equipmentId, operation.equipmentName);
     }
+    if (operation.laborRoleId && operation.laborRoleName) {
+      resourceNames.set(operation.laborRoleId, operation.laborRoleName);
+    }
   }
 
   const loads = new Map<string, CapacityLoadLine>();
@@ -569,6 +735,17 @@ function buildCapacityLoads(input: {
         granularity: input.granularity
       });
     }
+    if (operation.laborRoleId) {
+      addOperationLoad(loads, {
+        resourceType: "labor_role",
+        resourceId: operation.laborRoleId,
+        resourceName: operation.laborRoleName ?? resourceNames.get(operation.laborRoleId) ?? operation.laborRoleId,
+        at: scheduledAt,
+        minutes: operation.requiredMinutes,
+        operationId: operation.id,
+        granularity: input.granularity
+      });
+    }
   }
 
   return [...loads.values()]
@@ -584,7 +761,7 @@ function buildCapacityLoads(input: {
 }
 
 function buildFiniteCapacitySuggestions(
-  operations: ProductionOperationPlan[],
+  operations: Array<ProductionOperationPlan | ScheduleOperation>,
   capacityLoads: CapacityLoadLine[],
   calendars: PlanningCapacityCalendar[],
   planningStart: Date
@@ -603,7 +780,9 @@ function buildFiniteCapacitySuggestions(
     .map((operation) => {
       const scheduledAt = operation.scheduledStartAt ?? operation.dueAt ?? planningStart;
       const load = overloadedResourceDates.get(capacityKey("work_center", operation.workCenterId, periodFor(scheduledAt, "day").bucketStart));
-      const slotStart = findNextCapacitySlot(operation, capacityLoads, calendars, scheduledAt);
+      const slotStart = "finiteStartAt" in operation && operation.finiteStartAt
+        ? operation.finiteStartAt
+        : findNextCapacitySlot(operation, capacityLoads, calendars, scheduledAt);
       const suggestedEndAt = addMinutes(slotStart, operation.requiredMinutes);
       return {
         id: `finite:${operation.id}`,
@@ -725,6 +904,262 @@ function calculateCapableToPromise(input: {
       contributingSupplies
     };
   });
+}
+
+function buildFiniteSchedule(input: {
+  operations: ProductionOperationPlan[];
+  calendars: PlanningCapacityCalendar[];
+  materialConstraints: MaterialAvailabilityConstraint[];
+  planningStart: Date;
+  horizonEnd: Date;
+}): ScheduleOperation[] {
+  const remainingCapacity = buildDailyCapacityLedger(input.calendars);
+  const byOrder = groupOperationsByOrder(input.operations);
+  const scheduled: ScheduleOperation[] = [];
+  const materialConstraintByOrder = latestMaterialConstraintByOrder(input.materialConstraints);
+
+  for (const orderOperations of byOrder.values()) {
+    const sorted = [...orderOperations].sort((left, right) => left.sequence - right.sequence);
+    let predecessorEnd: Date | null = null;
+    let predecessorOperationId: string | null = null;
+
+    for (const operation of sorted) {
+      const warnings: ScheduleOperationWarning[] = [];
+      const dispatchPriority = operation.dispatchPriority ?? priorityForOperation(operation);
+      const blockMinutes = Math.max(operation.minBlockMinutes ?? 0, operation.requiredMinutes + (operation.changeoverMinutes ?? 0));
+      const materialConstrainedUntil =
+        operation.materialConstraintAt ??
+        materialConstraintByOrder.get(operation.productionOrderId) ??
+        null;
+      const earliestStart = maxDate(
+        maxDate(input.planningStart, predecessorEnd),
+        maxDate(operation.constraintDate ?? null, materialConstrainedUntil)
+      ) ?? input.planningStart;
+
+      if (materialConstrainedUntil && materialConstrainedUntil.getTime() > input.planningStart.getTime()) {
+        warnings.push({
+          type: "material_shortage",
+          severity: "critical",
+          message: `Material availability holds this operation until ${materialConstrainedUntil.toISOString().slice(0, 10)}.`
+        });
+      }
+
+      if ((operation.changeoverMinutes ?? 0) > 0) {
+        warnings.push({
+          type: "changeover",
+          severity: "info",
+          message: `${operation.changeoverMinutes} changeover minute(s) are included for cleaning or setup.`
+        });
+      }
+
+      if (operation.status === "completed") {
+        const completedStart = operation.scheduledStartAt ?? operation.scheduledEndAt ?? operation.dueAt;
+        const completedEnd = operation.scheduledEndAt ?? completedStart;
+        scheduled.push({
+          ...operation,
+          dispatchPriority,
+          blockMinutes,
+          finiteStartAt: completedStart,
+          finiteEndAt: completedEnd,
+          predecessorOperationId,
+          constrainedByMaterialUntil: materialConstrainedUntil,
+          warnings: [
+            ...warnings,
+            {
+              type: "completed_locked",
+              severity: "info",
+              message: "Completed operation is locked and is not moved by schedule regeneration."
+            }
+          ]
+        });
+        predecessorEnd = completedEnd;
+        predecessorOperationId = operation.id;
+        continue;
+      }
+
+      const slot = findFiniteSlot({
+        operation,
+        blockMinutes,
+        earliestStart,
+        horizonEnd: input.horizonEnd,
+        remainingCapacity
+      });
+      if (slot.start.getTime() > earliestStart.getTime()) {
+        warnings.push({
+          type: "capacity_wait",
+          severity: "warning",
+          message: `Finite capacity moves ${operation.operationCode} to the next available resource block.`
+        });
+      }
+      if (operation.constraintDate && slot.end.getTime() > operation.constraintDate.getTime()) {
+        warnings.push({
+          type: "late_to_constraint",
+          severity: "critical",
+          message: `${operation.operationCode} finishes after its constraint date.`
+        });
+      }
+
+      consumeFiniteCapacity(remainingCapacity, operation, slot.bucketStart, blockMinutes);
+      scheduled.push({
+        ...operation,
+        dispatchPriority,
+        blockMinutes,
+        scheduledStartAt: operation.scheduledStartAt,
+        scheduledEndAt: operation.scheduledEndAt,
+        finiteStartAt: slot.start,
+        finiteEndAt: slot.end,
+        predecessorOperationId,
+        constrainedByMaterialUntil: materialConstrainedUntil,
+        warnings
+      });
+      predecessorEnd = slot.end;
+      predecessorOperationId = operation.id;
+    }
+  }
+
+  return scheduled.sort((left, right) => {
+    const startDelta = (left.finiteStartAt?.getTime() ?? Number.MAX_SAFE_INTEGER) - (right.finiteStartAt?.getTime() ?? Number.MAX_SAFE_INTEGER);
+    return startDelta !== 0 ? startDelta : left.dispatchPriority - right.dispatchPriority;
+  });
+}
+
+function buildScheduleRun(input: {
+  generatedAt: Date;
+  planningStart: Date;
+  horizonEnd: Date;
+  scheduleOperations: ScheduleOperation[];
+  capacityLoads: CapacityLoadLine[];
+  materialConstraints: MaterialAvailabilityConstraint[];
+}): ScheduleRun {
+  const lateOperationCount = input.scheduleOperations.filter(
+    (operation) => operation.dueAt && operation.finiteEndAt && operation.finiteEndAt.getTime() > operation.dueAt.getTime()
+  ).length;
+  const overloadCount = input.capacityLoads.filter((load) => load.overloadMinutes > 0).length;
+  const materialConstraintCount = input.materialConstraints.length;
+  return {
+    id: `schedule:${input.generatedAt.toISOString()}`,
+    runNumber: `APS-${input.generatedAt.toISOString().slice(0, 10).replaceAll("-", "")}`,
+    generatedAt: input.generatedAt,
+    status: "active",
+    horizonStart: input.planningStart,
+    horizonEnd: input.horizonEnd,
+    operationCount: input.scheduleOperations.length,
+    overloadCount,
+    materialConstraintCount,
+    lateOperationCount,
+    explanation: [
+      "Finite scheduling loads work centers, equipment, and labor roles before selecting operation slots.",
+      "Material shortages, purchase receipts, production supply, and QC lead time can hold production starts.",
+      "Completed operations remain locked; regeneration only changes open work."
+    ]
+  };
+}
+
+function buildRoughCutCapacity(input: {
+  calendars: PlanningCapacityCalendar[];
+  operations: ProductionOperationPlan[];
+  planningStart: Date;
+  horizonEnd: Date;
+  granularity: MrpBucketGranularity;
+}): RoughCutCapacityLine[] {
+  const loads = new Map<string, RoughCutCapacityLine>();
+  for (const calendar of input.calendars) {
+    const period = periodFor(calendar.date, input.granularity);
+    const key = capacityKey(calendar.resourceType, calendar.resourceId, period.bucketStart);
+    const existing = loads.get(key);
+    loads.set(key, {
+      id: key,
+      resourceType: calendar.resourceType,
+      resourceId: calendar.resourceId,
+      resourceName: calendar.resourceName,
+      bucketStart: period.bucketStart,
+      bucketEnd: period.bucketEnd,
+      plannedMinutes: existing?.plannedMinutes ?? 0,
+      openMinutes: existing?.openMinutes ?? 0,
+      availableMinutes: roundQuantity((existing?.availableMinutes ?? 0) + calendar.availableMinutes),
+      utilizationPercent: 0,
+      overloadMinutes: 0,
+      productionOrderIds: existing?.productionOrderIds ?? []
+    });
+  }
+
+  for (const operation of input.operations.filter((candidate) => candidate.status !== "completed" && candidate.status !== "cancelled")) {
+    const at = operation.scheduledStartAt ?? operation.dueAt ?? input.planningStart;
+    const minutes = operation.requiredMinutes + (operation.changeoverMinutes ?? 0);
+    const statusField = operation.status === "pending" ? "plannedMinutes" : "openMinutes";
+    addRoughCutLoad(loads, "work_center", operation.workCenterId, operation.workCenterName, at, minutes, operation.productionOrderId, statusField, input.granularity);
+    if (operation.equipmentId) {
+      addRoughCutLoad(loads, "equipment", operation.equipmentId, operation.equipmentName ?? operation.equipmentId, at, minutes, operation.productionOrderId, statusField, input.granularity);
+    }
+    if (operation.laborRoleId) {
+      addRoughCutLoad(loads, "labor_role", operation.laborRoleId, operation.laborRoleName ?? operation.laborRoleId, at, minutes, operation.productionOrderId, statusField, input.granularity);
+    }
+  }
+
+  return [...loads.values()]
+    .map((line) => {
+      const loadMinutes = line.plannedMinutes + line.openMinutes;
+      return {
+        ...line,
+        utilizationPercent: line.availableMinutes > 0 ? roundQuantity((loadMinutes / line.availableMinutes) * 100) : 100,
+        overloadMinutes: Math.max(0, roundQuantity(loadMinutes - line.availableMinutes)),
+        productionOrderIds: [...new Set(line.productionOrderIds)]
+      };
+    })
+    .sort((left, right) => left.bucketStart.getTime() - right.bucketStart.getTime() || left.resourceName.localeCompare(right.resourceName));
+}
+
+function buildDispatchBoard(scheduleOperations: ScheduleOperation[]): DispatchBoardLine[] {
+  return [...scheduleOperations]
+    .filter((operation) => operation.status !== "completed" && operation.status !== "cancelled")
+    .sort((left, right) => {
+      const priorityDelta = left.dispatchPriority - right.dispatchPriority;
+      if (priorityDelta !== 0) {
+        return priorityDelta;
+      }
+      return (left.finiteStartAt?.getTime() ?? Number.MAX_SAFE_INTEGER) - (right.finiteStartAt?.getTime() ?? Number.MAX_SAFE_INTEGER);
+    })
+    .map((operation, index) => ({
+      ...operation,
+      dispatchRank: index + 1,
+      readyAt: maxDate(operation.finiteStartAt, operation.constrainedByMaterialUntil),
+      constraintSummary: operation.warnings.length > 0 ? operation.warnings.map((warning) => warning.message).join(" ") : "Ready inside finite capacity."
+    }));
+}
+
+function buildMaterialConstraints(
+  buckets: ItemBucket[],
+  suggestions: MrpSuggestion[],
+  horizonEnd: Date
+): MaterialAvailabilityConstraint[] {
+  const constraints: MaterialAvailabilityConstraint[] = [];
+  for (const bucket of buckets) {
+    const shortageQuantity = roundQuantity(shortageFor(bucket));
+    if (shortageQuantity <= 0.000001) {
+      continue;
+    }
+    for (const demand of bucket.demands.filter((candidate) => candidate.sourceType === "production_order")) {
+      const supplySuggestion = suggestions.find(
+        (suggestion) =>
+          suggestion.itemType === bucket.ref.itemType &&
+          suggestion.itemId === bucket.ref.itemId &&
+          suggestion.uom === bucket.ref.uom &&
+          suggestion.locationId === bucket.locationId
+      );
+      const constrainedStartAt = supplySuggestion?.dueAt ?? demand.neededAt ?? horizonEnd;
+      constraints.push({
+        ...bucket.ref,
+        id: `material:${demand.id}`,
+        productionOrderId: demand.sourceId,
+        sourceDemandId: demand.id,
+        locationId: bucket.locationId,
+        shortageQuantity,
+        constrainedStartAt,
+        explanation: `${demand.description} is short ${shortageQuantity} ${bucket.ref.uom}; production can start after replenishment and QC release.`
+      });
+    }
+  }
+  return constraints;
 }
 
 function buildRiskAlerts(input: {
@@ -889,6 +1324,168 @@ function addOperationLoad(
   load.scheduledMinutes = roundQuantity(load.scheduledMinutes + input.minutes);
   load.operationIds = [...new Set([...load.operationIds, input.operationId])];
   loads.set(key, load);
+}
+
+function addRoughCutLoad(
+  loads: Map<string, RoughCutCapacityLine>,
+  resourceType: PlanningCapacityResourceType,
+  resourceId: string,
+  resourceName: string,
+  at: Date,
+  minutes: number,
+  productionOrderId: string,
+  statusField: "plannedMinutes" | "openMinutes",
+  granularity: MrpBucketGranularity
+): void {
+  const period = periodFor(at, granularity);
+  const key = capacityKey(resourceType, resourceId, period.bucketStart);
+  const load = loads.get(key) ?? {
+    id: key,
+    resourceType,
+    resourceId,
+    resourceName,
+    bucketStart: period.bucketStart,
+    bucketEnd: period.bucketEnd,
+    plannedMinutes: 0,
+    openMinutes: 0,
+    availableMinutes: 0,
+    utilizationPercent: 0,
+    overloadMinutes: 0,
+    productionOrderIds: []
+  };
+  load[statusField] = roundQuantity(load[statusField] + minutes);
+  load.productionOrderIds = [...new Set([...load.productionOrderIds, productionOrderId])];
+  loads.set(key, load);
+}
+
+type CapacityLedger = Map<string, {
+  date: Date;
+  resourceType: PlanningCapacityResourceType;
+  resourceId: string;
+  resourceName: string;
+  remainingMinutes: number;
+  startsAt: Date;
+}>;
+
+function buildDailyCapacityLedger(calendars: PlanningCapacityCalendar[]): CapacityLedger {
+  const ledger: CapacityLedger = new Map();
+  for (const calendar of calendars) {
+    if (calendar.reason === "holiday" || calendar.reason === "maintenance") {
+      continue;
+    }
+    const period = periodFor(calendar.date, "day");
+    const key = capacityKey(calendar.resourceType, calendar.resourceId, period.bucketStart);
+    const existing = ledger.get(key);
+    ledger.set(key, {
+      date: period.bucketStart,
+      resourceType: calendar.resourceType,
+      resourceId: calendar.resourceId,
+      resourceName: calendar.resourceName,
+      remainingMinutes: roundQuantity((existing?.remainingMinutes ?? 0) + Math.max(0, calendar.availableMinutes - (calendar.unavailableMinutes ?? 0))),
+      startsAt: calendar.startsAt ?? new Date(`${period.bucketStart.toISOString().slice(0, 10)}T08:00:00.000Z`)
+    });
+  }
+  return ledger;
+}
+
+function groupOperationsByOrder(operations: ProductionOperationPlan[]): Map<string, ProductionOperationPlan[]> {
+  const groups = new Map<string, ProductionOperationPlan[]>();
+  const sorted = [...operations].sort((left, right) => {
+    const priorityDelta = priorityForOperation(left) - priorityForOperation(right);
+    if (priorityDelta !== 0) {
+      return priorityDelta;
+    }
+    return (left.constraintDate?.getTime() ?? left.dueAt?.getTime() ?? Number.MAX_SAFE_INTEGER) -
+      (right.constraintDate?.getTime() ?? right.dueAt?.getTime() ?? Number.MAX_SAFE_INTEGER);
+  });
+  for (const operation of sorted) {
+    groups.set(operation.productionOrderId, [...(groups.get(operation.productionOrderId) ?? []), operation]);
+  }
+  return groups;
+}
+
+function latestMaterialConstraintByOrder(constraints: MaterialAvailabilityConstraint[]): Map<string, Date> {
+  const result = new Map<string, Date>();
+  for (const constraint of constraints) {
+    if (!constraint.productionOrderId || !constraint.constrainedStartAt) {
+      continue;
+    }
+    const existing = result.get(constraint.productionOrderId);
+    if (!existing || constraint.constrainedStartAt.getTime() > existing.getTime()) {
+      result.set(constraint.productionOrderId, constraint.constrainedStartAt);
+    }
+  }
+  return result;
+}
+
+function findFiniteSlot(input: {
+  operation: ProductionOperationPlan;
+  blockMinutes: number;
+  earliestStart: Date;
+  horizonEnd: Date;
+  remainingCapacity: CapacityLedger;
+}): { bucketStart: Date; start: Date; end: Date } {
+  const earliestDay = startOfUtcDay(input.earliestStart);
+  for (let day = new Date(earliestDay); day.getTime() <= input.horizonEnd.getTime(); day.setUTCDate(day.getUTCDate() + 1)) {
+    if (resourcesHaveCapacity(input.remainingCapacity, input.operation, day, input.blockMinutes)) {
+      const workCenter = input.remainingCapacity.get(capacityKey("work_center", input.operation.workCenterId, day));
+      const start = maxDate(input.earliestStart, workCenter?.startsAt ?? new Date(`${day.toISOString().slice(0, 10)}T08:00:00.000Z`)) ?? input.earliestStart;
+      return { bucketStart: new Date(day), start, end: addMinutes(start, input.blockMinutes) };
+    }
+  }
+
+  const fallbackStart = addDays(startOfUtcDay(input.horizonEnd), 1);
+  return {
+    bucketStart: fallbackStart,
+    start: fallbackStart,
+    end: addMinutes(fallbackStart, input.blockMinutes)
+  };
+}
+
+function resourcesHaveCapacity(
+  ledger: CapacityLedger,
+  operation: ProductionOperationPlan,
+  day: Date,
+  blockMinutes: number
+): boolean {
+  const resourceKeys = [
+    capacityKey("work_center", operation.workCenterId, day),
+    ...(operation.equipmentId ? [capacityKey("equipment", operation.equipmentId, day)] : []),
+    ...(operation.laborRoleId ? [capacityKey("labor_role", operation.laborRoleId, day)] : [])
+  ];
+  return resourceKeys.every((key) => (ledger.get(key)?.remainingMinutes ?? 0) >= blockMinutes);
+}
+
+function consumeFiniteCapacity(
+  ledger: CapacityLedger,
+  operation: ProductionOperationPlan,
+  day: Date,
+  blockMinutes: number
+): void {
+  const resourceKeys = [
+    capacityKey("work_center", operation.workCenterId, day),
+    ...(operation.equipmentId ? [capacityKey("equipment", operation.equipmentId, day)] : []),
+    ...(operation.laborRoleId ? [capacityKey("labor_role", operation.laborRoleId, day)] : [])
+  ];
+  for (const key of resourceKeys) {
+    const row = ledger.get(key);
+    if (row) {
+      row.remainingMinutes = roundQuantity(row.remainingMinutes - blockMinutes);
+    }
+  }
+}
+
+function priorityForOperation(operation: ProductionOperationPlan): number {
+  if (operation.dispatchPriority !== undefined) {
+    return operation.dispatchPriority;
+  }
+  if (operation.status === "in_progress") {
+    return 1;
+  }
+  if (operation.status === "ready") {
+    return 2;
+  }
+  return 5;
 }
 
 function capacityKey(resourceType: PlanningCapacityResourceType, resourceId: string, bucketStart: Date): string {

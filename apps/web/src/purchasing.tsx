@@ -1,12 +1,18 @@
 import { useEffect, useMemo, useState, type FormEvent } from "react";
-import { AlertTriangle, CheckCircle2, ClipboardCheck, Edit3, FileUp, PackagePlus, Save, ShieldCheck, Truck } from "lucide-react";
+import { AlertTriangle, CheckCircle2, ClipboardCheck, Edit3, FileSearch, FileUp, Link2, PackagePlus, Plus, Save, ShieldCheck, Truck } from "lucide-react";
 import { Badge, Button, EmptyState, Input, Tabs, useToast } from "./components/ui";
 import { useAuth } from "./auth";
 import {
   createPurchaseOrder,
   createSupplierDocument,
   createSupplier,
+  generateConfiguredNumber,
+  approveAsnDocument,
+  convertAsnToReceipt,
+  getCustomerDocumentPortalPreview,
+  getEdiStagingCenter,
   getSupplierQualityDashboard,
+  importAsnDocument,
   listLocations,
   listPurchaseOrders,
   listReceipts,
@@ -14,10 +20,12 @@ import {
   receivePurchaseOrder,
   updatePurchaseOrder,
   updateSupplier,
-  upsertSupplierApproval
+  upsertPartnerMapping,
+  upsertSupplierApproval,
+  validateConfiguredOperationalRecord
 } from "./lib/api";
 import { useI18n } from "./i18n/I18nProvider";
-import type { Location, PurchaseOrderDetail, ReceiptDetail, Supplier, SupplierQualityDashboard } from "./types";
+import type { CustomerDocumentPortalPreview, EdiStagingCenter, Location, PurchaseOrderDetail, ReceiptDetail, Supplier, SupplierQualityDashboard } from "./types";
 
 function field(form: FormData, name: string): string {
   return String(form.get(name) ?? "").trim();
@@ -50,9 +58,12 @@ export function PurchasingScreen() {
   const [purchaseOrders, setPurchaseOrders] = useState<PurchaseOrderDetail[]>([]);
   const [receipts, setReceipts] = useState<ReceiptDetail[]>([]);
   const [supplierQuality, setSupplierQuality] = useState<SupplierQualityDashboard | null>(null);
+  const [ediStaging, setEdiStaging] = useState<EdiStagingCenter | null>(null);
+  const [customerPortalPreview, setCustomerPortalPreview] = useState<CustomerDocumentPortalPreview[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [selectedPoId, setSelectedPoId] = useState("purchase-order-alcohol-001");
   const [editingSupplierId, setEditingSupplierId] = useState<string | "new" | null>(null);
+  const [receiptNumberDefault, setReceiptNumberDefault] = useState(`RCPT-${String(Date.now()).slice(-6)}`);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -67,19 +78,33 @@ export function PurchasingScreen() {
     }
     setError(null);
     try {
-      const [supplierResponse, poResponse, receiptResponse, locationResponse, supplierQualityResponse] = await Promise.all([
+      const [supplierResponse, poResponse, receiptResponse, locationResponse, supplierQualityResponse, ediResponse, portalResponse] = await Promise.all([
         listSuppliers(token),
         listPurchaseOrders(token),
         listReceipts(token),
         listLocations(token),
-        getSupplierQualityDashboard(token)
+        getSupplierQualityDashboard(token),
+        getEdiStagingCenter(token),
+        getCustomerDocumentPortalPreview(token)
       ]);
       setSuppliers(supplierResponse.suppliers);
       setPurchaseOrders(poResponse.purchaseOrders);
       setReceipts(receiptResponse.receipts);
       setLocations(locationResponse.locations);
       setSupplierQuality(supplierQualityResponse.dashboard);
+      setEdiStaging(ediResponse.staging);
+      setCustomerPortalPreview(portalResponse.previews);
       setSelectedPoId((current) => current || poResponse.purchaseOrders[0]?.order.id || "");
+      try {
+        const preview = await generateConfiguredNumber(token, {
+          documentTypeId: "doc-type-standard-receipt",
+          locationId: "loc-pack",
+          commit: false
+        });
+        setReceiptNumberDefault(preview.generated.documentNumber);
+      } catch {
+        setReceiptNumberDefault(`RCPT-${String(Date.now()).slice(-6)}`);
+      }
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Purchasing could not be loaded.");
     } finally {
@@ -220,25 +245,78 @@ export function PurchasingScreen() {
       setError("Select a purchase order line to receive.");
       return;
     }
-    const quantity = Number(field(form, "quantity"));
-    if (!Number.isFinite(quantity) || quantity <= 0) {
+    const receivedQuantity = Number(field(form, "receivedQuantity"));
+    if (!Number.isFinite(receivedQuantity) || receivedQuantity <= 0) {
       setError("Received quantity must be greater than zero.");
       return;
     }
-    const receiptNumber = field(form, "receiptNumber") || `RCPT-${String(Date.now()).slice(-6)}`;
+    let receiptNumber = field(form, "receiptNumber") || receiptNumberDefault;
+    const acceptedQuantity = Number(field(form, "acceptedQuantity") || "0");
+    const quarantinedQuantity = Number(field(form, "quarantinedQuantity") || "0");
+    const rejectedQuantity = Number(field(form, "rejectedQuantity") || "0");
+    const damagedQuantity = Number(field(form, "damagedQuantity") || "0");
+    const validation = await validateConfiguredOperationalRecord(token, {
+      targetEntity: "receipt",
+      documentTypeId: "doc-type-standard-receipt",
+      workflowState: "draft",
+      values: {
+        receiptNumber,
+        supplierLotNumber: nullableField(form, "supplierLotNumber"),
+        lotCode: field(form, "lotCode")
+      },
+      attributeValues: {
+        supplier_lot: nullableField(form, "supplierLotNumber"),
+        coa_reference: nullableField(form, "coaFileName")
+      },
+      appliesTo: { document_type: "doc-type-standard-receipt" }
+    });
+    if (!validation.validation.valid) {
+      setError(validation.validation.issues.map((issue) => issue.message).join(" "));
+      return;
+    }
+    if (receiptNumber === receiptNumberDefault) {
+      const generated = await generateConfiguredNumber(token, {
+        documentTypeId: "doc-type-standard-receipt",
+        locationId: field(form, "locationId") || locations[0]?.id || "loc-pack",
+        commit: true
+      });
+      receiptNumber = generated.generated.documentNumber;
+    }
     const response = await receivePurchaseOrder(token, {
       receiptNumber,
       purchaseOrderId: selectedPo.order.id,
       supplierId: selectedPo.order.supplierId,
       receivedAt: new Date().toISOString(),
       locationId: field(form, "locationId") || locations[0]?.id || "loc-pack",
+      billOfLadingNumber: nullableField(form, "billOfLadingNumber"),
+      carrier: nullableField(form, "carrier"),
+      packingSlipNumber: nullableField(form, "packingSlipNumber"),
+      receivingNotes: nullableField(form, "receivingNotes"),
       clientTransactionId: crypto.randomUUID(),
       lines: [
         {
           purchaseOrderLineId: line.id,
           lotCode: field(form, "lotCode"),
           supplierLotNumber: nullableField(form, "supplierLotNumber"),
-          quantity,
+          internalLotNumber: nullableField(form, "internalLotNumber"),
+          manufactureDate: nullableField(form, "manufactureDate")
+            ? new Date(`${field(form, "manufactureDate")}T00:00:00.000Z`).toISOString()
+            : null,
+          containerCount: Number(field(form, "containerCount") || "0") || null,
+          quantity: receivedQuantity,
+          receivedQuantity,
+          damagedQuantity,
+          acceptedQuantity,
+          quarantinedQuantity,
+          rejectedQuantity,
+          disposition: quarantinedQuantity > 0 && acceptedQuantity > 0
+            ? "partial"
+            : quarantinedQuantity > 0
+              ? "quarantine"
+              : rejectedQuantity > 0 && acceptedQuantity === 0
+                ? "rejected"
+                : "accepted",
+          dispositionReason: nullableField(form, "dispositionReason"),
           uom: line.uom,
           expiryDate: nullableField(form, "expiryDate")
             ? new Date(`${field(form, "expiryDate")}T00:00:00.000Z`).toISOString()
@@ -263,6 +341,67 @@ export function PurchasingScreen() {
     await refresh();
   }
 
+  async function savePartnerMapping(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!token || !ediStaging) {
+      return;
+    }
+    const form = new FormData(event.currentTarget);
+    const response = await upsertPartnerMapping(token, {
+      partnerId: field(form, "partnerId"),
+      mappingType: field(form, "mappingType") as "item" | "unit" | "location" | "carrier" | "document_identifier",
+      externalCode: field(form, "externalCode"),
+      externalDescription: nullableField(form, "externalDescription"),
+      internalType: field(form, "internalType"),
+      internalId: field(form, "internalId"),
+      internalCode: nullableField(form, "internalCode"),
+      active: true
+    });
+    toast.showToast({ title: "Partner mapping saved", description: response.mapping.externalCode });
+    await refresh();
+  }
+
+  async function importDemoAsn(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!token || !ediStaging) {
+      return;
+    }
+    const form = new FormData(event.currentTarget);
+    const response = await importAsnDocument(token, {
+      partnerId: field(form, "partnerId"),
+      fileName: field(form, "fileName"),
+      format: "csv",
+      contents: field(form, "contents")
+    });
+    toast.showToast({
+      title: response.asn.status === "validated" ? "ASN validated" : "ASN quarantined",
+      description: response.asn.asnNumber
+    });
+    await refresh();
+  }
+
+  async function approveAsn(asnId: string) {
+    if (!token) {
+      return;
+    }
+    const response = await approveAsnDocument(token, asnId);
+    toast.showToast({ title: "ASN approved", description: response.asn.asnNumber });
+    await refresh();
+  }
+
+  async function convertAsn(asnId: string) {
+    if (!token) {
+      return;
+    }
+    const response = await convertAsnToReceipt(token, asnId, {
+      receiptNumber: `RCPT-ASN-${String(Date.now()).slice(-5)}`,
+      locationId: locations.find((location) => location.id === "loc-pack")?.id ?? locations[0]?.id ?? "loc-pack",
+      clientTransactionId: crypto.randomUUID()
+    });
+    toast.showToast({ title: "Receipt draft created", description: response.receipt.receipt.receiptNumber });
+    await refresh();
+  }
+
   if (loading) {
     return <EmptyState title="Loading purchasing" description="Fetching suppliers, POs, and receipts." />;
   }
@@ -275,10 +414,16 @@ export function PurchasingScreen() {
           <h2 id="purchasing-title">Supplier quality and receiving</h2>
           <p>Control approved vendor lists, supplier documents, incoming inspection, and receiving release.</p>
         </div>
-        <Button variant="secondary" onClick={() => void refresh()}>
-          <Truck aria-hidden="true" size={18} />
-          Refresh
-        </Button>
+        <div className="action-row">
+          <Button variant="secondary" onClick={() => setEditingSupplierId("new")} data-guide="purchasing.new-supplier">
+            <Plus aria-hidden="true" size={18} />
+            New supplier
+          </Button>
+          <Button variant="secondary" onClick={() => void refresh()}>
+            <Truck aria-hidden="true" size={18} />
+            Refresh
+          </Button>
+        </div>
       </div>
 
       {error ? <p className="form-error">{error}</p> : null}
@@ -306,6 +451,174 @@ export function PurchasingScreen() {
 
       <Tabs
         tabs={[
+          {
+            id: "edi",
+            label: "EDI / ASN",
+            content: ediStaging ? (
+              <div className="master-grid">
+                <div className="table-panel" data-guide="edi.staging-center">
+                  <div className="panel-heading">
+                    <h3>EDI staging center</h3>
+                    <Badge tone="info">{formatNumber(ediStaging.documents.length)} staged docs</Badge>
+                  </div>
+                  <table className="list-table">
+                    <thead>
+                      <tr><th>Document</th><th>Partner</th><th>Status</th><th>Issues</th><th>Action</th></tr>
+                    </thead>
+                    <tbody>
+                      {ediStaging.asns.map((asn) => (
+                        <tr key={asn.id}>
+                          <td>
+                            {asn.asnNumber}
+                            <div className="muted-line">{asn.poNumber ?? asn.purchaseOrder?.poNumber ?? "No PO linked"}</div>
+                          </td>
+                          <td>{ediStaging.partners.find((partner) => partner.id === asn.partnerId)?.name ?? asn.partnerId}</td>
+                          <td><Badge tone={asn.status === "converted" ? "success" : asn.status === "quarantined" ? "warning" : "info"}>{asn.status}</Badge></td>
+                          <td>{formatNumber([...asn.validationIssues, ...(asn.lines ?? []).flatMap((line) => line.validationIssues)].length)}</td>
+                          <td>
+                            <div className="action-row">
+                              <Button size="sm" variant="secondary" disabled={asn.status !== "validated"} onClick={() => void approveAsn(asn.id)}>
+                                <ShieldCheck aria-hidden="true" size={16} />
+                                Approve
+                              </Button>
+                              <Button size="sm" disabled={asn.status !== "approved"} onClick={() => void convertAsn(asn.id)} data-guide="edi.convert-asn">
+                                <ClipboardCheck aria-hidden="true" size={16} />
+                                Receipt
+                              </Button>
+                            </div>
+                          </td>
+                        </tr>
+                      ))}
+                      {ediStaging.asns.length === 0 ? <tr><td colSpan={5}>No ASN files have been staged.</td></tr> : null}
+                    </tbody>
+                  </table>
+                </div>
+                <form className="editor-panel" onSubmit={importDemoAsn} data-guide="edi.import-asn">
+                  <h3>Import ASN file</h3>
+                  <div className="form-grid">
+                    <label className="select-field">
+                      <span>Partner</span>
+                      <select name="partnerId" defaultValue={ediStaging.partners[0]?.id}>
+                        {ediStaging.partners.map((partner) => <option key={partner.id} value={partner.id}>{partner.name}</option>)}
+                      </select>
+                    </label>
+                    <Input label="File name" name="fileName" defaultValue="biofarms-asn.csv" />
+                    <label className="input-field span-2">
+                      <span>ASN CSV</span>
+                      <textarea
+                        name="contents"
+                        rows={8}
+                        defaultValue={`asn_number,supplier_id,po_number,purchase_order_line_id,ship_date,expected_at,carrier,tracking_number,packing_slip_number,line_number,external_item_code,supplier_sku,quantity,uom,lot_code,supplier_lot_number,expiry_date\nASN-BIO-778,supplier-bio-farms,SUP-PO-2026-001,purchase-order-line-alcohol-001,2026-06-27T08:00:00.000Z,2026-06-28T12:00:00.000Z,DHL,BOL-ASN-778,PS-ASN-778,1,ALC-96,ALC-96,10,L,ALC-ASN-${String(Date.now()).slice(-4)},SUP-ASN-778,2027-06-30T00:00:00.000Z`}
+                      />
+                    </label>
+                  </div>
+                  <Button type="submit">
+                    <FileSearch aria-hidden="true" size={18} />
+                    Validate import
+                  </Button>
+                </form>
+                <form className="editor-panel" onSubmit={savePartnerMapping} data-guide="edi.mapping-editor">
+                  <h3>Partner mapping editor</h3>
+                  <div className="form-grid">
+                    <label className="select-field">
+                      <span>Partner</span>
+                      <select name="partnerId" defaultValue={ediStaging.partners[0]?.id}>
+                        {ediStaging.partners.map((partner) => <option key={partner.id} value={partner.id}>{partner.partnerCode}</option>)}
+                      </select>
+                    </label>
+                    <label className="select-field">
+                      <span>Mapping type</span>
+                      <select name="mappingType" defaultValue="item">
+                        <option value="item">Item</option>
+                        <option value="unit">Unit</option>
+                        <option value="location">Location</option>
+                        <option value="carrier">Carrier</option>
+                        <option value="document_identifier">Document identifier</option>
+                      </select>
+                    </label>
+                    <Input label="External code" name="externalCode" defaultValue="ALC-96" />
+                    <Input label="External description" name="externalDescription" defaultValue="Food-grade alcohol" />
+                    <Input label="Internal type" name="internalType" defaultValue="material" />
+                    <Input label="Internal id" name="internalId" defaultValue="mat-alcohol" />
+                    <Input label="Internal code" name="internalCode" defaultValue="ALC-96" />
+                  </div>
+                  <Button type="submit">
+                    <Link2 aria-hidden="true" size={18} />
+                    Save mapping
+                  </Button>
+                </form>
+                <div className="table-panel">
+                  <div className="panel-heading">
+                    <h3>Active mappings</h3>
+                    <Badge tone="info">{formatNumber(ediStaging.mappings.length)}</Badge>
+                  </div>
+                  <table className="list-table">
+                    <thead><tr><th>External</th><th>Type</th><th>Internal</th><th>Status</th></tr></thead>
+                    <tbody>
+                      {ediStaging.mappings.map((mapping) => (
+                        <tr key={mapping.id}>
+                          <td>{mapping.externalCode}<div className="muted-line">{mapping.externalDescription}</div></td>
+                          <td>{mapping.mappingType}</td>
+                          <td>{mapping.internalType} / {mapping.internalCode ?? mapping.internalId}</td>
+                          <td><Badge tone={mapping.active ? "success" : "neutral"}>{mapping.active ? "active" : "inactive"}</Badge></td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (
+              <EmptyState title="Loading EDI staging" description="Fetching partner document intake." />
+            )
+          },
+          {
+            id: "portal-preview",
+            label: "Portal access",
+            content: ediStaging ? (
+              <div className="master-grid">
+                <div className="table-panel">
+                  <div className="panel-heading">
+                    <h3>Supplier portal draft</h3>
+                    <Badge tone="info">{formatNumber(ediStaging.supplierPortalUsers.length)} scoped users</Badge>
+                  </div>
+                  <table className="list-table">
+                    <thead><tr><th>User</th><th>Supplier</th><th>Status</th><th>Permissions</th></tr></thead>
+                    <tbody>
+                      {ediStaging.supplierPortalUsers.map((user) => (
+                        <tr key={user.id}>
+                          <td>{user.displayName}<div className="muted-line">{user.email}</div></td>
+                          <td>{suppliers.find((supplier) => supplier.id === user.supplierId)?.name ?? user.supplierId}</td>
+                          <td><Badge tone={user.status === "active" ? "success" : "neutral"}>{user.status}</Badge></td>
+                          <td>{user.permissions.join(", ")}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                <div className="table-panel">
+                  <div className="panel-heading">
+                    <h3>Customer document access preview</h3>
+                    <Badge tone="info">{formatNumber(customerPortalPreview.length)} grants</Badge>
+                  </div>
+                  <table className="list-table">
+                    <thead><tr><th>Access</th><th>Status</th><th>Allowed types</th><th>External documents</th></tr></thead>
+                    <tbody>
+                      {customerPortalPreview.map((preview) => (
+                        <tr key={preview.access.id}>
+                          <td>{preview.access.accessTokenLabel}<div className="muted-line">{preview.access.expiresAt ? formatDate(new Date(preview.access.expiresAt)) : "No expiry"}</div></td>
+                          <td><Badge tone={preview.access.status === "active" ? "success" : "neutral"}>{preview.access.status}</Badge></td>
+                          <td>{preview.access.allowedDocumentTypes.join(", ")}</td>
+                          <td>{preview.documents.map((document) => document.documentNumber).join(", ") || "No approved external documents"}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            ) : (
+              <EmptyState title="Loading portal preview" description="Checking scoped supplier and customer document access." />
+            )
+          },
           {
             id: "approved-vendors",
             label: "Approved vendor list",
@@ -336,7 +649,7 @@ export function PurchasingScreen() {
                     </tbody>
                   </table>
                 </div>
-                <form className="editor-panel" onSubmit={saveApproval}>
+                <form className="editor-panel" onSubmit={saveApproval} data-guide="purchasing.approval-form">
                   <h3>Qualification detail</h3>
                   <div className="form-grid">
                     <label className="select-field">
@@ -377,7 +690,7 @@ export function PurchasingScreen() {
                     <Input label="Next review" name="nextReviewAt" type="date" defaultValue="2026-12-15" />
                     <Input label="Qualification summary" name="qualificationSummary" defaultValue="Document review complete; approved for controlled purchasing." />
                   </div>
-                  <Button type="submit">
+                  <Button type="submit" data-guide="purchasing.save-approval">
                     <ShieldCheck aria-hidden="true" size={18} />
                     Save approval
                   </Button>
@@ -458,7 +771,7 @@ export function PurchasingScreen() {
                 <div className="record-list">
                   <div className="panel-header">
                     <h3>Supplier list</h3>
-                    <Button size="sm" variant="secondary" onClick={() => setEditingSupplierId("new")}>
+                    <Button size="sm" variant="secondary" onClick={() => setEditingSupplierId("new")} data-guide="purchasing.new-supplier">
                       <PackagePlus aria-hidden="true" size={16} />
                       New supplier
                     </Button>
@@ -494,7 +807,7 @@ export function PurchasingScreen() {
               <div className="table-panel">
                 <div className="panel-heading">
                   <h3>Purchase orders</h3>
-                  <Button size="sm" onClick={() => void createDemoPo()}>
+                  <Button size="sm" onClick={() => void createDemoPo()} data-guide="purchasing.new-po">
                     <PackagePlus aria-hidden="true" size={16} />
                     New PO
                   </Button>
@@ -529,7 +842,7 @@ export function PurchasingScreen() {
                         <td>{formatNumber(detail.lines.length)}</td>
                         <td>
                           {detail.order.status === "draft" ? (
-                            <Button size="sm" variant="secondary" onClick={() => void markOrdered(detail.order.id)}>
+                            <Button size="sm" variant="secondary" onClick={() => void markOrdered(detail.order.id)} data-guide="purchasing.order-po">
                               <CheckCircle2 aria-hidden="true" size={16} />
                               Order
                             </Button>
@@ -571,10 +884,13 @@ export function PurchasingScreen() {
                     </tbody>
                   </table>
                 </div>
-                <form className="editor-panel" onSubmit={submitReceipt}>
+                <form className="editor-panel" onSubmit={submitReceipt} data-guide="purchasing.receipt-form">
                   <h3>Receive line</h3>
                   <div className="form-grid">
-                    <Input label="Receipt number" name="receiptNumber" defaultValue={`RCPT-${String(Date.now()).slice(-6)}`} />
+                    <Input label="Receipt number" name="receiptNumber" defaultValue={receiptNumberDefault} />
+                    <Input label="BOL / shipping number" name="billOfLadingNumber" defaultValue="BOL-PT-2026-1184" />
+                    <Input label="Carrier" name="carrier" defaultValue="DHL Freight" />
+                    <Input label="Packing slip number" name="packingSlipNumber" defaultValue="PS-77841" />
                     <label className="select-field">
                       <span>PO line</span>
                       <select name="purchaseOrderLineId" defaultValue={selectedPo.lines[0]?.id}>
@@ -597,11 +913,20 @@ export function PurchasingScreen() {
                     </label>
                     <Input label="Lot code" name="lotCode" required defaultValue={`ALC-RCV-${String(Date.now()).slice(-4)}`} />
                     <Input label="Supplier lot number" name="supplierLotNumber" defaultValue="SUP-LOT-778B" />
-                    <Input label="Received quantity" name="quantity" type="number" step="0.001" min="0" required defaultValue="10" />
+                    <Input label="Internal lot number" name="internalLotNumber" defaultValue={`INT-${String(Date.now()).slice(-4)}`} />
+                    <Input label="Container count" name="containerCount" type="number" step="1" min="0" defaultValue="4" />
+                    <Input label="Received quantity" name="receivedQuantity" type="number" step="0.001" min="0" required defaultValue="10" />
+                    <Input label="Accepted quantity" name="acceptedQuantity" type="number" step="0.001" min="0" required defaultValue="6" />
+                    <Input label="Quarantined quantity" name="quarantinedQuantity" type="number" step="0.001" min="0" required defaultValue="4" />
+                    <Input label="Rejected quantity" name="rejectedQuantity" type="number" step="0.001" min="0" defaultValue="0" />
+                    <Input label="Damaged quantity" name="damagedQuantity" type="number" step="0.001" min="0" defaultValue="0" />
+                    <Input label="Disposition reason" name="dispositionReason" defaultValue="COA review pending before release." />
                     <Input label="Expiry date" name="expiryDate" type="date" defaultValue="2027-06-30" />
+                    <Input label="Manufacture date" name="manufactureDate" type="date" defaultValue="2026-06-01" />
                     <Input label="COA file name" name="coaFileName" defaultValue="alcohol-coa.pdf" />
+                    <Input label="Receiving notes" name="receivingNotes" defaultValue="Seal count checked at dock." />
                   </div>
-                  <Button type="submit">
+                  <Button type="submit" data-guide="purchasing.post-receipt">
                     <ClipboardCheck aria-hidden="true" size={18} />
                     Post receipt
                   </Button>
@@ -613,17 +938,25 @@ export function PurchasingScreen() {
                   </div>
                   <table className="list-table">
                     <thead>
-                      <tr><th>Receipt</th><th>Lot</th><th>Supplier lot</th><th>Quantity</th><th>COA</th></tr>
+                      <tr><th>Receipt</th><th>Lot</th><th>Status</th><th>Accepted</th><th>Held</th><th>Rejected</th><th>Label</th></tr>
                     </thead>
                     <tbody>
                       {receipts.map((detail) =>
                         detail.lines.map((line) => (
                           <tr key={line.id}>
-                            <td>{detail.receipt.receiptNumber}</td>
-                            <td>{line.lot.lotCode}</td>
-                            <td>{line.supplierLotNumber ?? "None"}</td>
-                            <td>{formatNumber(line.quantity - line.correctedQuantity)} {line.uom}</td>
-                            <td>{line.coaAttachments[0]?.fileName ?? "None"}</td>
+                            <td>
+                              {detail.receipt.receiptNumber}
+                              <div className="muted-line">{detail.receipt.billOfLadingNumber ?? detail.receipt.packingSlipNumber ?? "No shipping ref"}</div>
+                            </td>
+                            <td>
+                              {line.lot.lotCode}
+                              <div className="muted-line">{line.supplierLotNumber ?? "No supplier lot"}</div>
+                            </td>
+                            <td><Badge tone={line.quarantinedQuantity > 0 ? "warning" : line.rejectedQuantity > 0 ? "neutral" : "success"}>{line.receivingLabel?.status ?? line.disposition}</Badge></td>
+                            <td>{formatNumber(line.acceptedQuantity)} {line.uom}</td>
+                            <td>{formatNumber(line.quarantinedQuantity)} {line.uom}</td>
+                            <td>{formatNumber(line.rejectedQuantity)} {line.uom}</td>
+                            <td>{line.receivingLabel?.labelCode ?? line.coaAttachments[0]?.fileName ?? "None"}</td>
                           </tr>
                         ))
                       )}
@@ -639,7 +972,7 @@ export function PurchasingScreen() {
             id: "incoming-qc",
             label: "Incoming inspection queue",
             content: supplierQuality ? (
-              <div className="table-panel">
+              <div className="table-panel" data-guide="purchasing.incoming-qc-table">
                 <div className="panel-heading">
                   <h3>Incoming inspection queue</h3>
                   <Badge tone="info">{formatNumber(supplierQuality.inspectionQueue.length)} tasks</Badge>
@@ -707,7 +1040,7 @@ export function PurchasingScreen() {
 
 function SupplierForm({ supplier, onSubmit }: { supplier: Supplier | null; onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
   return (
-    <form className="editor-panel" onSubmit={onSubmit}>
+    <form className="editor-panel" onSubmit={onSubmit} data-guide="purchasing.supplier-form">
       <h3>{supplier ? "Edit supplier" : "Create supplier"}</h3>
       <div className="form-grid">
         <Input label="Name" name="name" required defaultValue={supplier?.name ?? ""} />

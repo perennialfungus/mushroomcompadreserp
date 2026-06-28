@@ -1,7 +1,7 @@
 import type { FastifyInstance, preHandlerHookHandler } from "fastify";
-import { DomainError } from "@mushroom-compadres/domain";
+import { DomainError, explainPermission } from "@mushroom-compadres/domain";
 import { z } from "zod";
-import { requireRoles } from "../rbac.js";
+import { requirePermission, requireRoles } from "../rbac.js";
 import type { ApiDataStore, AuthenticatedRequest } from "../types.js";
 
 type InventoryRoutesOptions = {
@@ -67,11 +67,21 @@ export async function inventoryRoutes(app: FastifyInstance, options: InventoryRo
   const canWriteInventory = requireRoles({
     anyOf: ["production_farm", "packing_fulfillment"]
   });
+  const canViewInventoryPermission = requirePermission({ permissionCode: "inventory.stock", level: "view" });
+  const canUseInventoryPermission = requirePermission({
+    permissionCode: "inventory.stock",
+    level: "use",
+    locationId: (request) => {
+      const body = request.body as { toLocationId?: string | null; fromLocationId?: string | null } | undefined;
+      const query = request.query as { locationId?: string } | undefined;
+      return body?.toLocationId ?? body?.fromLocationId ?? query?.locationId ?? null;
+    }
+  });
 
   app.get(
     "/api/inventory/balances",
     {
-      preHandler: [options.requireUserContext, canReadInventory],
+      preHandler: [options.requireUserContext, canReadInventory, canViewInventoryPermission],
       schema: {
         tags: ["inventory"],
         summary: "List derived inventory balances",
@@ -105,7 +115,7 @@ export async function inventoryRoutes(app: FastifyInstance, options: InventoryRo
   app.get(
     "/api/inventory/movements",
     {
-      preHandler: [options.requireUserContext, canReadInventory],
+      preHandler: [options.requireUserContext, canReadInventory, canViewInventoryPermission],
       schema: {
         tags: ["inventory"],
         summary: "List stock movement history",
@@ -118,7 +128,7 @@ export async function inventoryRoutes(app: FastifyInstance, options: InventoryRo
   app.get(
     "/api/inventory/history",
     {
-      preHandler: [options.requireUserContext, canReadInventory],
+      preHandler: [options.requireUserContext, canReadInventory, canViewInventoryPermission],
       schema: {
         tags: ["inventory"],
         summary: "List stock movement history",
@@ -131,7 +141,7 @@ export async function inventoryRoutes(app: FastifyInstance, options: InventoryRo
   app.post(
     "/api/inventory/movements",
     {
-      preHandler: [options.requireUserContext, canWriteInventory],
+      preHandler: [options.requireUserContext, canWriteInventory, canUseInventoryPermission],
       schema: {
         tags: ["inventory"],
         summary: "Post an idempotent stock movement",
@@ -144,7 +154,7 @@ export async function inventoryRoutes(app: FastifyInstance, options: InventoryRo
   app.post(
     "/api/inventory/adjustments",
     {
-      preHandler: [options.requireUserContext, canWriteInventory],
+      preHandler: [options.requireUserContext, canWriteInventory, canUseInventoryPermission],
       schema: {
         tags: ["inventory"],
         summary: "Post an inventory adjustment",
@@ -157,7 +167,7 @@ export async function inventoryRoutes(app: FastifyInstance, options: InventoryRo
   app.post(
     "/api/inventory/transfers",
     {
-      preHandler: [options.requireUserContext, canWriteInventory],
+      preHandler: [options.requireUserContext, canWriteInventory, canUseInventoryPermission],
       schema: {
         tags: ["inventory"],
         summary: "Post an inventory transfer",
@@ -189,6 +199,25 @@ async function postMovement<TSchema extends z.ZodTypeAny>(
 
   try {
     const input = parsed.data as Record<string, unknown>;
+    if (input.adminOverrideReason) {
+      const resolution = explainPermission({
+        effectivePermissions: request.userContext.effectivePermissions ?? [],
+        permissionCode: "inventory.adjust.override",
+        requiredLevel: "approve",
+        locationId: typeof input.toLocationId === "string" ? input.toLocationId : typeof input.fromLocationId === "string" ? input.fromLocationId : null
+      });
+      if (!resolution.allowed) {
+        return reply.code(403).send({
+          error: "permission_denied",
+          code: resolution.reasonCode,
+          permissionCode: resolution.permissionCode,
+          requiredLevel: resolution.requiredLevel,
+          effectiveLevel: resolution.effectiveLevel,
+          reason: resolution.reason,
+          message: "You do not have access to post an inventory override."
+        });
+      }
+    }
     const result = await options.dataStore.postInventoryMovement(
       request.userContext,
       {

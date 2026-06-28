@@ -5,7 +5,8 @@ import {
   createRoute,
   createRouter,
   useNavigate,
-  useParams
+  useParams,
+  useRouterState
 } from "@tanstack/react-router";
 import {
   ArrowLeftRight,
@@ -17,13 +18,17 @@ import {
   CalendarClock,
   Calculator,
   CheckCircle2,
+  ChevronDown,
+  ChevronRight,
   ClipboardList,
   Clock,
   Download,
+  Eye,
   Factory,
   FileText,
   FileSpreadsheet,
   FlaskConical,
+  GraduationCap,
   GitBranch,
   GitPullRequest,
   History,
@@ -37,6 +42,8 @@ import {
   PackagePlus,
   PackageSearch,
   PauseCircle,
+  Palette,
+  Pin,
   PlusCircle,
   Printer,
   RefreshCw,
@@ -46,7 +53,9 @@ import {
   ShieldAlert,
   ShieldCheck,
   ShoppingCart,
+  SlidersHorizontal,
   Store,
+  Star,
   Sprout,
   Upload,
   Users,
@@ -56,6 +65,7 @@ import {
   WifiOff,
   XCircle
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import {
   useEffect,
   useMemo,
@@ -70,7 +80,9 @@ import { LocaleSettings } from "./components/LocaleSettings";
 import { UpdatePrompt } from "./components/UpdatePrompt";
 import { useAuth } from "./auth";
 import { MasterDataScreen } from "./master-data";
+import { ConfigurationScreen } from "./configuration";
 import { ImportCenterScreen } from "./import-center";
+import { InventoryFrameworkScreen } from "./inventory-framework";
 import { ProductConfiguratorScreen } from "./product-configurator";
 import {
   LabelPrintScreen,
@@ -81,14 +93,19 @@ import {
 import { FarmScreen } from "./farm";
 import { ProductionScreen } from "./production";
 import { CostingScreen } from "./costing";
+import { FinanceScreen } from "./finance";
 import { ChangeControlScreen } from "./change-control";
 import { RoutingsScreen } from "./routings";
 import { EquipmentScreen } from "./equipment";
 import { PurchasingScreen } from "./purchasing";
 import { MrpScreen } from "./mrp";
+import { SopScreen } from "./sop";
+import { GuidedWorkflowOverlay, WorkflowScreen } from "./workflows";
 import { CrmScreen } from "./crm";
 import { WholesaleScreen } from "./wholesale";
 import { QualityScreen } from "./quality";
+import { ComplianceScreen } from "./compliance";
+import { LimsScreen } from "./lims";
 import {
   addBacklogItemsToRelease,
   completeCoaUpload,
@@ -110,6 +127,7 @@ import {
   createMockRecallRun,
   createRoadmapRelease,
   deleteReportPreset,
+  exportGenericInquiry,
   exportMockRecallContactsCsv,
   exportMockRecallPacketJson,
   exportOperationalReportCsv,
@@ -122,9 +140,11 @@ import {
   getGeneratedDocumentDownloadUrl,
   getMockRecallDashboard,
   getOperationalReport,
+  getPermissionMatrix,
   getOperationalHealth,
   getOperationalDashboard,
   getAlertSettings,
+  getWorkspace,
   getRoadmapSnapshot,
   getRecallReport,
   getSalesOrder,
@@ -148,11 +168,16 @@ import {
   listGeneratedDocuments,
   listLots,
   listLocations,
+  listPermissionHistory,
   listQcSpecifications,
   listQcTasks,
   listQcTestMethods,
+  listGenericInquiries,
+  listReportDatasets,
+  listReportExports,
   listReportPresets,
   listReports,
+  listReportSchedules,
   listReleaseNotes,
   listRoles,
   listSalesOrders,
@@ -168,9 +193,12 @@ import {
   pushShopifyInventory,
   reconcileShopifyInventory,
   reviewQcResult,
+  runGenericInquiry,
   runShopifyOrderReconciliation,
   generateRoadmapReleaseNote,
   saveReportPreset,
+  saveGenericInquiry,
+  saveReportSchedule,
   searchTraceability,
   signCoaUpload,
   shipShopifyOrder,
@@ -181,8 +209,14 @@ import {
   voidGeneratedDocument,
   updateBacklogItem,
   updateFeedback,
+  previewUserAccess,
   updateAlertSettings,
   updateDashboardWidgets,
+  updateWorkspacePreferences,
+  pinWorkspaceItem,
+  unpinWorkspaceItem,
+  saveWorkspaceView,
+  saveWorkspaceColorRule,
   updateLot,
   updateUser
 } from "./lib/api";
@@ -200,6 +234,7 @@ import type {
   AlertSubscription,
   BacklogItem,
   BacklogStatus,
+  ColorRule,
   DashboardWidget,
   DocumentTemplate,
   FeedbackCategory,
@@ -216,15 +251,24 @@ import type {
   OperationalDashboard,
   OperationalHealth,
   LotReleaseChecklist,
+  AccessPreview,
+  PermissionAuditEvent,
+  PermissionLevel,
+  PermissionMatrixSnapshot,
   QcRecord,
   QcSpecification,
   QcTask,
   QcTestMethod,
   RecallReport,
+  GenericInquiry,
+  GenericInquiryResult,
   OperationalReport,
+  ReportDatasetDefinition,
   ReportDefinition,
+  ReportExportRecord,
   ReportFilters,
   ReportPreset,
+  ReportSchedule,
   ReleaseNote,
   RoadmapSnapshot,
   Role,
@@ -240,7 +284,8 @@ import type {
   StockMovement,
   TraceDirection,
   TraceGraph,
-  TraceSearchResult
+  TraceSearchResult,
+  WorkspaceSnapshot
 } from "./types";
 import {
   clearSyncConflict,
@@ -278,36 +323,90 @@ function useSyncStatus() {
   return useSyncExternalStore(subscribeToSyncStatus, getSyncStatusSnapshot, getSyncStatusSnapshot);
 }
 
-function getNavSection(path: string): string | null {
-  if (path === "/" || path === "/login") {
-    return null;
-  }
+type NavItem = {
+  to: string;
+  label: string;
+  icon: LucideIcon;
+};
 
-  if (["/farm", "/production", "/change-control", "/routings", "/equipment", "/costing", "/mrp"].includes(path)) {
-    return "Production";
-  }
+type NavGroup = {
+  id: string;
+  label: string;
+  icon: LucideIcon;
+  items: NavItem[];
+};
 
-  if (["/inventory", "/purchasing", "/scan", "/labels", "/stock-counts"].includes(path)) {
-    return "Inventory";
-  }
+const navAccessByPrefix: Array<{ prefix: string; roles: string[] }> = [
+  { prefix: "/admin", roles: ["owner_admin"] },
+  { prefix: "/farm", roles: ["owner_admin", "production_farm"] },
+  { prefix: "/production", roles: ["owner_admin", "production_farm"] },
+  { prefix: "/change-control", roles: ["owner_admin", "production_farm", "qc"] },
+  { prefix: "/routings", roles: ["owner_admin", "production_farm"] },
+  { prefix: "/equipment", roles: ["owner_admin", "production_farm"] },
+  { prefix: "/costing", roles: ["owner_admin"] },
+  { prefix: "/finance", roles: ["owner_admin", "purchasing", "sales_wholesale", "auditor"] },
+  { prefix: "/mrp", roles: ["owner_admin", "production_farm", "purchasing"] },
+  { prefix: "/sop", roles: ["owner_admin", "production_farm", "sales_wholesale", "purchasing"] },
+  { prefix: "/purchasing", roles: ["owner_admin", "purchasing"] },
+  { prefix: "/inventory", roles: ["owner_admin", "packing_fulfillment", "auditor"] },
+  { prefix: "/scan", roles: ["owner_admin", "packing_fulfillment", "production_farm"] },
+  { prefix: "/labels", roles: ["owner_admin", "packing_fulfillment"] },
+  { prefix: "/stock-counts", roles: ["owner_admin", "packing_fulfillment"] },
+  { prefix: "/quality", roles: ["owner_admin", "qc", "auditor"] },
+  { prefix: "/lims", roles: ["owner_admin", "qc", "production_farm", "purchasing", "auditor"] },
+  { prefix: "/lots", roles: ["owner_admin", "qc", "packing_fulfillment", "auditor"] },
+  { prefix: "/qc", roles: ["owner_admin", "qc", "production_farm"] },
+  { prefix: "/documents", roles: ["owner_admin", "qc", "auditor"] },
+  { prefix: "/compliance", roles: ["owner_admin", "qc", "production_farm", "packing_fulfillment", "auditor"] },
+  { prefix: "/traceability", roles: ["owner_admin", "qc", "auditor"] },
+  { prefix: "/mock-recalls", roles: ["owner_admin", "qc"] },
+  { prefix: "/reports", roles: ["owner_admin", "sales_wholesale", "auditor"] },
+  { prefix: "/wholesale", roles: ["owner_admin", "sales_wholesale"] },
+  { prefix: "/crm", roles: ["owner_admin", "sales_wholesale"] },
+  { prefix: "/release-notes", roles: ["owner_admin", "production_farm", "qc", "packing_fulfillment", "sales_wholesale", "purchasing", "auditor"] },
+  { prefix: "/sync", roles: ["owner_admin"] },
+  { prefix: "/master-data", roles: ["owner_admin", "auditor"] },
+  { prefix: "/inventory-framework", roles: ["owner_admin", "auditor"] },
+  { prefix: "/configuration", roles: ["owner_admin"] },
+  { prefix: "/product-configurator", roles: ["owner_admin"] },
+  { prefix: "/import-center", roles: ["owner_admin"] },
+  { prefix: "/workspace", roles: ["owner_admin", "production_farm", "qc", "packing_fulfillment", "sales_wholesale", "purchasing", "auditor"] },
+  { prefix: "/settings", roles: ["owner_admin", "production_farm", "qc", "packing_fulfillment", "sales_wholesale", "purchasing", "auditor"] }
+];
 
-  if (["/lots", "/qc", "/documents", "/quality", "/traceability", "/mock-recalls", "/reports"].includes(path)) {
-    return "Quality";
+function canAccessPath(path: string, roleCodes: string[]): boolean {
+  if (path === "/" || roleCodes.includes("owner_admin")) {
+    return true;
   }
+  const access = navAccessByPrefix.find((entry) => path === entry.prefix || path.startsWith(`${entry.prefix}/`));
+  return !access || access.roles.some((role) => roleCodes.includes(role));
+}
 
-  if (["/crm", "/wholesale", "/release-notes", "/sync"].includes(path)) {
-    return "Sales";
-  }
+function filterNavGroups(groups: NavGroup[], roleCodes: string[]): NavGroup[] {
+  return groups
+    .map((group) => ({ ...group, items: group.items.filter((item) => canAccessPath(item.to, roleCodes)) }))
+    .filter((group) => group.items.length > 0);
+}
 
-  if (["/master-data", "/import-center", "/product-configurator"].includes(path)) {
-    return "Foundation";
-  }
+function isNavItemActive(pathname: string, item: NavItem): boolean {
+  return item.to === "/" ? pathname === item.to : pathname === item.to || pathname.startsWith(`${item.to}/`);
+}
 
-  if (path.startsWith("/admin")) {
-    return "Admin";
-  }
+function activeGroupId(pathname: string, groups: NavGroup[]): string | null {
+  return groups.find((group) => group.items.some((item) => isNavItemActive(pathname, item)))?.id ?? null;
+}
 
-  return null;
+function navGuideId(to: string): string | undefined {
+  const guideMap: Record<string, string> = {
+    "/production": "nav.production",
+    "/purchasing": "nav.purchasing",
+    "/quality": "nav.quality",
+    "/qc": "nav.qc",
+    "/mrp": "nav.mrp",
+    "/sop": "nav.sop",
+    "/workflows": "nav.workflows"
+  };
+  return guideMap[to];
 }
 
 const rootRoute = createRootRoute({
@@ -320,7 +419,9 @@ function AppShell() {
   const auth = useAuth();
   const isOnline = useOnlineStatus();
   const syncStatus = useSyncStatus();
-  const navItems = auth.session
+  const pathname = useRouterState({ select: (state) => state.location.pathname });
+  const roleCodes = useMemo(() => auth.userContext?.roles.map((role) => role.code) ?? [], [auth.userContext?.roles]);
+  const mobileNavItems = auth.session
     ? [
         { to: "/", label: t("nav.dashboard"), icon: Home },
         { to: "/production", label: "Production", icon: Factory },
@@ -328,14 +429,115 @@ function AppShell() {
         { to: "/quality", label: "Quality", icon: ShieldCheck },
         { to: "/wholesale", label: "Commerce", icon: Store },
         { to: "/master-data", label: "Foundation", icon: PackageSearch },
+        { to: "/workspace", label: "Workspace", icon: Pin },
         ...(auth.isAdmin
           ? [
               { to: "/admin/health", label: "Admin", icon: Activity }
             ]
           : []),
         { to: "/settings", label: t("nav.settings"), icon: Settings }
-      ]
+      ].filter((item) => canAccessPath(item.to, roleCodes))
     : [{ to: "/login", label: t("nav.login"), icon: LogIn }];
+  const desktopNavGroups = useMemo<NavGroup[]>(
+    () =>
+      auth.session
+        ? [
+            {
+              id: "production",
+              label: "Production",
+              icon: Factory,
+              items: [
+                { to: "/farm", label: "Farm", icon: Sprout },
+                { to: "/production", label: "Production runs", icon: Factory },
+                { to: "/change-control", label: "Change control", icon: GitPullRequest },
+                { to: "/routings", label: "Routings", icon: GitBranch },
+                { to: "/equipment", label: "Equipment", icon: Wrench },
+                { to: "/costing", label: "Costing", icon: Calculator },
+                { to: "/mrp", label: "MRP", icon: CalendarClock },
+                { to: "/sop", label: "S&OP", icon: BarChart3 },
+                { to: "/workflows", label: "Workflow guides", icon: GraduationCap }
+              ]
+            },
+            {
+              id: "inventory",
+              label: "Inventory",
+              icon: Package,
+              items: [
+                { to: "/inventory", label: t("nav.inventory"), icon: Package },
+                { to: "/purchasing", label: "Purchasing", icon: ShoppingCart },
+                { to: "/scan", label: "Scan", icon: Barcode },
+                { to: "/labels", label: "Labels", icon: Printer },
+                { to: "/stock-counts", label: "Stock counts", icon: ClipboardList }
+              ]
+            },
+            {
+              id: "quality",
+              label: "Quality",
+              icon: ShieldCheck,
+              items: [
+                { to: "/quality", label: "Quality system", icon: ShieldCheck },
+                { to: "/lims", label: "LIMS", icon: FlaskConical },
+                { to: "/lots", label: "Lots", icon: PackageCheck },
+                { to: "/qc", label: "QC", icon: FlaskConical },
+                { to: "/documents", label: "Documents", icon: FileText },
+                { to: "/compliance", label: "Compliance", icon: ClipboardList },
+                { to: "/traceability", label: "Traceability", icon: ArrowLeftRight },
+                { to: "/mock-recalls", label: "Mock recalls", icon: ShieldAlert },
+                { to: "/reports", label: "Reports", icon: BarChart3 }
+              ]
+            },
+            {
+              id: "commerce",
+              label: "Commerce",
+              icon: Store,
+              items: [
+                { to: "/wholesale", label: "Wholesale", icon: Store },
+                { to: "/crm", label: "CRM", icon: Users },
+                { to: "/finance", label: "Finance bridge", icon: FileSpreadsheet },
+                { to: "/release-notes", label: "Release notes", icon: FileSpreadsheet },
+                { to: "/sync", label: "Sync diagnostics", icon: RefreshCw }
+              ]
+            },
+            {
+              id: "foundation",
+              label: "Foundation",
+              icon: PackageSearch,
+              items: [
+                { to: "/master-data", label: "Master data", icon: PackageSearch },
+                { to: "/configuration", label: "ERP configuration", icon: SlidersHorizontal },
+                { to: "/inventory-framework", label: "Inventory framework", icon: GitBranch },
+                { to: "/product-configurator", label: "Product configurator", icon: Wand2 },
+                { to: "/import-center", label: "Import center", icon: Upload },
+                { to: "/workspace", label: "Workspace", icon: Pin }
+              ]
+            },
+            ...(auth.isAdmin
+              ? [
+                  {
+                    id: "admin",
+                    label: "Admin",
+                    icon: Activity,
+                    items: [
+                      { to: "/admin/health", label: "Health", icon: Activity },
+                      { to: "/admin/users", label: "Users", icon: Users },
+                      { to: "/admin/roles", label: "Roles and permissions", icon: ShieldCheck },
+                      { to: "/configuration", label: "ERP configuration", icon: SlidersHorizontal },
+                      { to: "/admin/feedback", label: "Feedback roadmap", icon: MessageSquarePlus },
+                      { to: "/admin/shopify", label: "Shopify", icon: Store }
+                    ]
+                  }
+                ]
+              : [])
+          ]
+        : [],
+    [auth.isAdmin, auth.session, t]
+  );
+  const visibleDesktopNavGroups = useMemo(
+    () => filterNavGroups(desktopNavGroups, roleCodes),
+    [desktopNavGroups, roleCodes]
+  );
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(() => new Set(auth.isAdmin ? ["admin"] : []));
+  const currentGroupId = activeGroupId(pathname, visibleDesktopNavGroups);
   const lastSync = useMemo(
     () => (syncStatus.lastSyncedAt ? new Date(syncStatus.lastSyncedAt) : null),
     [syncStatus.lastSyncedAt]
@@ -348,12 +550,6 @@ function AppShell() {
       .slice(0, 2)
       .toUpperCase() ?? "MC";
   const primaryRole = auth.userContext?.roles[0]?.name ?? (auth.isAdmin ? "Owner / Admin" : "Staff");
-  const navWithSections = navItems.map((item, index) => {
-    const section = getNavSection(item.to);
-    const previousSection = index > 0 ? getNavSection(navItems[index - 1]?.to ?? "") : null;
-
-    return { ...item, section: section !== previousSection ? section : null };
-  });
 
   useEffect(() => {
     if (auth.userContext?.locale && auth.userContext.locale !== locale) {
@@ -366,6 +562,33 @@ function AppShell() {
       void flushPowerSyncUploads(auth.session.accessToken);
     }
   }, [auth.session, isOnline]);
+
+  useEffect(() => {
+    setExpandedGroups((previous) => {
+      const next = new Set(previous);
+      if (auth.isAdmin) {
+        next.add("admin");
+      } else {
+        next.delete("admin");
+      }
+      if (currentGroupId) {
+        next.add(currentGroupId);
+      }
+      return next;
+    });
+  }, [auth.isAdmin, currentGroupId]);
+
+  const toggleNavGroup = (groupId: string) => {
+    setExpandedGroups((previous) => {
+      const next = new Set(previous);
+      if (next.has(groupId)) {
+        next.delete(groupId);
+      } else {
+        next.add(groupId);
+      }
+      return next;
+    });
+  };
 
   return (
     <div className="app-shell">
@@ -381,19 +604,68 @@ function AppShell() {
         </div>
 
         <nav className="nav-list">
-          {navWithSections.map((item) => (
-            <div key={item.to}>
-              {item.section ? <div className="nav-section-label">{item.section}</div> : null}
+          {auth.session ? (
+            <>
               <Link
-                to={item.to}
-                className="nav-link"
-                activeProps={{ className: "nav-link active" }}
+                to="/"
+                className="nav-link nav-home-link"
+                activeProps={{ className: "nav-link nav-home-link active" }}
               >
-                <item.icon aria-hidden="true" size={20} />
-                <span>{item.label}</span>
+                <Home aria-hidden="true" size={20} />
+                <span>{t("nav.dashboard")}</span>
               </Link>
-            </div>
-          ))}
+              <div className="nav-section-label">Modules</div>
+              {visibleDesktopNavGroups.map((group) => {
+                const expanded = expandedGroups.has(group.id);
+                const active = currentGroupId === group.id;
+
+                return (
+                  <section className="nav-module" key={group.id}>
+                    <button
+                      type="button"
+                      className={`nav-module-button${active ? " active" : ""}`}
+                      aria-expanded={expanded}
+                      aria-controls={`nav-module-${group.id}`}
+                      onClick={() => toggleNavGroup(group.id)}
+                    >
+                      <group.icon aria-hidden="true" size={20} />
+                      <span>{group.label}</span>
+                      {expanded ? (
+                        <ChevronDown className="nav-module-chevron" aria-hidden="true" size={17} />
+                      ) : (
+                        <ChevronRight className="nav-module-chevron" aria-hidden="true" size={17} />
+                      )}
+                    </button>
+                    {expanded ? (
+                      <div className="nav-sublist" id={`nav-module-${group.id}`}>
+                        {group.items.map((item) => (
+                          <Link
+                            key={item.to}
+                            to={item.to}
+                            className="nav-link nav-sub-link"
+                            activeProps={{ className: "nav-link nav-sub-link active" }}
+                            data-guide={navGuideId(item.to)}
+                          >
+                            <item.icon aria-hidden="true" size={18} />
+                            <span>{item.label}</span>
+                          </Link>
+                        ))}
+                      </div>
+                    ) : null}
+                  </section>
+                );
+              })}
+            </>
+          ) : (
+            <Link
+              to="/login"
+              className="nav-link"
+              activeProps={{ className: "nav-link active" }}
+            >
+              <LogIn aria-hidden="true" size={20} />
+              <span>{t("nav.login")}</span>
+            </Link>
+          )}
         </nav>
 
         {auth.session ? (
@@ -472,12 +744,13 @@ function AppShell() {
       </div>
 
       <nav className="mobile-bottom-nav" aria-label={t("layout.primaryNav")}>
-        {navItems.map((item) => (
+        {mobileNavItems.map((item) => (
           <Link
             key={item.to}
             to={item.to}
             className="mobile-nav-link"
             activeProps={{ className: "mobile-nav-link active" }}
+            data-guide={navGuideId(item.to)}
           >
             <item.icon aria-hidden="true" size={22} />
             <span>{item.label}</span>
@@ -486,6 +759,7 @@ function AppShell() {
       </nav>
 
       {auth.session ? <FeedbackCaptureButton /> : null}
+      {auth.session ? <GuidedWorkflowOverlay /> : null}
       <UpdatePrompt />
     </div>
   );
@@ -1293,6 +1567,284 @@ function SettingsRoute() {
   );
 }
 
+function WorkspaceRoute() {
+  const auth = useAuth();
+  const { showToast } = useToast();
+  const [workspace, setWorkspace] = useState<WorkspaceSnapshot | null>(null);
+  const [previewRoleCode, setPreviewRoleCode] = useState("");
+  const [pinLabel, setPinLabel] = useState("Incoming PO review");
+  const [pinHref, setPinHref] = useState("/purchasing");
+  const [savedViewName, setSavedViewName] = useState("Supplier lots needing release");
+  const [colorLabel, setColorLabel] = useState("Supplier hold");
+  const [colorBackground, setColorBackground] = useState("#f7dddd");
+  const [colorText, setColorText] = useState("#f0cccc");
+  const [error, setError] = useState<string | null>(null);
+
+  async function loadWorkspace(nextPreview = previewRoleCode) {
+    if (!auth.session) {
+      return;
+    }
+    try {
+      const response = await getWorkspace(auth.session.accessToken, nextPreview || undefined);
+      setWorkspace(response.workspace);
+      setError(null);
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Workspace could not be loaded.");
+    }
+  }
+
+  useEffect(() => {
+    void loadWorkspace();
+  }, [auth.session]);
+
+  async function updateDensity(density: "compact" | "comfortable") {
+    if (!auth.session) {
+      return;
+    }
+    const response = await updateWorkspacePreferences(auth.session.accessToken, { density });
+    setWorkspace((current) => current ? { ...current, preferences: response.preferences } : current);
+    showToast({ title: "Preference saved", description: `${density} density` });
+  }
+
+  async function addPin(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!auth.session) {
+      return;
+    }
+    const response = await pinWorkspaceItem(auth.session.accessToken, {
+      pinKind: pinHref.startsWith("/reports") ? "report" : pinHref.includes("lot") ? "record" : "module",
+      targetType: pinHref.includes("lot") ? "lot" : pinHref.startsWith("/reports") ? "report" : "module",
+      targetId: pinHref.replace(/[^a-z0-9]+/gi, "-").replace(/^-|-$/g, "").toLocaleLowerCase() || "workspace-pin",
+      label: pinLabel,
+      href: pinHref,
+      metadataJson: { quickActions: ["receive_po", "create_bom", "create_supplier", "run_mrp", "start_qc_task", "generate_production_order", "open_traceability"] }
+    });
+    setWorkspace((current) =>
+      current ? { ...current, pinnedItems: [...current.pinnedItems.filter((pin) => pin.id !== response.pin.id), response.pin] } : current
+    );
+    showToast({ title: "Pinned", description: response.pin.label });
+  }
+
+  async function removePin(pinId: string) {
+    if (!auth.session) {
+      return;
+    }
+    await unpinWorkspaceItem(auth.session.accessToken, pinId);
+    setWorkspace((current) => current ? { ...current, pinnedItems: current.pinnedItems.filter((pin) => pin.id !== pinId) } : current);
+    showToast({ title: "Unpinned", description: "Workspace pin removed." });
+  }
+
+  async function saveView(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!auth.session) {
+      return;
+    }
+    const response = await saveWorkspaceView(auth.session.accessToken, {
+      gridKey: "lots",
+      name: savedViewName,
+      scope: auth.isAdmin ? "role_shared" : "private",
+      sharedRoleCodes: auth.isAdmin ? ["owner_admin", "qc", "packing_fulfillment"] : [],
+      filters: { qcStatus: ["pending", "hold"], supplierName: "Long supplier names stay readable" },
+      sort: [{ field: "expiresAt", direction: "asc" }],
+      grouping: ["qcStatus"],
+      columns: [
+        { key: "lotCode", label: "Lot", visible: true, order: 1, width: 180 },
+        { key: "supplierName", label: "Supplier", visible: true, order: 2, width: 260 },
+        { key: "qcStatus", label: "QC", visible: true, order: 3, width: 110 }
+      ],
+      colorRuleIds: workspace?.colorRules.slice(0, 2).map((rule) => rule.id) ?? []
+    });
+    setWorkspace((current) => current ? { ...current, savedViews: [...current.savedViews, response.savedView] } : current);
+    showToast({ title: "Saved view ready", description: response.savedView.name });
+  }
+
+  async function saveColor(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    if (!auth.session) {
+      return;
+    }
+    const response = await saveWorkspaceColorRule(auth.session.accessToken, {
+      subjectType: "supplier",
+      field: "status",
+      operator: "equals",
+      value: "on_hold",
+      label: colorLabel,
+      backgroundColor: colorBackground,
+      textColor: colorText,
+      priority: 5,
+      enabled: true
+    });
+    setWorkspace((current) => current ? { ...current, colorRules: [...current.colorRules, response.colorRule] } : current);
+    setColorText(response.colorRule.textColor);
+    showToast({ title: "Color rule saved", description: "Contrast checked automatically." });
+  }
+
+  const quickActions = [
+    ["Receive PO", "/purchasing"],
+    ["Create BOM", "/production"],
+    ["Create supplier", "/purchasing"],
+    ["Run MRP", "/mrp"],
+    ["Start QC task", "/qc"],
+    ["Generate production order", "/production"],
+    ["Open traceability", "/traceability"]
+  ];
+
+  return (
+    <ProtectedRoute>
+      <section className={`screen-grid workspace-density-${workspace?.preferences.density ?? "comfortable"}`} aria-labelledby="workspace-title">
+        <div className="screen-heading">
+          <p className="eyebrow">Personal workspace</p>
+          <h2 id="workspace-title">Workspace</h2>
+          <p>Pins, saved views, color tags, and role preview for day-to-day ERP work.</p>
+        </div>
+
+        {error ? <p className="form-error">{error}</p> : null}
+
+        <div className="action-row">
+          <Button type="button" variant={workspace?.preferences.density === "compact" ? "primary" : "secondary"} onClick={() => void updateDensity("compact")}>
+            <Settings aria-hidden="true" size={18} />
+            Compact
+          </Button>
+          <Button type="button" variant={workspace?.preferences.density === "comfortable" ? "primary" : "secondary"} onClick={() => void updateDensity("comfortable")}>
+            <Settings aria-hidden="true" size={18} />
+            Comfortable
+          </Button>
+        </div>
+
+        <Tabs
+          tabs={[
+            {
+              id: "pins",
+              label: "Pinned workspace",
+              content: (
+                <div className="split-grid">
+                  <form className="table-panel compact-form-grid" onSubmit={addPin}>
+                    <div className="panel-heading"><h3>Pin item</h3><Badge tone="info">{workspace?.pinnedItems.length ?? 0} pins</Badge></div>
+                    <Input label="Label" value={pinLabel} onChange={(event) => setPinLabel(event.target.value)} />
+                    <Input label="Target route" value={pinHref} onChange={(event) => setPinHref(event.target.value)} />
+                    <Button type="submit"><Pin aria-hidden="true" size={18} />Pin</Button>
+                  </form>
+                  <div className="workspace-card-grid">
+                    {(workspace?.pinnedItems ?? []).map((pin) => (
+                      <article className="table-panel pinned-card" key={pin.id}>
+                        <div className="panel-heading">
+                          <h3>{pin.label}</h3>
+                          <Badge tone="info">{pin.pinKind}</Badge>
+                        </div>
+                        <p className="muted-line">{pin.href}</p>
+                        <div className="quick-action-row">
+                          {quickActions.map(([label, href]) => (
+                            <a key={label} className="chip-link" href={href}>{label}</a>
+                          ))}
+                        </div>
+                        <Button type="button" size="sm" variant="ghost" onClick={() => void removePin(pin.id)}>Unpin</Button>
+                      </article>
+                    ))}
+                    {(workspace?.pinnedItems.length ?? 0) === 0 ? <EmptyState title="No pins yet" description="Pin modules, records, and reports without changing anyone else's workspace." /> : null}
+                  </div>
+                </div>
+              )
+            },
+            {
+              id: "views",
+              label: "Saved views",
+              content: (
+                <div className="split-grid">
+                  <form className="table-panel compact-form-grid" onSubmit={saveView}>
+                    <div className="panel-heading"><h3>Saved view editor</h3><Badge tone={auth.isAdmin ? "success" : "info"}>{auth.isAdmin ? "Role sharing" : "Private"}</Badge></div>
+                    <Input label="View name" value={savedViewName} onChange={(event) => setSavedViewName(event.target.value)} />
+                    <Button type="submit"><Save aria-hidden="true" size={18} />Save view</Button>
+                  </form>
+                  <div className="table-panel">
+                    <table className="list-table compact-table">
+                      <thead><tr><th>View</th><th>Grid</th><th>Columns</th><th>Shared roles</th></tr></thead>
+                      <tbody>
+                        {(workspace?.savedViews ?? []).map((view) => (
+                          <tr key={view.id}>
+                            <td>{view.name}<div className="muted-line">{JSON.stringify(view.filters)}</div></td>
+                            <td>{view.gridKey}</td>
+                            <td>{view.columns.filter((column) => column.visible).map((column) => column.label).join(", ")}</td>
+                            <td>{view.scope === "role_shared" ? view.sharedRoleCodes.join(", ") : "Private"}</td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )
+            },
+            {
+              id: "colors",
+              label: "Color rules",
+              content: (
+                <div className="split-grid">
+                  <form className="table-panel compact-form-grid" onSubmit={saveColor}>
+                    <div className="panel-heading"><h3>Color rule editor</h3><Badge tone="success">Contrast checked</Badge></div>
+                    <Input label="Rule label" value={colorLabel} onChange={(event) => setColorLabel(event.target.value)} />
+                    <Input label="Background" value={colorBackground} onChange={(event) => setColorBackground(event.target.value)} />
+                    <Input label="Text" value={colorText} onChange={(event) => setColorText(event.target.value)} />
+                    <Button type="submit"><Palette aria-hidden="true" size={18} />Save color rule</Button>
+                  </form>
+                  <div className="table-panel">
+                    <table className="list-table compact-table">
+                      <thead><tr><th>Rule</th><th>Subject</th><th>Condition</th><th>Preview</th></tr></thead>
+                      <tbody>
+                        {(workspace?.colorRules ?? []).map((rule: ColorRule) => (
+                          <tr key={rule.id} style={{ borderLeft: `6px solid ${rule.backgroundColor}` }}>
+                            <td>{rule.label}</td>
+                            <td>{rule.subjectType.replaceAll("_", " ")}</td>
+                            <td>{rule.field} {rule.operator} {rule.value}</td>
+                            <td><span className="color-rule-chip" style={{ background: rule.backgroundColor, color: rule.textColor }}>{rule.label}</span></td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              )
+            },
+            {
+              id: "preview",
+              label: "Role preview",
+              content: (
+                <div className="split-grid">
+                  <form className="table-panel compact-form-grid" onSubmit={(event) => { event.preventDefault(); void loadWorkspace(previewRoleCode); }}>
+                    <div className="panel-heading"><h3>Role workspace preview</h3><Badge tone={auth.isAdmin ? "success" : "neutral"}>{auth.isAdmin ? "Admin preview" : "Current role only"}</Badge></div>
+                    <label className="select-field">
+                      <span>Preview role</span>
+                      <select value={previewRoleCode} onChange={(event) => setPreviewRoleCode(event.target.value)} disabled={!auth.isAdmin}>
+                        <option value="">Current access</option>
+                        <option value="production_farm">Production/Farm</option>
+                        <option value="packing_fulfillment">Packing/Fulfillment</option>
+                        <option value="qc">QC</option>
+                        <option value="sales_wholesale">Sales/Wholesale</option>
+                        <option value="purchasing">Purchasing</option>
+                        <option value="auditor">Auditor</option>
+                      </select>
+                    </label>
+                    <Button type="submit"><Eye aria-hidden="true" size={18} />Preview</Button>
+                  </form>
+                  <div className="table-panel">
+                    <div className="panel-heading"><h3>Visible navigation</h3><Badge tone="info">{workspace?.navigation.length ?? 0} actions</Badge></div>
+                    <div className="workspace-card-grid">
+                      {(workspace?.navigation ?? []).map((item) => (
+                        <a className="inline-record nav-preview-record" href={item.href} key={item.id}>
+                          <Star aria-hidden="true" size={18} />
+                          <span><strong>{item.label}</strong><span>{item.href}</span></span>
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              )
+            }
+          ]}
+        />
+      </section>
+    </ProtectedRoute>
+  );
+}
+
 function ReleaseNotesRoute() {
   const auth = useAuth();
   const { formatDateTime } = useI18n();
@@ -1401,10 +1953,26 @@ function MasterDataRoute() {
   );
 }
 
+function ConfigurationRoute() {
+  return (
+    <ProtectedRoute>
+      <ConfigurationScreen />
+    </ProtectedRoute>
+  );
+}
+
 function ImportCenterRoute() {
   return (
     <ProtectedRoute>
       <ImportCenterScreen />
+    </ProtectedRoute>
+  );
+}
+
+function InventoryFrameworkRoute() {
+  return (
+    <ProtectedRoute>
+      <InventoryFrameworkScreen />
     </ProtectedRoute>
   );
 }
@@ -1465,6 +2033,14 @@ function CostingRoute() {
   );
 }
 
+function FinanceRoute() {
+  return (
+    <ProtectedRoute>
+      <FinanceScreen />
+    </ProtectedRoute>
+  );
+}
+
 function PurchasingRoute() {
   return (
     <ProtectedRoute>
@@ -1481,10 +2057,42 @@ function MrpRoute() {
   );
 }
 
+function SopRoute() {
+  return (
+    <ProtectedRoute>
+      <SopScreen />
+    </ProtectedRoute>
+  );
+}
+
+function WorkflowRoute() {
+  return (
+    <ProtectedRoute>
+      <WorkflowScreen />
+    </ProtectedRoute>
+  );
+}
+
 function QualityRoute() {
   return (
     <ProtectedRoute>
       <QualityScreen />
+    </ProtectedRoute>
+  );
+}
+
+function ComplianceRoute() {
+  return (
+    <ProtectedRoute>
+      <ComplianceScreen />
+    </ProtectedRoute>
+  );
+}
+
+function LimsRoute() {
+  return (
+    <ProtectedRoute>
+      <LimsScreen />
     </ProtectedRoute>
   );
 }
@@ -2044,7 +2652,7 @@ function LotDetailRoute() {
           </section>
         </div>
 
-        <section className="table-panel">
+        <section className="table-panel" data-guide="qc.task-list">
           <div className="panel-heading">
             <h3>COA attachments</h3>
             <span className="muted-line">Uploads use server-authorized signed URLs.</span>
@@ -3471,6 +4079,17 @@ function ReportsRoute() {
   const { formatNumber, formatDateTime } = useI18n();
   const { showToast } = useToast();
   const [definitions, setDefinitions] = useState<ReportDefinition[]>([]);
+  const [datasets, setDatasets] = useState<ReportDatasetDefinition[]>([]);
+  const [savedInquiries, setSavedInquiries] = useState<GenericInquiry[]>([]);
+  const [selectedDatasetId, setSelectedDatasetId] = useState("inventory_lot_balances");
+  const [selectedInquiryId, setSelectedInquiryId] = useState("inq-inventory-exposure");
+  const [inquiryName, setInquiryName] = useState("Inventory by location");
+  const [inquiryGroupBy, setInquiryGroupBy] = useState("location_name");
+  const [inquiryValueField, setInquiryValueField] = useState("available_quantity");
+  const [inquiryVisibility, setInquiryVisibility] = useState<"private" | "role_shared">("private");
+  const [inquiryResult, setInquiryResult] = useState<GenericInquiryResult | null>(null);
+  const [schedules, setSchedules] = useState<ReportSchedule[]>([]);
+  const [exportHistory, setExportHistory] = useState<ReportExportRecord[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
   const [balances, setBalances] = useState<InventoryBalance[]>([]);
   const [presets, setPresets] = useState<ReportPreset[]>([]);
@@ -3493,6 +4112,10 @@ function ReportsRoute() {
 
   const selectedDefinition =
     definitions.find((definition) => definition.id === selectedReportId) ?? definitions[0] ?? null;
+  const selectedDataset = datasets.find((dataset) => dataset.id === selectedDatasetId) ?? datasets[0] ?? null;
+  const selectedInquiry = savedInquiries.find((inquiry) => inquiry.id === selectedInquiryId) ?? savedInquiries[0] ?? null;
+  const groupableFields = selectedDataset?.fields.filter((field) => field.groupable) ?? [];
+  const aggregatableFields = selectedDataset?.fields.filter((field) => field.aggregations.some((aggregation) => aggregation !== "count")) ?? [];
   const uniqueItems = useMemo(() => {
     const seen = new Map<string, { itemId: string; label: string }>();
     balances.forEach((balance) => {
@@ -3531,18 +4154,35 @@ function ReportsRoute() {
     setLoading(true);
     Promise.all([
       listReports(auth.session.accessToken),
+      listReportDatasets(auth.session.accessToken),
+      listGenericInquiries(auth.session.accessToken),
+      listReportSchedules(auth.session.accessToken),
+      listReportExports(auth.session.accessToken),
       listLocations(auth.session.accessToken),
       listInventoryBalances(auth.session.accessToken),
       listReportPresets(auth.session.accessToken)
     ])
-      .then(([reportResponse, locationResponse, balanceResponse, presetResponse]) => {
+      .then(([reportResponse, datasetResponse, inquiryResponse, scheduleResponse, exportResponse, locationResponse, balanceResponse, presetResponse]) => {
         setDefinitions(reportResponse.reports);
+        setDatasets(datasetResponse.datasets);
+        setSavedInquiries(inquiryResponse.inquiries);
+        setSchedules(scheduleResponse.schedules);
+        setExportHistory(exportResponse.exports);
         setLocations(locationResponse.locations);
         setBalances(balanceResponse.balances);
         setPresets(presetResponse.presets);
         const firstReportId = reportResponse.reports[0]?.id ?? selectedReportId;
+        const firstDatasetId = datasetResponse.datasets[0]?.id ?? selectedDatasetId;
+        const firstInquiry = inquiryResponse.inquiries[0] ?? null;
         setSelectedReportId(firstReportId);
+        setSelectedDatasetId(firstDatasetId);
+        setSelectedInquiryId(firstInquiry?.id ?? selectedInquiryId);
+        setInquiryGroupBy(datasetResponse.datasets[0]?.fields.find((field) => field.groupable)?.key ?? "location_name");
+        setInquiryValueField(datasetResponse.datasets[0]?.fields.find((field) => field.aggregations.includes("sum"))?.key ?? "available_quantity");
         void loadReport(firstReportId, filters);
+        if (firstInquiry) {
+          void runSavedInquiry(firstInquiry.id);
+        }
       })
       .catch((loadError) => {
         setError(loadError instanceof Error ? loadError.message : "Reports could not be loaded.");
@@ -3586,6 +4226,96 @@ function ReportsRoute() {
       ...current.filter((preset) => preset.id !== response.preset.id)
     ]);
     showToast({ title: "Report preset saved", description: response.preset.name });
+  }
+
+  async function runSavedInquiry(inquiryId = selectedInquiryId) {
+    if (!auth.session || !inquiryId) {
+      return;
+    }
+    const response = await runGenericInquiry(auth.session.accessToken, inquiryId);
+    setInquiryResult(response.result);
+  }
+
+  async function buildInquiry() {
+    if (!auth.session || !selectedDataset) {
+      return;
+    }
+    const valueField = inquiryValueField === "on_hand_quantity"
+      ? "on_hand_quantity"
+      : aggregatableFields.some((field) => field.key === inquiryValueField)
+      ? inquiryValueField
+      : aggregatableFields[0]?.key ?? selectedDataset.defaultColumns[0] ?? "available_quantity";
+    const groupField = groupableFields.some((field) => field.key === inquiryGroupBy)
+      ? inquiryGroupBy
+      : groupableFields[0]?.key ?? selectedDataset.defaultColumns[0] ?? "location_name";
+    const calculations =
+      selectedDataset.id === "inventory_lot_balances" && valueField === "on_hand_quantity"
+        ? [
+            {
+              id: "on_hand_quantity",
+              label: "On hand",
+              expression: "available_quantity + reserved_quantity + held_quantity",
+              type: "number" as const,
+              aggregate: "sum" as const
+            }
+          ]
+        : [];
+    const response = await saveGenericInquiry(auth.session.accessToken, {
+      name: inquiryName,
+      description: `${selectedDataset.title} built from the governed report catalog.`,
+      datasetId: selectedDataset.id,
+      visibility: inquiryVisibility,
+      sharedRoleCodes: inquiryVisibility === "role_shared" ? ["owner_admin", "auditor", "packing_fulfillment"] : [],
+      columns: [
+        { fieldKey: groupField },
+        { fieldKey: valueField, aggregate: "sum" }
+      ],
+      filters: [],
+      sorts: [{ fieldKey: groupField, direction: "asc" }],
+      groupBy: [groupField],
+      calculations,
+      parameters: {},
+      chart: { kind: "bar", labelField: groupField, valueField: `sum_${valueField}` },
+      published: inquiryVisibility === "role_shared"
+    });
+    setSavedInquiries((current) => [response.inquiry, ...current.filter((inquiry) => inquiry.id !== response.inquiry.id)]);
+    setSelectedInquiryId(response.inquiry.id);
+    showToast({ title: "Inquiry saved", description: response.inquiry.name });
+    await runSavedInquiry(response.inquiry.id);
+  }
+
+  async function exportSavedInquiry(format: "csv" | "json" | "pdf_ready_json") {
+    if (!auth.session || !selectedInquiry) {
+      return;
+    }
+    const response = await exportGenericInquiry(auth.session.accessToken, selectedInquiry.id, format);
+    setExportHistory((current) => [response.export, ...current.filter((item) => item.id !== response.export.id)]);
+    if (response.export.payload) {
+      downloadTextFile(
+        response.export.fileName,
+        response.export.payload,
+        format === "csv" ? "text/csv;charset=utf-8" : "application/json;charset=utf-8"
+      );
+    }
+    showToast({ title: "Inquiry export generated", description: response.export.fileName });
+  }
+
+  async function scheduleSavedInquiry() {
+    if (!auth.session || !selectedInquiry) {
+      return;
+    }
+    const response = await saveReportSchedule(auth.session.accessToken, {
+      inquiryId: selectedInquiry.id,
+      name: `${selectedInquiry.name} daily export`,
+      format: "csv",
+      cadence: "daily",
+      timezone: Intl.DateTimeFormat().resolvedOptions().timeZone || "UTC",
+      parameters: {},
+      active: true,
+      nextRunAt: new Date(Date.now() + 24 * 60 * 60 * 1000).toISOString()
+    });
+    setSchedules((current) => [response.schedule, ...current]);
+    showToast({ title: "Schedule created", description: response.schedule.name });
   }
 
   async function removePreset(preset: ReportPreset) {
@@ -3810,6 +4540,211 @@ function ReportsRoute() {
               </article>
             ))}
             {presets.length === 0 ? <p>No saved presets yet.</p> : null}
+          </div>
+        </div>
+
+        <div className="table-panel">
+          <div className="panel-heading">
+            <div>
+              <h3>Generic inquiry builder</h3>
+              <p>Build saved operational views from approved datasets, fields, calculations, and role sharing.</p>
+            </div>
+            <Badge tone="info">{datasets.length} governed datasets</Badge>
+          </div>
+
+          <div className="compact-form-grid">
+            <label className="select-field">
+              <span>Dataset</span>
+              <select
+                aria-label="Inquiry dataset"
+                value={selectedDatasetId}
+                onChange={(event) => {
+                  const dataset = datasets.find((candidate) => candidate.id === event.target.value);
+                  setSelectedDatasetId(event.target.value);
+                  setInquiryGroupBy(dataset?.fields.find((field) => field.groupable)?.key ?? "");
+                  setInquiryValueField(dataset?.fields.find((field) => field.aggregations.includes("sum"))?.key ?? "");
+                }}
+              >
+                {datasets.map((dataset) => (
+                  <option key={dataset.id} value={dataset.id}>
+                    {dataset.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <Input label="Inquiry name" value={inquiryName} onChange={(event) => setInquiryName(event.target.value)} />
+            <label className="select-field">
+              <span>Group by</span>
+              <select value={inquiryGroupBy} onChange={(event) => setInquiryGroupBy(event.target.value)}>
+                {groupableFields.map((field) => (
+                  <option key={field.key} value={field.key}>
+                    {field.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="select-field">
+              <span>Value</span>
+              <select value={inquiryValueField} onChange={(event) => setInquiryValueField(event.target.value)}>
+                {selectedDataset?.id === "inventory_lot_balances" ? <option value="on_hand_quantity">On hand calculation</option> : null}
+                {aggregatableFields.map((field) => (
+                  <option key={field.key} value={field.key}>
+                    {field.label}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <label className="select-field">
+              <span>Sharing</span>
+              <select
+                aria-label="Inquiry sharing"
+                value={inquiryVisibility}
+                onChange={(event) => setInquiryVisibility(event.target.value as "private" | "role_shared")}
+              >
+                <option value="private">Private</option>
+                <option value="role_shared">Role shared</option>
+              </select>
+            </label>
+            <Button type="button" onClick={() => void buildInquiry()}>
+              <PlusCircle aria-hidden="true" size={18} />
+              Save inquiry
+            </Button>
+          </div>
+
+          <div className="record-list">
+            {savedInquiries.map((inquiry) => (
+              <article className="trace-result" key={inquiry.id}>
+                <span>
+                  <strong>{inquiry.name}</strong>
+                  <small>{inquiry.datasetId} - {inquiry.visibility}</small>
+                </span>
+                <Badge tone={inquiry.visibility === "role_shared" ? "success" : "info"}>
+                  {inquiry.visibility === "role_shared" ? "Shared" : "Private"}
+                </Badge>
+                <Button
+                  size="sm"
+                  type="button"
+                  variant="secondary"
+                  onClick={() => {
+                    setSelectedInquiryId(inquiry.id);
+                    void runSavedInquiry(inquiry.id);
+                  }}
+                >
+                  <Search aria-hidden="true" size={16} />
+                  Run
+                </Button>
+              </article>
+            ))}
+            {savedInquiries.length === 0 ? <p>No generic inquiries yet.</p> : null}
+          </div>
+        </div>
+
+        <div className="table-panel">
+          <div className="panel-heading">
+            <div>
+              <h3>Pivot summary and chart</h3>
+              <p>{inquiryResult ? `${inquiryResult.metadata.datasetTitle} - ${formatNumber(inquiryResult.metadata.rowCount)} rows` : "Run or save an inquiry to preview summaries."}</p>
+            </div>
+            <div className="form-actions">
+              <Button size="sm" type="button" variant="secondary" onClick={() => void exportSavedInquiry("csv")} disabled={!selectedInquiry}>
+                <Download aria-hidden="true" size={16} />
+                Inquiry CSV
+              </Button>
+              <Button size="sm" type="button" variant="secondary" onClick={() => void exportSavedInquiry("json")} disabled={!selectedInquiry}>
+                <FileText aria-hidden="true" size={16} />
+                JSON
+              </Button>
+              <Button size="sm" type="button" variant="secondary" onClick={() => void scheduleSavedInquiry()} disabled={!selectedInquiry}>
+                <CalendarClock aria-hidden="true" size={16} />
+                Schedule
+              </Button>
+            </div>
+          </div>
+
+          {inquiryResult ? (
+            <div className="split-grid">
+              <div>
+                <table className="list-table">
+                  <thead>
+                    <tr>
+                      {inquiryResult.columns.map((column) => (
+                        <th key={column.key}>{column.label}</th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {inquiryResult.rows.slice(0, 8).map((row, index) => (
+                      <tr key={`inquiry-${index}`}>
+                        {inquiryResult.columns.map((column) => (
+                          <td key={column.key}>
+                            {row.drillDownHref && column.key === inquiryResult.columns[0]?.key ? (
+                              <Link to={row.drillDownHref}>{formatReportCell(row[column.key])}</Link>
+                            ) : (
+                              formatReportCell(row[column.key])
+                            )}
+                          </td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="record-list">
+                {(inquiryResult.chart?.points ?? []).map((point) => {
+                  const maxValue = Math.max(...(inquiryResult.chart?.points ?? []).map((item) => item.value), 1);
+                  return (
+                    <article className="inline-record" key={point.label}>
+                      <BarChart3 aria-hidden="true" size={18} />
+                      <span>
+                        <strong>{point.label}</strong>
+                        <span>{formatNumber(point.value)}</span>
+                      </span>
+                      <span style={{ inlineSize: `${Math.max(8, Math.round((point.value / maxValue) * 80))}%`, blockSize: 8, background: "var(--color-accent)", borderRadius: 4 }} />
+                    </article>
+                  );
+                })}
+                {inquiryResult.metadata.redactedFields.length > 0 ? (
+                  <Badge tone="warning">Redacted: {inquiryResult.metadata.redactedFields.join(", ")}</Badge>
+                ) : null}
+              </div>
+            </div>
+          ) : (
+            <EmptyState title="No inquiry result" description="Run a saved inquiry or create one from the catalog." />
+          )}
+        </div>
+
+        <div className="table-panel">
+          <div className="panel-heading">
+            <h3>Scheduled exports and run history</h3>
+            <Badge tone="info">{exportHistory.length} runs</Badge>
+          </div>
+          <div className="split-grid">
+            <div className="record-list">
+              {schedules.slice(0, 6).map((schedule) => (
+                <article className="inline-record" key={schedule.id}>
+                  <CalendarClock aria-hidden="true" size={18} />
+                  <span>
+                    <strong>{schedule.name}</strong>
+                    <span>{schedule.cadence} {schedule.format} - next {formatDateTime(new Date(schedule.nextRunAt))}</span>
+                  </span>
+                  <Badge tone={schedule.active ? "success" : "neutral"}>{schedule.active ? "Active" : "Paused"}</Badge>
+                </article>
+              ))}
+              {schedules.length === 0 ? <p>No schedules yet.</p> : null}
+            </div>
+            <div className="record-list">
+              {exportHistory.slice(0, 6).map((item) => (
+                <article className="inline-record" key={item.id}>
+                  <FileSpreadsheet aria-hidden="true" size={18} />
+                  <span>
+                    <strong>{item.fileName}</strong>
+                    <span>{item.rowCount} rows - {formatDateTime(new Date(item.generatedAt))}</span>
+                  </span>
+                  <Badge tone={item.sensitive ? "warning" : "info"}>{item.sensitive ? "Audited" : item.format}</Badge>
+                </article>
+              ))}
+              {exportHistory.length === 0 ? <p>No export runs yet.</p> : null}
+            </div>
           </div>
         </div>
 
@@ -4385,6 +5320,223 @@ function InventoryRoute() {
   );
 }
 
+type LegacyPermissionLevel = "none" | "view" | "use" | "manage" | "approve";
+
+type PermissionModule = {
+  id: string;
+  label: string;
+  description: string;
+};
+
+const permissionModules: PermissionModule[] = [
+  { id: "admin", label: "Users and settings", description: "Staff accounts, roles, locations, health checks, Shopify settings, and system configuration." },
+  { id: "master_data", label: "Master data", description: "Products, SKUs, materials, packaging, locations, import batches, and readiness checks." },
+  { id: "purchasing", label: "Purchasing", description: "Suppliers, approved vendor lists, purchase orders, receiving, and supplier documents." },
+  { id: "inventory", label: "Inventory", description: "Lots, balances, movements, stock counts, labels, allocations, holds, and releases." },
+  { id: "production", label: "Production", description: "BOMs, formulas, production orders, routing operations, EBR execution, and equipment readiness." },
+  { id: "quality", label: "Quality", description: "QC specs, incoming inspection, CAPA, COAs, quality events, and lot disposition." },
+  { id: "sales", label: "Sales and CRM", description: "Wholesale, CRM, resellers, quotes, sales orders, Shopify fulfillment, and customer documents." },
+  { id: "reports", label: "Reports and traceability", description: "Dashboards, operational reports, traceability, recalls, audit history, and export packets." }
+];
+
+const rolePermissionProfiles: Record<string, Record<string, LegacyPermissionLevel>> = {
+  owner_admin: { admin: "manage", master_data: "manage", purchasing: "approve", inventory: "approve", production: "approve", quality: "approve", sales: "manage", reports: "manage" },
+  production_farm: { admin: "none", master_data: "view", purchasing: "view", inventory: "use", production: "use", quality: "view", sales: "none", reports: "view" },
+  qc: { admin: "none", master_data: "view", purchasing: "view", inventory: "view", production: "view", quality: "approve", sales: "none", reports: "view" },
+  packing_fulfillment: { admin: "none", master_data: "view", purchasing: "use", inventory: "use", production: "view", quality: "view", sales: "use", reports: "view" },
+  purchasing: { admin: "none", master_data: "view", purchasing: "manage", inventory: "view", production: "view", quality: "view", sales: "none", reports: "view" },
+  sales_wholesale: { admin: "none", master_data: "view", purchasing: "view", inventory: "view", production: "none", quality: "none", sales: "manage", reports: "view" },
+  auditor: { admin: "none", master_data: "view", purchasing: "view", inventory: "view", production: "view", quality: "view", sales: "view", reports: "view" }
+};
+
+const permissionRank: Record<LegacyPermissionLevel, number> = {
+  none: 0,
+  view: 1,
+  use: 2,
+  manage: 3,
+  approve: 4
+};
+
+function permissionForRole(roleCode: string, moduleId: string): LegacyPermissionLevel {
+  return rolePermissionProfiles[roleCode]?.[moduleId] ?? "none";
+}
+
+function permissionTone(level: PermissionLevel | LegacyPermissionLevel): "neutral" | "success" | "warning" | "info" {
+  if (level === "admin" || level === "export" || level === "approve" || level === "manage") return "success";
+  if (level === "use") return "info";
+  if (level === "view") return "neutral";
+  return "warning";
+}
+
+function effectivePermission(roles: Role[], moduleId: string): LegacyPermissionLevel {
+  return roles.reduce<LegacyPermissionLevel>((current, role) => {
+    const next = permissionForRole(role.code, moduleId);
+    return permissionRank[next] > permissionRank[current] ? next : current;
+  }, "none");
+}
+
+function summarizeUserAccess(user: AdminUser): string[] {
+  const userRoles = user.roles.map((assignment) => ({
+    id: assignment.roleId,
+    code: assignment.roleCode,
+    name: assignment.roleName,
+    description: null
+  }));
+  return permissionModules
+    .filter((module) => permissionRank[effectivePermission(userRoles, module.id)] >= permissionRank.use)
+    .map((module) => module.label)
+    .slice(0, 3);
+}
+
+function scopedLabel(role: Role, scopedAssignments?: Record<string, string>, locations: Location[] = []): string {
+  const locationValue = scopedAssignments?.[role.id];
+  if (!locationValue || locationValue === "global") {
+    return "All locations";
+  }
+  return locations.find((location) => location.id === locationValue)?.name ?? "Scoped location";
+}
+
+function PermissionMatrix({
+  roles,
+  matrix,
+  search = "",
+  changedOnly = false,
+  scopedAssignments,
+  locations = []
+}: {
+  roles: Role[];
+  matrix?: PermissionMatrixSnapshot | null;
+  search?: string;
+  changedOnly?: boolean;
+  scopedAssignments?: Record<string, string>;
+  locations?: Location[];
+}) {
+  if (roles.length === 0) {
+    return <EmptyState title="No roles selected" description="Choose one or more roles to preview effective access." />;
+  }
+
+  if (matrix) {
+    const normalizedSearch = search.trim().toLocaleLowerCase();
+    const changedRoleIds = new Set(matrix.rolePermissionSets.map((assignment) => assignment.roleId));
+    const visibleCatalog = matrix.catalog
+      .filter((entry) =>
+        !normalizedSearch ||
+        `${entry.module} ${entry.label} ${entry.code} ${entry.description}`.toLocaleLowerCase().includes(normalizedSearch)
+      )
+      .filter((entry) =>
+        !changedOnly ||
+        roles.some((role) => matrix.effectiveByRole[role.id]?.some((grant) => grant.permissionCode === entry.code && changedRoleIds.has(role.id)))
+      );
+
+    return (
+      <div className="permission-matrix-wrap">
+        {matrix.conflictWarnings.length > 0 ? (
+          <div className="inline-alert">
+            <ShieldAlert aria-hidden="true" size={18} />
+            <span>{matrix.conflictWarnings.length} permission conflict warning{matrix.conflictWarnings.length === 1 ? "" : "s"}</span>
+          </div>
+        ) : null}
+        <table className="list-table permission-matrix">
+          <thead>
+            <tr>
+              <th>Permission</th>
+              {roles.map((role) => (
+                <th key={role.id}>
+                  {role.name}
+                  <div className="muted-line">{scopedLabel(role, scopedAssignments, locations)}</div>
+                </th>
+              ))}
+              <th>Controls</th>
+            </tr>
+          </thead>
+          <tbody>
+            {visibleCatalog.map((entry) => (
+              <tr key={entry.code}>
+                <th>
+                  {entry.label}
+                  <div className="muted-line">{entry.module} / {entry.kind} / {entry.code}</div>
+                  <div className="muted-line">{entry.description}</div>
+                </th>
+                {roles.map((role) => {
+                  const grant = matrix.effectiveByRole[role.id]?.find((candidate) => candidate.permissionCode === entry.code);
+                  return (
+                    <td key={`${role.id}-${entry.code}`}>
+                      <Badge tone={permissionTone(grant?.level ?? "deny")}>{grant?.level ?? "deny"}</Badge>
+                      {grant?.scope.location?.length ? <div className="muted-line">{grant.scope.location.length} locations</div> : null}
+                    </td>
+                  );
+                })}
+                <td>
+                  <div className="permission-chip-row">
+                    {entry.highRisk ? <Badge tone="warning">High risk</Badge> : null}
+                    {entry.controlledWorkflowAction ? <Badge tone="info">Workflow</Badge> : null}
+                    {entry.fieldGroup ? <Badge tone="neutral">{entry.fieldGroup}</Badge> : null}
+                  </div>
+                </td>
+              </tr>
+            ))}
+            {visibleCatalog.length === 0 ? <tr><td colSpan={roles.length + 2}>No permissions match the current filters.</td></tr> : null}
+          </tbody>
+        </table>
+        <dl className="permission-legend">
+          <div><dt>Deny</dt><dd>No route, API, or field access.</dd></div>
+          <div><dt>View / Use</dt><dd>Read access or operational writes inside scope.</dd></div>
+          <div><dt>Manage / Approve</dt><dd>Master data, settings, release, and override actions.</dd></div>
+          <div><dt>Export / Admin</dt><dd>Controlled downloads or full access administration.</dd></div>
+        </dl>
+      </div>
+    );
+  }
+
+  return (
+    <div className="permission-matrix-wrap">
+      <table className="list-table permission-matrix">
+        <thead>
+          <tr>
+            <th>Module</th>
+            {roles.map((role) => (
+              <th key={role.id}>
+                {role.name}
+                <div className="muted-line">{scopedLabel(role, scopedAssignments, locations)}</div>
+              </th>
+            ))}
+            <th>Effective</th>
+          </tr>
+        </thead>
+        <tbody>
+          {permissionModules.map((module) => (
+            <tr key={module.id}>
+              <th>
+                {module.label}
+                <div className="muted-line">{module.description}</div>
+              </th>
+              {roles.map((role) => {
+                const level = permissionForRole(role.code, module.id);
+                return (
+                  <td key={`${role.id}-${module.id}`}>
+                    <Badge tone={permissionTone(level)}>{level}</Badge>
+                  </td>
+                );
+              })}
+              <td>
+                <Badge tone={permissionTone(effectivePermission(roles, module.id))}>
+                  {effectivePermission(roles, module.id)}
+                </Badge>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+      <dl className="permission-legend">
+        <div><dt>View</dt><dd>Read-only lists, details, dashboards, and exports.</dd></div>
+        <div><dt>Use</dt><dd>Create operational transactions within the assigned location scope.</dd></div>
+        <div><dt>Manage</dt><dd>Create and edit master records, settings, workflows, or commercial records.</dd></div>
+        <div><dt>Approve</dt><dd>Release, override, disposition, approve, or perform controlled compliance actions.</dd></div>
+      </dl>
+    </div>
+  );
+}
+
 function AdminUsersRoute() {
   const { t } = useI18n();
   const auth = useAuth();
@@ -4420,6 +5572,7 @@ function AdminUsersRoute() {
                   <th>Email</th>
                   <th>Status</th>
                   <th>Roles</th>
+                  <th>Access</th>
                 </tr>
               </thead>
               <tbody>
@@ -4435,6 +5588,13 @@ function AdminUsersRoute() {
                       <Badge>{user.status}</Badge>
                     </td>
                     <td>{user.roles.map((role) => role.roleName).join(", ")}</td>
+                    <td>
+                      <div className="permission-chip-row">
+                        {summarizeUserAccess(user).map((module) => (
+                          <Badge tone="info" key={module}>{module}</Badge>
+                        ))}
+                      </div>
+                    </td>
                   </tr>
                 ))}
               </tbody>
@@ -4543,6 +5703,18 @@ function AdminUserDetailRoute() {
             ))}
           </div>
           <Button onClick={() => void saveAssignments()}>{t("admin.save")}</Button>
+        </div>
+
+        <div className="table-panel">
+          <div className="panel-heading">
+            <h3>Effective permissions</h3>
+            <Badge tone="info">{user?.roles.length ?? 0} assigned roles</Badge>
+          </div>
+          <PermissionMatrix
+            roles={roles.filter((role) => assignments[role.id] !== undefined)}
+            scopedAssignments={assignments}
+            locations={locations}
+          />
         </div>
       </section>
     </ProtectedRoute>
@@ -4977,19 +6149,52 @@ function AdminRolesRoute() {
   const auth = useAuth();
   const [roles, setRoles] = useState<Role[]>([]);
   const [locations, setLocations] = useState<Location[]>([]);
+  const [users, setUsers] = useState<AdminUser[]>([]);
+  const [matrix, setMatrix] = useState<PermissionMatrixSnapshot | null>(null);
+  const [history, setHistory] = useState<PermissionAuditEvent[]>([]);
+  const [search, setSearch] = useState("");
+  const [changedOnly, setChangedOnly] = useState(false);
+  const [previewUserId, setPreviewUserId] = useState("");
+  const [previewPermissionCode, setPreviewPermissionCode] = useState("inventory.stock");
+  const [previewLevel, setPreviewLevel] = useState<PermissionLevel>("use");
+  const [previewLocationId, setPreviewLocationId] = useState("");
+  const [accessPreview, setAccessPreview] = useState<AccessPreview | null>(null);
 
   useEffect(() => {
     if (!auth.session || !auth.isAdmin) {
       return;
     }
 
-    Promise.all([listRoles(auth.session.accessToken), listLocations(auth.session.accessToken)]).then(
-      ([rolesResponse, locationsResponse]) => {
+    Promise.all([
+      listRoles(auth.session.accessToken),
+      listLocations(auth.session.accessToken),
+      listUsers(auth.session.accessToken),
+      getPermissionMatrix(auth.session.accessToken),
+      listPermissionHistory(auth.session.accessToken)
+    ]).then(
+      ([rolesResponse, locationsResponse, usersResponse, matrixResponse, historyResponse]) => {
         setRoles(rolesResponse.roles);
         setLocations(locationsResponse.locations);
+        setUsers(usersResponse.users);
+        setMatrix(matrixResponse.matrix);
+        setHistory(historyResponse.auditEvents);
+        setPreviewUserId(usersResponse.users[0]?.id ?? "");
       }
     );
   }, [auth.isAdmin, auth.session]);
+
+  async function runAccessPreview() {
+    if (!auth.session || !previewUserId) {
+      return;
+    }
+    const response = await previewUserAccess(auth.session.accessToken, {
+      userId: previewUserId,
+      permissionCode: previewPermissionCode,
+      requiredLevel: previewLevel,
+      locationId: previewLocationId || null
+    });
+    setAccessPreview(response.preview);
+  }
 
   return (
     <ProtectedRoute adminOnly>
@@ -4999,15 +6204,129 @@ function AdminRolesRoute() {
           <h2 id="roles-title">{t("admin.roles.title")}</h2>
           <p>{t("admin.roles.description")}</p>
         </div>
-        <div className="metric-grid">
-          {roles.map((role) => (
-            <article className="metric-panel" key={role.id}>
-              <span>{role.code}</span>
-              <strong>{role.name}</strong>
-              <p>{role.description}</p>
-            </article>
-          ))}
-        </div>
+        <Tabs
+          tabs={[
+            {
+              id: "matrix",
+              label: "Permission matrix",
+              content: (
+                <>
+                  <div className="table-panel compact-form-grid">
+                    <div className="panel-heading">
+                      <h3>Matrix filters</h3>
+                      <Badge tone={matrix?.conflictWarnings.length ? "warning" : "success"}>
+                        {matrix?.conflictWarnings.length ?? 0} conflicts
+                      </Badge>
+                    </div>
+                    <Input label="Search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Permission, module, field group..." />
+                    <label className="checkbox-row">
+                      <input type="checkbox" checked={changedOnly} onChange={(event) => setChangedOnly(event.target.checked)} />
+                      Changed only
+                    </label>
+                  </div>
+                  <PermissionMatrix roles={roles} matrix={matrix} locations={locations} search={search} changedOnly={changedOnly} />
+                </>
+              )
+            },
+            {
+              id: "roles",
+              label: "Role cards",
+              content: (
+                <div className="metric-grid">
+                  {roles.map((role) => (
+                    <article className="metric-panel" key={role.id}>
+                      <span>{role.code}</span>
+                      <strong>{role.name}</strong>
+                      <p>{role.description}</p>
+                    </article>
+                  ))}
+                </div>
+              )
+            },
+            {
+              id: "preview",
+              label: "User access preview",
+              content: (
+                <>
+                  <form className="table-panel compact-form-grid" onSubmit={(event) => { event.preventDefault(); void runAccessPreview(); }}>
+                    <div className="panel-heading">
+                      <h3>Preview action</h3>
+                      <Badge tone={accessPreview?.resolution.allowed ? "success" : accessPreview ? "warning" : "info"}>
+                        {accessPreview ? (accessPreview.resolution.allowed ? "Allowed" : "Denied") : "Ready"}
+                      </Badge>
+                    </div>
+                    <label className="select-field">
+                      <span>User</span>
+                      <select value={previewUserId} onChange={(event) => setPreviewUserId(event.target.value)}>
+                        {users.map((user) => <option key={user.id} value={user.id}>{user.displayName}</option>)}
+                      </select>
+                    </label>
+                    <label className="select-field">
+                      <span>Permission</span>
+                      <select value={previewPermissionCode} onChange={(event) => setPreviewPermissionCode(event.target.value)}>
+                        {(matrix?.catalog ?? []).map((entry) => <option key={entry.code} value={entry.code}>{entry.module} / {entry.label}</option>)}
+                      </select>
+                    </label>
+                    <label className="select-field">
+                      <span>Required level</span>
+                      <select value={previewLevel} onChange={(event) => setPreviewLevel(event.target.value as PermissionLevel)}>
+                        {["view", "use", "manage", "approve", "export", "admin"].map((level) => <option key={level} value={level}>{level}</option>)}
+                      </select>
+                    </label>
+                    <label className="select-field">
+                      <span>Location</span>
+                      <select value={previewLocationId} onChange={(event) => setPreviewLocationId(event.target.value)}>
+                        <option value="">Any location</option>
+                        {locations.map((location) => <option key={location.id} value={location.id}>{location.name}</option>)}
+                      </select>
+                    </label>
+                    <Button type="submit"><ShieldCheck aria-hidden="true" size={18} />Preview access</Button>
+                  </form>
+                  {accessPreview ? (
+                    <div className="table-panel">
+                      <div className="panel-heading">
+                        <h3>Explanation</h3>
+                        <Badge tone={accessPreview.resolution.allowed ? "success" : "warning"}>
+                          {accessPreview.resolution.reasonCode}
+                        </Badge>
+                      </div>
+                      <p>{accessPreview.resolution.reason}</p>
+                      <div className="permission-chip-row">
+                        {accessPreview.resolution.sources.map((source) => <Badge tone="info" key={source}>{source}</Badge>)}
+                      </div>
+                    </div>
+                  ) : null}
+                </>
+              )
+            },
+            {
+              id: "history",
+              label: "Change history",
+              content: (
+                <div className="table-panel">
+                  <div className="panel-heading">
+                    <h3>Permission change history</h3>
+                    <Badge tone="info">{history.length} events</Badge>
+                  </div>
+                  <table className="list-table">
+                    <thead><tr><th>Event</th><th>Subject</th><th>Actor</th><th>Before/after</th></tr></thead>
+                    <tbody>
+                      {history.map((event) => (
+                        <tr key={event.id}>
+                          <td>{event.eventType}<div className="muted-line">{new Date(event.occurredAt).toLocaleString()}</div></td>
+                          <td>{event.subjectType}<div className="muted-line">{event.subjectId}</div></td>
+                          <td>{event.actorUserId}</td>
+                          <td><code>{JSON.stringify({ before: event.beforeJson, after: event.afterJson }).slice(0, 180)}</code></td>
+                        </tr>
+                      ))}
+                      {history.length === 0 ? <tr><td colSpan={4}>No permission changes have been audited yet.</td></tr> : null}
+                    </tbody>
+                  </table>
+                </div>
+              )
+            }
+          ]}
+        />
         <div className="table-panel">
           <h3>{t("admin.locations")}</h3>
           <table className="list-table">
@@ -5923,16 +7242,34 @@ const settingsRoute = createRoute({
   component: SettingsRoute
 });
 
+const workspaceRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/workspace",
+  component: WorkspaceRoute
+});
+
 const masterDataRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/master-data",
   component: MasterDataRoute
 });
 
+const configurationRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/configuration",
+  component: ConfigurationRoute
+});
+
 const importCenterRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/import-center",
   component: ImportCenterRoute
+});
+
+const inventoryFrameworkRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/inventory-framework",
+  component: InventoryFrameworkRoute
 });
 
 const productConfiguratorRoute = createRoute({
@@ -5983,6 +7320,12 @@ const costingRoute = createRoute({
   component: CostingRoute
 });
 
+const financeRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/finance",
+  component: FinanceRoute
+});
+
 const purchasingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/purchasing",
@@ -5993,6 +7336,18 @@ const mrpRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/mrp",
   component: MrpRoute
+});
+
+const sopRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/sop",
+  component: SopRoute
+});
+
+const workflowsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/workflows",
+  component: WorkflowRoute
 });
 
 const scanRoute = createRoute({
@@ -6047,6 +7402,18 @@ const qualityRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/quality",
   component: QualityRoute
+});
+
+const complianceRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/compliance",
+  component: ComplianceRoute
+});
+
+const limsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/lims",
+  component: LimsRoute
 });
 
 const traceabilityRoute = createRoute({
@@ -6143,15 +7510,20 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   loginRoute,
   settingsRoute,
+  workspaceRoute,
   importCenterRoute,
+  inventoryFrameworkRoute,
   farmRoute,
   productionRoute,
   changeControlRoute,
   routingsRoute,
   equipmentRoute,
   costingRoute,
+  financeRoute,
   purchasingRoute,
   mrpRoute,
+  sopRoute,
+  workflowsRoute,
   inventoryRoute,
   scanRoute,
   labelPrintRoute,
@@ -6162,6 +7534,8 @@ const routeTree = rootRoute.addChildren([
   qcRoute,
   documentsRoute,
   qualityRoute,
+  complianceRoute,
+  limsRoute,
   traceabilityRoute,
   mockRecallRoute,
   reportsRoute,
@@ -6170,6 +7544,7 @@ const routeTree = rootRoute.addChildren([
   releaseNotesRoute,
   syncDiagnosticsRoute,
   masterDataRoute,
+  configurationRoute,
   productConfiguratorRoute,
   adminUsersRoute,
   adminUserDetailRoute,

@@ -1,10 +1,18 @@
 import type { FastifyReply, FastifyRequest, preHandlerHookHandler } from "fastify";
+import { explainPermission, type PermissionLevel } from "@mushroom-compadres/domain";
 import type { RoleCode, UserContext } from "./types.js";
 
 export type RoleGuardOptions = {
   anyOf: RoleCode[];
   locationId?: string | null;
   allowOwnerAdmin?: boolean;
+};
+
+export type PermissionGuardOptions = {
+  permissionCode: string;
+  level: PermissionLevel;
+  locationId?: string | null | ((request: FastifyRequest) => string | null | undefined);
+  scope?: (request: FastifyRequest) => Record<string, string | undefined | null>;
 };
 
 export function hasRole(
@@ -48,7 +56,47 @@ export function requireRoles(options: RoleGuardOptions): preHandlerHookHandler {
     if (!authorized) {
       await reply.code(403).send({
         error: "forbidden",
-        message: "User does not have the required role"
+        code: "role_required",
+        message: "User does not have the required role",
+        reason: "The signed-in user is missing one of the roles required by this endpoint."
+      });
+    }
+  };
+}
+
+export function requirePermission(options: PermissionGuardOptions): preHandlerHookHandler {
+  return async (request: FastifyRequest, reply: FastifyReply) => {
+    if (!request.userContext) {
+      await reply.code(500).send({
+        error: "server_error",
+        code: "missing_user_context",
+        message: "Permission guard requires request.userContext"
+      });
+      return;
+    }
+
+    const locationId = typeof options.locationId === "function" ? options.locationId(request) : options.locationId;
+    const rawScope = options.scope?.(request) ?? {};
+    const scope = Object.fromEntries(
+      Object.entries(rawScope).filter((entry): entry is [string, string] => typeof entry[1] === "string" && entry[1].length > 0)
+    );
+    const resolution = explainPermission({
+      effectivePermissions: request.userContext.effectivePermissions ?? [],
+      permissionCode: options.permissionCode,
+      requiredLevel: options.level,
+      ...(locationId !== undefined ? { locationId } : {}),
+      scope
+    });
+
+    if (!resolution.allowed) {
+      await reply.code(403).send({
+        error: "permission_denied",
+        code: resolution.reasonCode,
+        permissionCode: resolution.permissionCode,
+        requiredLevel: resolution.requiredLevel,
+        effectiveLevel: resolution.effectiveLevel,
+        reason: resolution.reason,
+        message: "You do not have access to perform this action."
       });
     }
   };

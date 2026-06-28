@@ -85,6 +85,16 @@ export type EbrPacketInput = {
   inputs: Array<{ lotId: string; quantity: number; uom: string }>;
   outputs: Array<{ lotId: string; quantity: number; uom: string }>;
   deviations: Array<{ id: string; reason: string; createdAt: Date }>;
+  equipmentHistory?: Array<{
+    equipmentId: string;
+    eventType: string;
+    title: string;
+    occurredAt: Date;
+    source?: string | null;
+    value?: number | null;
+    unit?: string | null;
+    limitStatus?: string | null;
+  }>;
 };
 
 export function validateEbrStepResult(
@@ -274,6 +284,10 @@ export function buildEbrPacket(input: EbrPacketInput) {
     }),
     inputs: input.inputs,
     outputs: input.outputs,
+    equipmentHistory: (input.equipmentHistory ?? []).map((event) => ({
+      ...event,
+      occurredAt: event.occurredAt.toISOString()
+    })),
     deviations: input.deviations.map((deviation) => ({
       ...deviation,
       createdAt: deviation.createdAt.toISOString()

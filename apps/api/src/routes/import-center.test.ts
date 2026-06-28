@@ -114,14 +114,19 @@ describe("import center routes", () => {
     });
 
     expect(readinessResponse.statusCode).toBe(200);
-    expect(readinessResponse.json().readiness[0]).toEqual(
+    const readiness = readinessResponse.json().readiness;
+    const tinctureReadiness = readiness.find((row: { sku: string }) => row.sku === "LM-TINC-50");
+    if (!tinctureReadiness) {
+      throw new Error("missing_tincture_readiness");
+    }
+    expect(tinctureReadiness).toEqual(
       expect.objectContaining({
         sku: "LM-TINC-50",
         totalCount: 9
       })
     );
 
-    const variantId = readinessResponse.json().readiness[0].variantId as string;
+    const variantId = tinctureReadiness.variantId as string;
     const bulkResponse = await app.inject({
       method: "POST",
       url: "/api/import-center/bulk-edit",

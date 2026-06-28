@@ -27,7 +27,19 @@ const templateFieldSchema = z.object({
 const templateSchema = z.object({
   templateCode: z.string().trim().min(1).max(80),
   name: z.string().trim().min(1).max(180),
-  type: z.enum(["finished_good_coa", "raw_material_coa", "lot_release_packet"]),
+  type: z.enum([
+    "finished_good_coa",
+    "raw_material_coa",
+    "lot_release_packet",
+    "sds",
+    "allergen_statement",
+    "haccp_plan",
+    "sanitation_sop",
+    "training_record",
+    "supplier_compliance_document",
+    "internal_audit_checklist",
+    "audit_packet"
+  ]),
   versionCode: z.string().trim().min(1).max(40),
   status: z.enum(["draft", "approved", "retired"]).optional(),
   definitionJson: z.object({

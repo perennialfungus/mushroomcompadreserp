@@ -52,8 +52,11 @@ describe("production API", () => {
       ]),
       productionPlan: expect.objectContaining({
         backflushedMaterialCount: 1,
-        manualIssueMaterialCount: 1
-      })
+        manualIssueMaterialCount: 2,
+        operationOutputCount: 3,
+        operationCostTotal: 18
+      }),
+      readiness: expect.objectContaining({ status: expect.any(String) })
     });
 
     const createdBom = await app.inject({
@@ -286,6 +289,55 @@ describe("production API", () => {
     });
   });
 
+  it("auto-generates a pending output lot when creating a production order", async () => {
+    const createResponse = await app.inject({
+      method: "POST",
+      url: "/api/production/orders",
+      headers: authHeaders("owner-token"),
+      payload: {
+        orderNumber: "PO-AUTO-LOT-001",
+        type: "bottling",
+        status: "planned",
+        plannedStartAt: "2026-07-01T08:00:00.000Z",
+        locationId: "loc-pack",
+        productVariantId: "var-lions-mane-50",
+        formulaRevisionId: "formula-lm-tincture-v1",
+        plannedQuantity: 48,
+        uom: "bottle",
+        autoGenerateLots: true,
+        lotExpirationDays: 180
+      }
+    });
+
+    expect(createResponse.statusCode).toBe(201);
+
+    const ordersResponse = await app.inject({
+      method: "GET",
+      url: "/api/production/orders",
+      headers: authHeaders("owner-token")
+    });
+    const detail = ordersResponse.json().orders.find(
+      (candidate: { order: { orderNumber: string } }) => candidate.order.orderNumber === "PO-AUTO-LOT-001"
+    );
+
+    expect(detail.outputLots).toEqual([
+      expect.objectContaining({
+        lotCode: "LM-TINC-50-PO-AUTO-LOT-001",
+        itemType: "product_variant",
+        itemId: "var-lions-mane-50",
+        sourceType: "production_order",
+        sourceId: createResponse.json().order.id,
+        qcStatus: "pending",
+        manufacturedAt: "2026-07-01T08:00:00.000Z",
+        expiresAt: "2026-12-28T08:00:00.000Z",
+        metadataJson: expect.objectContaining({
+          generatedFromProductionOrder: true,
+          lotExpirationDays: 180
+        })
+      })
+    ]);
+  });
+
   it("gates production orders to approved formula revisions", async () => {
     const draftResponse = await app.inject({
       method: "POST",
@@ -377,6 +429,128 @@ describe("production API", () => {
       revision: { status: "approved", approvedBy: "user-owner" },
       approvals: expect.arrayContaining([
         expect.objectContaining({ status: "approved", comment: "Pilot potency target approved." })
+      ])
+    });
+  });
+
+  it("locks active BOMs, copies revisions, and edits advanced operation definitions on the draft copy", async () => {
+    const locked = await app.inject({
+      method: "POST",
+      url: "/api/production/boms/bom-lm-tincture-v1/operations",
+      headers: authHeaders("owner-token"),
+      payload: {
+        sequence: 90,
+        operationId: "090",
+        operationCodeId: "op-fill",
+        workCenterId: "wc-bottling",
+        runUnits: 48
+      }
+    });
+    expect(locked.statusCode).toBe(409);
+    expect(locked.json().message).toContain("Active BOM revisions are locked");
+
+    const copy = await app.inject({
+      method: "POST",
+      url: "/api/production/boms/bom-lm-tincture-v1/copy",
+      headers: authHeaders("owner-token"),
+      payload: {
+        versionCode: "v2-draft",
+        effectiveFrom: "2026-07-01T00:00:00.000Z"
+      }
+    });
+    expect(copy.statusCode, copy.body).toBe(201);
+    const copied = copy.json().bom;
+    expect(copied).toMatchObject({
+      bom: { status: "draft", versionCode: "v2-draft", activeRevisionLocked: false },
+      operations: expect.arrayContaining([
+        expect.objectContaining({
+          outputs: expect.arrayContaining([expect.objectContaining({ outputType: "by_product" })]),
+          costs: expect.arrayContaining([expect.objectContaining({ costType: "overhead" })])
+        })
+      ])
+    });
+
+    const operationId = copied.operations[1].operation.id;
+    const output = await app.inject({
+      method: "POST",
+      url: `/api/production/boms/operations/${operationId}/outputs`,
+      headers: authHeaders("owner-token"),
+      payload: {
+        outputType: "rework",
+        itemType: "product_variant",
+        itemId: "var-lions-mane-50",
+        quantity: 1,
+        uom: "bottle",
+        traceInventory: true,
+        reworkRequired: true
+      }
+    });
+    expect(output.statusCode, output.body).toBe(201);
+
+    const materialId = copied.operations[1].materials[0].id;
+    const substitute = await app.inject({
+      method: "POST",
+      url: `/api/production/boms/materials/${materialId}/substitutes`,
+      headers: authHeaders("owner-token"),
+      payload: {
+        replacementType: "approved_replacement",
+        componentType: "packaging_component",
+        componentId: "pkg-amber-50-alt",
+        quantity: 48,
+        uom: "each",
+        conversionFactor: 1,
+        effectiveFrom: "2026-07-01T00:00:00.000Z",
+        priority: 1,
+        approved: true
+      }
+    });
+    expect(substitute.statusCode, substitute.body).toBe(201);
+
+    const cost = await app.inject({
+      method: "POST",
+      url: `/api/production/boms/operations/${operationId}/costs`,
+      headers: authHeaders("owner-token"),
+      payload: {
+        costType: "outside_processing",
+        costCode: "EXT-LABEL",
+        description: "Outside label review",
+        quantity: 1,
+        uom: "batch",
+        unitCost: 4.5,
+        currency: "EUR",
+        backflush: true
+      }
+    });
+    expect(cost.statusCode, cost.body).toBe(201);
+
+    const compare = await app.inject({
+      method: "GET",
+      url: `/api/production/boms/compare?fromBomId=bom-lm-tincture-v1&toBomId=${copied.bom.id}`,
+      headers: authHeaders("owner-token")
+    });
+    expect(compare.statusCode).toBe(200);
+    expect(compare.json().comparison.changes).toEqual(
+      expect.arrayContaining([
+        expect.objectContaining({ area: "header", changeType: "changed" }),
+        expect.objectContaining({ area: "output", changeType: "added" }),
+        expect.objectContaining({ area: "cost", changeType: "added" })
+      ])
+    );
+  });
+
+  it("explodes operation-level and phantom BOM materials for planning", async () => {
+    const response = await app.inject({
+      method: "GET",
+      url: "/api/production/boms/explosion?productVariantId=var-lions-mane-50&quantity=48&asOf=2026-06-28T00:00:00.000Z",
+      headers: authHeaders("owner-token")
+    });
+
+    expect(response.statusCode, response.body).toBe(200);
+    expect(response.json().explosion).toMatchObject({
+      rootBomId: "bom-lm-tincture-v1",
+      lines: expect.arrayContaining([
+        expect.objectContaining({ componentId: "var-lm-bottling-kit", phantomExploded: true }),
+        expect.objectContaining({ componentId: "pkg-amber-50-alt", replacement: expect.objectContaining({ approved: true }) })
       ])
     });
   });

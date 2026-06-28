@@ -1320,3 +1320,682 @@ Prompts 25 onward extend the MVP into a deeper manufacturing/QC ERP inspired by 
 **Tests to write:** Unit tests for scoring calculations; API tests for feedback-to-backlog links; Playwright roadmap planning flow.
 
 **Out of scope:** Full project management suite, external Jira/Linear integration.
+
+## Build Prompt 42 - Acumatica-Style Access Rights and Permission Sets
+
+**Goal:** Replace simple role-code checks with a robust ERP-grade permission system that controls what every user can see, use, manage, approve, export, and override.
+
+**Depends on:** 6, 25, 31, 37, 40
+
+**Context to load:** Read `SPEC.md`, `ARCHITECTURE.md`, `BUILD_PROMPTS.md`, and `docs/research/acumatica-mar-kov-bom-notes.md` before coding.
+
+**Scope (build this):**
+- Add a permission catalog with modules, screens, records, actions, field groups, and controlled workflow actions.
+- Add permission sets that can be assigned to roles and users, with deny/view/use/manage/approve/export/admin levels.
+- Support row/location scoping like the current role assignments, plus record scoping for supplier, work center, product family, item class, and document category where useful.
+- Add field-level controls for sensitive fields such as costs, supplier terms, Shopify settings, formula percentages, QC disposition notes, customer pricing, and admin override reasons.
+- Add route guards and domain authorization helpers that check permission codes, location scope, and action severity before writes.
+- Add an admin Permission Matrix screen inspired by ERP access rights screens: module tree, role/user columns, effective access preview, search/filter, changed-only view, and permission conflict warnings.
+- Add a User Access Preview that explains why a user can or cannot perform a selected action.
+- Audit permission changes and high-risk permission use.
+
+**Data/Models touched:** users, roles, user_roles, locations, audit_events, plus new permission_catalog, permission_sets, role_permission_sets, user_permission_overrides, field_permission_rules, access_scope_rules.
+
+**APIs/Integrations:** Internal API only.
+
+**UI/Screens:** Permission matrix, user access preview, role permission editor, permission change history, denied-action explanation modal.
+
+**Acceptance criteria:**
+- A non-admin user cannot open routes, call APIs, or perform writes outside assigned permissions and location scope.
+- A permission denial returns a clear machine-readable code and a plain-language reason for the UI.
+- Owner/admin can preview effective permissions for any user before saving changes.
+- Field-level hidden/read-only behavior is enforced in UI and API serialization, not only CSS.
+- All permission changes and controlled approvals are audited with before/after JSON.
+
+**Tests to write:** Unit tests for permission resolution; API tests for each access level; integration tests for field-level redaction; Playwright tests for permission matrix editing and denied-action explanations.
+
+**Out of scope:** External identity provider admin consoles, paid SSO, payroll permissions, or accounting ledger permissions.
+
+## Build Prompt 43 - Approachable ERP Workspace, Color Coding, and Pinning
+
+**Goal:** Keep the platform powerful like Acumatica and Mar-Kov while making day-to-day screens easier to read, personalize, and navigate.
+
+**Depends on:** 5, 25, 40, 42
+
+**Context to load:** Read `SPEC.md`, `ARCHITECTURE.md`, `BUILD_PROMPTS.md`, and `docs/research/acumatica-mar-kov-bom-notes.md` before coding.
+
+**Scope (build this):**
+- Add user preferences for pinned screens, pinned records, favorite reports, saved filters, dashboard widget order, compact/comfortable density, and color coding.
+- Add role-aware navigation that hides inaccessible modules but allows admins to preview another role's workspace.
+- Add color tags for lots, suppliers, purchase orders, production orders, QC tasks, alerts, item classes, and workflow statuses.
+- Add saved views for high-use grids with filters, columns, sorting, grouping, and color rules.
+- Add quick actions from pinned cards: receive PO, create BOM, create supplier, run MRP, start QC task, generate production order, and open traceability.
+- Add UI affordances that stay approachable: concise page titles, consistent tabs, compact tables, clear empty states, no marketing-style hero screens in app workflows.
+- Add accessibility checks for contrast and keyboard navigation across custom color rules.
+
+**Data/Models touched:** user_preferences, pinned_items, saved_views, saved_view_columns, color_rules, dashboard_widgets, alert_subscriptions, audit_events.
+
+**APIs/Integrations:** Internal API only.
+
+**UI/Screens:** Preference panel, pinned workspace, saved view editor, color rule editor, role workspace preview.
+
+**Acceptance criteria:**
+- Users can pin/unpin modules, records, and reports without affecting other users.
+- Color rules are visible on list rows and detail headers while maintaining accessible contrast.
+- Saved views preserve filters and columns per user and can be shared by admins with selected roles.
+- Navigation only shows actions the current user can access unless admin preview is enabled.
+- Mobile and desktop layouts remain readable with long item names, lot numbers, and supplier names.
+
+**Tests to write:** Unit tests for preference merging and color contrast helpers; API tests for saved views and pins; Playwright tests for pinning, saved views, color rules, and role workspace preview.
+
+**Out of scope:** Full no-code page builder, custom SQL reports, or external BI embedding.
+
+## Build Prompt 44 - Guided Workflow Diagrams and Clickthrough Training
+
+**Goal:** Create workflow diagrams and guided clickthroughs that show users exactly how to complete common ERP tasks from start to finish.
+
+**Depends on:** 7, 11, 18, 30, 32, 37, 42, 43
+
+**Context to load:** Read `SPEC.md`, `ARCHITECTURE.md`, `BUILD_PROMPTS.md`, and current route/component files for BOM, suppliers, purchasing, production, receiving, QC, and MRP before coding.
+
+**Scope (build this):**
+- Add a workflow guide model with workflow id, role targets, prerequisites, steps, route targets, UI selectors, screenshots/diagram nodes, expected result, and failure/help text.
+- Add guided clickthroughs for creating a new BOM, creating a supplier, creating a supplier approval, creating a purchase order, receiving materials, quarantining materials, completing incoming QC, releasing received inventory, creating a production order, and completing production.
+- Add diagram rendering for each workflow with nodes for user actions, system validations, approvals, QC gates, inventory movements, and audit records.
+- Add "show me" mode that highlights the next UI element without modifying data until the user confirms.
+- Add "practice mode" seeded with demo data and safe transaction rollback.
+- Add exports for workflow diagrams as Mermaid markdown and PDF-ready JSON.
+- Gate guide availability by permissions so users only see workflows they can perform or learn.
+
+**Data/Models touched:** workflow_guides, workflow_steps, workflow_runs, workflow_run_events, pinned_items, audit_events.
+
+**APIs/Integrations:** Internal API only; optional PDF export through existing document/PDF tooling if present.
+
+**UI/Screens:** Workflow library, workflow diagram viewer, guided overlay, practice-mode banner, workflow run history.
+
+**Acceptance criteria:**
+- A user can follow a guided clickthrough to create a BOM, supplier, PO, receipt, QC release, and production order.
+- Diagrams show the exact route/action sequence plus system checks and approval gates.
+- Practice mode never changes live records.
+- Guides respect permissions and show a clear reason when a step requires a different role.
+- Mermaid export renders valid diagrams for at least the major workflows.
+
+**Tests to write:** Unit tests for guide validation and Mermaid generation; API tests for workflow run lifecycle; Playwright tests for guided BOM, supplier, PO, receiving/quarantine, and production-order clickthroughs.
+
+**Out of scope:** Screen-recording video generation, LMS integrations, or AI-generated guides from arbitrary clicks.
+
+## Build Prompt 45 - Receiving, Quarantine, Incoming QC, and Inventory Release
+
+**Goal:** Build a complete material receiving workflow where purchase order receipts can be accepted directly or quarantined until QA/QC releases them into available inventory.
+
+**Depends on:** 8, 9, 18, 26, 37, 42
+
+**Context to load:** Read `SPEC.md`, `ARCHITECTURE.md`, `BUILD_PROMPTS.md`, `docs/research/acumatica-mar-kov-bom-notes.md`, and the current purchasing, inventory, QC, quality, and supplier quality modules before coding.
+
+**Scope (build this):**
+- Add receipt header fields for bill of lading/shipping number, carrier, packing slip number, received-by user, receiving notes, and supplier document references.
+- Add receipt line fields for supplier lot number, internal lot number, expiry date, manufacture date if known, container count, received quantity, damaged quantity, accepted quantity, quarantined quantity, rejected quantity, and disposition reason.
+- Allow each line to be marked as accepted, quarantine pending QC, rejected at dock, or partial accept/partial quarantine.
+- For accepted quantities, create lot records and receipt stock movements into available inventory only when supplier/material gates allow it.
+- For quarantined quantities, create lot records, hold movements, active lot holds, and incoming QC tasks; do not increase available inventory until QC release.
+- Require QC users or approved approvers to release, reject, rework, or dispose quarantined materials, with evidence and reason captured.
+- Link receipt, PO, supplier, supplier lot, BOL/shipping number, QC tasks, COA, stock movements, inventory balance, and audit records for traceability.
+- Add receiving labels that include item, lot, supplier lot, expiry, PO, receipt, and quarantine/release status.
+- Add dashboard alerts for overdue incoming QC, quarantined stock aging, missing COA, missing expiry, and receipt quantity mismatch.
+
+**Data/Models touched:** receipts, receipt_lines, lots, lot_holds, stock_movements, inventory_balances, purchase_orders, purchase_order_lines, qc_tasks, qc_results, coa_attachments, supplier_approvals, supplier_documents, quality_events, audit_events, labels.
+
+**APIs/Integrations:** Internal API only; file upload for COAs and supplier documents.
+
+**UI/Screens:** Receiving workspace, receipt detail, quarantine queue, incoming QC task detail, material release dialog, receiving labels, receipt correction/audit panel.
+
+**Acceptance criteria:**
+- Receiving can capture expiration dates, lot numbers, supplier name, BOL/shipping number, and PO number.
+- Accepted material increases available inventory; quarantined material increases held inventory only.
+- QC release moves held quantity to available inventory and records the approver, evidence, and reason.
+- Rejected/disposed material never becomes available inventory and remains traceable to the PO and receipt.
+- Partial receipts and partial quarantine are supported without exceeding ordered quantity.
+- All controlled transitions are permission checked and audited.
+
+**Tests to write:** Domain tests for receipt disposition math; API tests for accepted/quarantined/rejected receiving; inventory balance tests for held-to-available release; QC release/reject tests; Playwright tests for receiving a PO, quarantining a food item, completing QC, and verifying inventory updates.
+
+**Out of scope:** EDI ASN import, barcode scale hardware, accounting voucher creation, supplier portal acknowledgements.
+
+## Build Prompt 46 - ERP Configuration Framework, Document Types, and Numbering
+
+**Goal:** Add an Acumatica-style configuration layer so the platform can define document types, numbering, reason codes, attributes, entry defaults, and required fields without hardcoding every workflow variation.
+
+**Depends on:** 42, 43, 45
+
+**Context to load:** Read `SPEC.md`, `ARCHITECTURE.md`, `BUILD_PROMPTS.md`, and `docs/research/acumatica-mar-kov-bom-notes.md` before coding.
+
+**Scope (build this):**
+- Add configurable document/entry types for purchase orders, receipts, production orders, processing batches, QC tasks, quality events, stock movements, change requests, and sales/wholesale orders.
+- Add numbering sequences by organization, document type, year/month, location, and optional prefix.
+- Add reason code catalogs for receipt dispositions, inventory adjustments, holds, releases, rejects, rework, scrap, returns, cycle counts, and admin overrides.
+- Add dynamic attributes/custom fields by item class, supplier class, product family, lot type, document type, and QC spec.
+- Add field behavior rules: visible, hidden, read-only, required, default value, validation expression, and permission-gated visibility.
+- Add admin screens for document types, numbering sequences, reason codes, attribute sets, and required-field rules.
+- Add validation helpers that operational forms can call before save.
+
+**Data/Models touched:** document_types, numbering_sequences, reason_codes, attribute_definitions, attribute_sets, attribute_values, field_behavior_rules, audit_events.
+
+**APIs/Integrations:** Internal API only.
+
+**UI/Screens:** Configuration dashboard, document type editor, numbering sequence editor, reason code editor, attribute set editor, field behavior preview.
+
+**Acceptance criteria:**
+- Admin can configure a new receipt type or production order type without code changes.
+- Generated document numbers are unique, predictable, and scoped by configured sequence.
+- Required attributes are enforced by API and UI.
+- Field behavior rules can make fields required or read-only by workflow state and permission.
+- All configuration changes are audited.
+
+**Tests to write:** Unit tests for numbering generation and field-rule resolution; API tests for configuration CRUD and validation; Playwright tests for creating a document type, assigning attributes, and using the configured defaults in an operational form.
+
+**Out of scope:** Full low-code app builder, custom SQL execution, or arbitrary user-authored JavaScript rules.
+
+## Build Prompt 47 - Workflow Engine, States, Actions, Dialogs, and Approval Maps
+
+**Goal:** Add a reusable workflow engine inspired by Acumatica workflows so records can define allowed states, actions, transitions, approvals, dialogs, and field behavior.
+
+**Depends on:** 31, 42, 46
+
+**Context to load:** Read `SPEC.md`, `ARCHITECTURE.md`, `BUILD_PROMPTS.md`, and the current state-machine modules before coding.
+
+**Scope (build this):**
+- Add workflow definitions for document types and controlled records.
+- Support states, actions, transitions, guard conditions, entry actions, exit actions, and transition side effects.
+- Add action dialogs that collect required reason/evidence fields before a transition.
+- Add approval maps by role, permission, supplier risk, item class, amount threshold, QC severity, change type, and location.
+- Add escalation rules for overdue approvals and blocked controlled actions.
+- Add workflow visualization with state/action diagrams.
+- Migrate existing hardcoded state transitions to workflow definitions where practical while preserving domain safety checks.
+
+**Data/Models touched:** workflow_definitions, workflow_states, workflow_actions, workflow_transitions, workflow_conditions, workflow_action_dialogs, approval_maps, approval_steps, approval_requests, audit_events.
+
+**APIs/Integrations:** Internal API only; in-app alert integration for overdue approvals.
+
+**UI/Screens:** Workflow designer, approval map editor, approval inbox, state diagram viewer, transition audit timeline.
+
+**Acceptance criteria:**
+- Production orders, receipts, QC tasks, holds, change requests, and supplier approvals can be driven by workflow definitions.
+- Users only see actions that are valid for the current state and their permissions.
+- Required action dialogs collect reason/evidence before controlled transitions.
+- Approval requests are created, approved/rejected, escalated, and audited.
+- Workflow diagrams match the configured states and transitions.
+
+**Tests to write:** Unit tests for workflow resolution and transition guards; integration tests for approval-map routing; Playwright tests for approval inbox and state/action availability.
+
+**Out of scope:** BPMN import/export, external approval systems, legal e-signature certification.
+
+## Build Prompt 48 - Advanced BOM Operations, Phantom Assemblies, By-Products, Backflushing, and Effectivity
+
+**Goal:** Deepen BOMs to match Acumatica-style manufacturing definitions where operations, materials, tools, machines, overhead, by-products, scrap, and effectivity rules drive production planning and execution.
+
+**Depends on:** 30, 31, 32, 34, 46, 47
+
+**Context to load:** Read `SPEC.md`, `ARCHITECTURE.md`, `BUILD_PROMPTS.md`, and `docs/research/acumatica-mar-kov-bom-notes.md` before coding.
+
+**Scope (build this):**
+- Add phantom assemblies and multi-level BOM explosion.
+- Add alternate BOMs and planning BOMs.
+- Add material effectivity dates, substitute components, alternate components, and approved replacement rules.
+- Add operation-level by-products, co-products, scrap, yield loss, and rework outputs.
+- Add material and labor backflush settings by operation.
+- Add overhead, tool, machine, outside-processing, queue, move, finish, and setup costs at operation level.
+- Add BOM compare, revision copy, and active-revision locking through change control.
+- Add BOM readiness checks for routings, QC specs, equipment, item effectivity, and cost rollup.
+
+**Data/Models touched:** bill_of_materials, bom_revisions, bom_operations, bom_operation_materials, bom_operation_outputs, bom_substitutes, bom_alternates, bom_overheads, bom_tools, bom_effectivity_rules, change_requests, cost_rollups.
+
+**APIs/Integrations:** Internal API only.
+
+**UI/Screens:** Multi-level BOM explorer, operation-level BOM editor, BOM compare, effectivity timeline, cost and readiness panel.
+
+**Acceptance criteria:**
+- MRP and production can explode multi-level and phantom BOMs correctly.
+- Backflushed material/labor posts only at configured control points.
+- By-products and scrap create traceable inventory or loss records.
+- Expired or not-yet-effective components are blocked or warned before production.
+- BOM revisions cannot be changed directly once active unless change control permits it.
+
+**Tests to write:** Unit tests for BOM explosion, effectivity, phantom assemblies, by-products, and backflush posting; integration tests for production order generation; Playwright tests for multi-level BOM editing and revision compare.
+
+**Out of scope:** CAD/PLM integration, automated supplier substitution decisions, or accounting GL posting.
+
+## Build Prompt 49 - Product Configurator Rules, Supplemental Items, Pricing, and Cost Effects
+
+**Goal:** Add an Acumatica-style product configurator that can generate configured SKUs, BOMs, routing choices, supplemental items, labels, prices, and expected costs from rule-driven options.
+
+**Depends on:** 33, 34, 46, 48
+
+**Context to load:** Read `SPEC.md`, `ARCHITECTURE.md`, `BUILD_PROMPTS.md`, and existing product configurator modules before coding.
+
+**Scope (build this):**
+- Add configurable option groups, option values, dependencies, incompatibilities, required selections, and default choices.
+- Add rules that alter SKU segments, formula/BOM components, routing operations, labels, QC requirements, packaging, price, cost, and Shopify mapping readiness.
+- Add supplemental items for packaging inserts, bundles, accessories, samples, or required add-ons.
+- Add configurator quote preview showing price, margin, expected cost, missing data, and generated production definition.
+- Add rule test fixtures so admins can validate option combinations before activation.
+- Add change-control approval for active configurator templates and rules.
+
+**Data/Models touched:** product_templates, product_configurations, configurator_option_groups, configurator_options, configurator_rules, configurator_rule_tests, bom_revisions, formula_revisions, labels, price_lists, cost_rollups.
+
+**APIs/Integrations:** Optional Shopify draft export only if existing Shopify module supports it; otherwise internal only.
+
+**UI/Screens:** Configurator template designer, option/rule editor, configuration preview, rule test runner, generated package review.
+
+**Acceptance criteria:**
+- Admin can define option rules without code changes.
+- Invalid option combinations are blocked with clear explanations.
+- Configured products generate SKU, BOM/formula draft, label requirements, QC requirements, price impact, and cost preview.
+- Active configurator rules require approval through change control.
+- Generated records remain auditable and traceable to the template/rule version.
+
+**Tests to write:** Unit tests for rule resolution, invalid combinations, price/cost effects, and generated package contents; Playwright tests for creating and testing a configurator template.
+
+**Out of scope:** Public customer-facing configurator, automatic legal label approval, or live Shopify product publication.
+
+## Build Prompt 50 - Advanced WMS Scan Modes, Containers, Put-Away, and Pick Paths
+
+**Goal:** Add warehouse execution depth inspired by Acumatica WMS and Mar-Kov warehouse management, with scan-driven receive, put-away, transfer, issue, count, pick, pack, and ship flows.
+
+**Depends on:** 8, 14, 23, 28, 42, 45, 46
+
+**Context to load:** Read `SPEC.md`, `ARCHITECTURE.md`, `BUILD_PROMPTS.md`, and current inventory, purchasing, operations, and Shopify fulfillment modules before coding.
+
+**Scope (build this):**
+- Add scan modes: receive, put away, transfer, issue, count, pick, pack, ship, storage lookup, item lookup, and container lookup.
+- Add containers, pallets, cartons, totes, bins, license plates, and mixed-lot container contents.
+- Add directed put-away rules by item class, lot status, temperature/storage zone, quarantine status, expiry, and location capacity.
+- Add pick path optimization, staging locations, wave picking, tote assignment, and pack verification.
+- Add FEFO/FIFO picking suggestions and override reasons.
+- Add mobile scan command handling similar to WMS service commands.
+- Add printable container, pallet, bin, and staging labels.
+
+**Data/Models touched:** containers, container_lines, warehouse_zones, storage_rules, putaway_tasks, pick_tasks, pack_sessions, wave_batches, staging_locations, stock_movements, inventory_balances, labels.
+
+**APIs/Integrations:** Barcode scanner/camera APIs; browser print/PDF labels.
+
+**UI/Screens:** Scan command center, container detail, put-away queue, wave pick board, pack verification, storage lookup, mobile WMS mode screens.
+
+**Acceptance criteria:**
+- Users can complete receive-to-put-away, transfer, count, pick, pack, and ship using scan-first flows.
+- Mixed-lot containers remain traceable at container-line level.
+- Quarantined material cannot be put away into available storage unless released.
+- FEFO/FIFO suggestions are visible and override reasons are audited.
+- Scan flows work on mobile with manual entry fallback.
+
+**Tests to write:** Domain tests for container inventory and FEFO/FIFO suggestions; API tests for scan commands; Playwright mobile tests for receive/put-away, pick/pack, transfer, and count.
+
+**Out of scope:** Robotic warehouse automation, carrier label purchase, or direct handheld scanner SDK integration beyond browser-compatible input.
+
+## Build Prompt 51 - Inventory Item Classes, Matrix Items, Subitems, Cross-References, and Cycle Count Programs
+
+**Goal:** Add Acumatica-style inventory framework features that make item setup, lot tracking, purchasing, selling, barcode aliases, and cycle counting easier to administer.
+
+**Depends on:** 7, 8, 14, 39, 46, 50
+
+**Context to load:** Read `SPEC.md`, `ARCHITECTURE.md`, `BUILD_PROMPTS.md`, and current inventory-item-class and import modules before coding.
+
+**Scope (build this):**
+- Add hierarchical item classes with inherited defaults for lot tracking, expiry tracking, UOM, storage rules, QC requirements, valuation metadata, label template, and color rules.
+- Add subitems/variant dimensions for size, strength, mushroom species/blend, packaging format, market, language, channel, and storage condition.
+- Add matrix item generation for families of related SKUs.
+- Add item cross-references for supplier SKUs, customer SKUs, Shopify SKUs, barcode aliases, GS1 codes, and legacy codes.
+- Add ABC ranking and cycle count frequencies by item class, velocity, value, risk, and expiry sensitivity.
+- Add cycle count calendar and count program suggestions.
+
+**Data/Models touched:** inventory_item_classes, item_class_defaults, subitem_dimensions, matrix_item_templates, item_cross_references, abc_rankings, cycle_count_programs, stock_count_sessions, product_variants, materials, packaging_components.
+
+**APIs/Integrations:** Internal API only.
+
+**UI/Screens:** Item class hierarchy, matrix item generator, cross-reference editor, ABC/cycle count settings, count calendar.
+
+**Acceptance criteria:**
+- New items inherit defaults from item class hierarchy.
+- Matrix item generation creates related SKUs with predictable attributes and readiness checks.
+- Barcode/supplier/customer cross-references resolve to the correct item in scan and receiving flows.
+- Cycle count suggestions prioritize high-risk, high-value, high-velocity, and expiring inventory.
+- Changes to inherited defaults show impact before save.
+
+**Tests to write:** Unit tests for inheritance, matrix generation, cross-reference lookup, and ABC count scoring; Playwright tests for item class editing and matrix generation.
+
+**Out of scope:** Accounting valuation ledger, tariff classification automation, or external PIM integration.
+
+## Build Prompt 52 - APS, Finite Scheduling, Rough-Cut Capacity, Dispatch Boards, and Capable-to-Promise
+
+**Goal:** Expand planning from MRP suggestions into Acumatica-style advanced planning and scheduling with finite capacity, material constraints, dispatch priorities, and capable-to-promise explanations.
+
+**Depends on:** 32, 35, 40, 46, 48
+
+**Context to load:** Read `SPEC.md`, `ARCHITECTURE.md`, `BUILD_PROMPTS.md`, and current MRP, routing, equipment, costing, and production modules before coding.
+
+**Scope (build this):**
+- Add finite-capacity calendars by work center, equipment, labor role, shift, holiday, maintenance window, and cleaning/changeover constraint.
+- Add dispatch priorities, constraint dates, scheduling block sizes, and schedule regeneration.
+- Add rough-cut capacity planning for planned and open production orders.
+- Add material availability constraints from inventory, POs, transfers, and production supply.
+- Add operation-level schedule board with drag/resequence controls and constraint warnings.
+- Add capable-to-promise calculations for sales/wholesale orders using stock, production, purchasing, QC lead time, and capacity.
+- Add promise-date explanation panels.
+
+**Data/Models touched:** capacity_calendars, work_center_capacity_blocks, equipment_capacity_blocks, labor_capacity_blocks, schedule_runs, schedule_operations, production_operation_runs, mrp_snapshots, purchase_orders, sales_orders.
+
+**APIs/Integrations:** Internal API only.
+
+**UI/Screens:** Finite schedule board, rough-cut capacity view, dispatch board, work center utilization, CTP panel on sales/wholesale orders, schedule run history.
+
+**Acceptance criteria:**
+- Planner can regenerate a finite schedule and see capacity overloads.
+- Material shortages constrain production starts.
+- Dragging/resequencing operations recalculates dependent operations and warnings.
+- CTP returns a promise date with a readable explanation.
+- Schedule changes are audited and do not silently alter completed work.
+
+**Tests to write:** Unit tests for capacity loading, constraint ordering, CTP, and schedule regeneration; integration tests with material and QC gates; Playwright tests for schedule board and CTP panel.
+
+**Out of scope:** Fully automated optimizer, payroll integration, or external calendar synchronization.
+
+## Build Prompt 53 - Production Control Points, Nonsequential Reporting, Labor, Scrap, Waste, and Rework
+
+**Goal:** Add deeper shop-floor production controls from Acumatica and Mar-Kov: control points, operation reporting, labor capture, scrap/waste tracking, rework, and nonsequential quantity reporting.
+
+**Depends on:** 11, 27, 32, 34, 42, 47, 48
+
+**Context to load:** Read `SPEC.md`, `ARCHITECTURE.md`, `BUILD_PROMPTS.md`, and current production, routing, EBR, equipment, and costing modules before coding.
+
+**Scope (build this):**
+- Add operation control points that gate reporting, material issue, backflush, QC checks, and final completion.
+- Allow nonsequential reporting when configured, with warnings for skipped required operations.
+- Add labor clock-in/clock-out, crew reporting, indirect labor, downtime reason codes, and supervisor approval.
+- Add scrap, waste, rework, return-to-stock, and return-to-vendor flows with disposition reason codes.
+- Add production order WIP summary showing planned versus actual material, labor, machine, overhead, scrap, and yield.
+- Add rework orders linked to the original lot, quality event, and production order.
+- Add generated inventory transactions for issue, backflush, output, scrap, rework, and return movements.
+
+**Data/Models touched:** production_orders, production_operation_runs, operation_control_points, labor_time_entries, crew_time_entries, downtime_events, scrap_events, rework_orders, stock_movements, cost_variances, quality_events.
+
+**APIs/Integrations:** Internal API only.
+
+**UI/Screens:** Shop-floor operation reporting, labor capture, scrap/rework dialog, WIP summary, production variance view, supervisor approval queue.
+
+**Acceptance criteria:**
+- Required control points prevent premature completion.
+- Configured nonsequential reporting works and remains auditable.
+- Labor, downtime, scrap, waste, and rework affect actual cost and yield variance.
+- Scrap/rework dispositions update inventory and traceability correctly.
+- Supervisor approvals are required for high-risk exceptions.
+
+**Tests to write:** Unit tests for control-point gating and transaction generation; API tests for labor/scrap/rework; Playwright tests for reporting operations and recording scrap.
+
+**Out of scope:** Payroll export, GL WIP reconciliation, or automated machine downtime detection.
+
+## Build Prompt 54 - LIMS, Sampling Plans, Retesting, Retained Samples, Stability, and Lab Results
+
+**Goal:** Add Mar-Kov-style LIMS depth for incoming, in-process, finished goods, retained sample, retest, and stability testing.
+
+**Depends on:** 9, 26, 37, 38, 45, 47
+
+**Context to load:** Read `SPEC.md`, `ARCHITECTURE.md`, `BUILD_PROMPTS.md`, and current QC, quality, documents, supplier quality, and lot modules before coding.
+
+**Scope (build this):**
+- Add sample records linked to receipts, lots, batches, suppliers, stability studies, and retained sample inventory.
+- Add sampling plans by supplier, item class, material, product, risk level, batch size, container count, and inspection type.
+- Add test methods with instruments, units, expected ranges, pass/fail rules, retest rules, and evidence requirements.
+- Add lab result entry, review, approval, retest, invalidation, and out-of-spec workflows.
+- Add retained sample inventory with storage location, quantity, expiry, pull history, and disposal.
+- Add stability study schedules, pull points, test panels, and trend charts.
+- Add QC trend analytics by supplier, material, test, product, and batch.
+
+**Data/Models touched:** samples, sample_tests, sampling_plans, test_methods, lab_results, lab_instruments, retained_samples, stability_studies, stability_pull_points, qc_tasks, qc_results, quality_events, lots.
+
+**APIs/Integrations:** File upload for lab evidence; no direct lab instrument integration yet.
+
+**UI/Screens:** LIMS dashboard, sample queue, sample detail, lab result entry, retest workflow, retained sample inventory, stability study planner, QC trend charts.
+
+**Acceptance criteria:**
+- Receiving and production can generate samples automatically from sampling plans.
+- Failed or out-of-spec results trigger quality events and holds when configured.
+- Retests preserve original results and require reason/evidence.
+- Retained samples are traceable and visible in inventory-like views.
+- Stability pull schedules generate alerts and tasks.
+
+**Tests to write:** Unit tests for sampling plan selection, pass/fail/retest rules, and stability schedules; API tests for sample lifecycle; Playwright tests for sample result entry and retest.
+
+**Out of scope:** Direct lab instrument integration, external LIMS synchronization, or legal lab accreditation validation.
+
+## Build Prompt 55 - Weigh and Dispense, Scale Capture, Tolerance Checks, and Potency Adjustment
+
+**Goal:** Add Mar-Kov-style weigh/dispense execution that validates material, lot, equipment, quantity, potency, and tolerance before allowing production steps to continue.
+
+**Depends on:** 27, 30, 32, 36, 42, 48, 54
+
+**Context to load:** Read `SPEC.md`, `ARCHITECTURE.md`, `BUILD_PROMPTS.md`, and current EBR, formula, equipment, inventory, and QC modules before coding.
+
+**Scope (build this):**
+- Add weigh/dispense steps generated from formula/BOM lines.
+- Support target quantity, tolerance, unit conversion, minimum/maximum limits, scale tare, gross, net, and manual override.
+- Add optional potency/assay adjustment for active ingredients based on lot-specific QC results.
+- Validate barcode-scanned material, lot, location, container, expiry, release status, and quantity before weighing.
+- Add scale adapter abstraction with manual/mock adapter now and a hardware integration boundary for future devices.
+- Add dual verification for critical materials and out-of-tolerance overrides.
+- Post dispense movements or reservations only after successful step completion.
+
+**Data/Models touched:** ebr_steps, ebr_step_results, weigh_dispense_sessions, weigh_dispense_lines, equipment, equipment_calibrations, lots, qc_results, stock_movements, formula_lines, bom_operation_materials.
+
+**APIs/Integrations:** Manual/mock scale adapter only; architecture boundary for real scales later.
+
+**UI/Screens:** Weigh/dispense station, scale capture panel, tolerance exception dialog, dual verification dialog, dispense history.
+
+**Acceptance criteria:**
+- Critical materials cannot be dispensed from unreleased, expired, held, or wrong lots.
+- Out-of-tolerance weights require permitted override, reason, and audit trail.
+- Potency-adjusted target quantities calculate from approved QC results.
+- Scale/manual readings are captured into EBR with actor, timestamp, equipment, and calibration status.
+- Completed dispense posts correct inventory effects.
+
+**Tests to write:** Unit tests for tolerance and potency calculations; API tests for lot/equipment gates and overrides; Playwright tests for weighing a material, rejecting wrong lots, and approving an exception.
+
+**Out of scope:** Certified scale integration, PLC integration, or automated dispensing hardware control.
+
+## Build Prompt 56 - Equipment Historian, PLC Readings, Cleaning, Maintenance, and Pre-Use Checks
+
+**Goal:** Add Mar-Kov-style equipment data capture so production batches can record equipment readiness, cleaning, maintenance, downtime, and process readings in the EBR.
+
+**Depends on:** 27, 32, 36, 53, 55
+
+**Context to load:** Read `SPEC.md`, `ARCHITECTURE.md`, `BUILD_PROMPTS.md`, and current equipment, EBR, production, and routing modules before coding.
+
+**Scope (build this):**
+- Add equipment event streams for manual readings, mock PLC readings, downtime, cleaning, setup, inspection, maintenance, and calibration.
+- Add pre-use check templates by equipment class and routing operation.
+- Add cleaning logs and sanitation status that gate equipment assignment.
+- Add process parameter capture for temperature, humidity, pressure, RPM, time, pH, brix, moisture, and custom readings.
+- Add alarm/deviation rules when readings fall outside process limits.
+- Add equipment history on EBR packets and batch release packets.
+- Add adapter interface for future PLC/historian integrations.
+
+**Data/Models touched:** equipment, equipment_events, equipment_readings, equipment_preuse_checks, equipment_cleaning_logs, equipment_maintenance, routing_operations, ebr_step_results, quality_events.
+
+**APIs/Integrations:** Mock/manual equipment adapter only; integration boundary for PLC/historian later.
+
+**UI/Screens:** Equipment historian, pre-use checklist, cleaning log, process readings panel, downtime board, equipment readiness dashboard.
+
+**Acceptance criteria:**
+- Required pre-use checks and cleaning status block critical operations until complete.
+- Process readings are captured with equipment, actor/source, timestamp, unit, and limits.
+- Out-of-limit readings can create deviations or quality events.
+- Batch records include equipment history relevant to the run.
+- Future adapters can be added without changing domain workflow rules.
+
+**Tests to write:** Unit tests for readiness gates and reading limit evaluation; API tests for equipment event capture; Playwright tests for completing pre-use checks and recording process readings.
+
+**Out of scope:** Real PLC communication, SCADA replacement, or predictive maintenance models.
+
+## Build Prompt 57 - Compliance Packs, SDS, Allergen, HACCP, Sanitation, Training, and Audit Packets
+
+**Goal:** Add Mar-Kov-style compliance automation around controlled documents, sanitation, allergen/HACCP checks, training readiness, and one-click audit packets.
+
+**Depends on:** 27, 29, 31, 38, 42, 47, 54, 56
+
+**Context to load:** Read `SPEC.md`, `ARCHITECTURE.md`, `BUILD_PROMPTS.md`, and current documents, quality, EBR, equipment, and release packet modules before coding.
+
+**Scope (build this):**
+- Add compliance document types for SDS, allergen statements, HACCP plans, sanitation SOPs, training records, supplier compliance documents, and internal audit checklists.
+- Add sanitation and allergen control checks linked to equipment, room, product family, ingredient class, and production order.
+- Add training requirements by role, equipment, workflow, SOP, and controlled action.
+- Block controlled actions when required training, sanitation, or compliance documents are missing/expired.
+- Add audit packet builder that gathers EBR, COA, SDS, supplier documents, lot genealogy, deviations, CAPA, equipment logs, approvals, and shipping history.
+- Add controlled document renewal alerts and compliance readiness dashboards.
+
+**Data/Models touched:** document_templates, controlled_documents, compliance_requirements, sanitation_checks, allergen_controls, training_requirements, training_records, audit_packets, generated_documents, ebr_executions, quality_events.
+
+**APIs/Integrations:** PDF/document generation and file storage.
+
+**UI/Screens:** Compliance dashboard, SDS/allergen/HACCP document library, sanitation checklist, training matrix, audit packet builder, compliance readiness panel.
+
+**Acceptance criteria:**
+- Controlled actions can require current training, sanitation, and compliance documents.
+- Audit packets can be generated for a lot, batch, supplier, customer shipment, or recall.
+- Expiring documents and training gaps create alerts.
+- Customer-facing packets hide internal-only data unless configured.
+- Compliance packet generation is audited.
+
+**Tests to write:** Unit tests for compliance gate evaluation; API tests for audit packet generation; Playwright tests for training matrix, sanitation gate, and packet generation.
+
+**Out of scope:** Legal certification of HACCP plans, external LMS integration, or automated regulatory submissions.
+
+## Build Prompt 58 - Generic Inquiry, Report Builder, Pivots, Dashboards, and Scheduled Exports
+
+**Goal:** Add Acumatica-style inquiry/report configurability so users can build saved operational views and exports without new code for every question.
+
+**Depends on:** 25, 40, 42, 43, 46
+
+**Context to load:** Read `SPEC.md`, `ARCHITECTURE.md`, `BUILD_PROMPTS.md`, and current reporting, dashboard, feedback, and roadmap modules before coding.
+
+**Scope (build this):**
+- Add a governed report dataset catalog with approved entities, fields, joins, filters, aggregations, and permission rules.
+- Add generic inquiry builder with columns, filters, sorting, grouping, calculated fields, and saved parameters.
+- Add pivot-style summaries and charts for inventory, production, QC, purchasing, sales, costing, and traceability.
+- Add scheduled reports and exports to CSV/JSON/PDF-ready formats.
+- Add role-shared and private report views.
+- Add drill-down links from report rows to source records.
+- Add export audit events for sensitive datasets.
+
+**Data/Models touched:** report_datasets, generic_inquiries, inquiry_columns, inquiry_filters, inquiry_calculations, report_schedules, report_exports, saved_views, audit_events.
+
+**APIs/Integrations:** Optional email provider later; in-app scheduled export records only for this prompt.
+
+**UI/Screens:** Inquiry builder, report catalog, pivot summary view, chart builder, scheduled exports, report run history.
+
+**Acceptance criteria:**
+- Users can create saved inquiries from approved datasets without raw SQL.
+- Permission and field redaction rules apply to inquiry results and exports.
+- Reports can include drill-down links to source records.
+- Scheduled exports are generated and auditable.
+- Admin can publish reports to selected roles.
+
+**Tests to write:** Unit tests for dataset permissions and calculated fields; API tests for inquiry execution and export logging; Playwright tests for building and running a saved inquiry.
+
+**Out of scope:** Arbitrary SQL editor, external BI warehouse, or email delivery provider.
+
+## Build Prompt 59 - Financial Bridge, Landed Cost Allocation, Inventory Valuation, and Period Close Pack
+
+**Goal:** Add finance-ready exports and valuation controls without turning the platform into a general ledger.
+
+**Depends on:** 18, 34, 37, 45, 46, 53
+
+**Context to load:** Read `SPEC.md`, `ARCHITECTURE.md`, `BUILD_PROMPTS.md`, and current costing, purchasing, inventory, wholesale, and Shopify modules before coding.
+
+**Scope (build this):**
+- Add landed cost allocation across purchase receipts by freight, duty, handling, supplier fee, and manual allocation basis.
+- Add inventory valuation snapshots by item, lot, location, status, and valuation method metadata.
+- Add period close checks for unposted corrections, negative balances, unreleased receipts, open counts, unresolved holds, incomplete production, and missing cost records.
+- Add AP/AR/export packets for purchases, receipts, sales, shipments, inventory adjustments, production variances, and landed costs.
+- Add reconciliation reports for inventory ledger to balances, receipts to POs, shipments to orders, and production inputs/outputs.
+- Add export mapping templates for accounting systems.
+
+**Data/Models touched:** landed_costs, landed_cost_allocations, inventory_valuation_snapshots, period_close_runs, close_check_results, finance_export_batches, export_mapping_templates, stock_movements, purchase_orders, receipts, sales_orders, shipments.
+
+**APIs/Integrations:** CSV/JSON export only; no live accounting connector.
+
+**UI/Screens:** Landed cost allocation, valuation snapshot, period close checklist, finance export center, reconciliation reports.
+
+**Acceptance criteria:**
+- Landed cost can be allocated to receipt lines and included in cost analysis.
+- Period close checklist identifies blockers before export.
+- Finance exports are repeatable, versioned, and audited.
+- Inventory valuation snapshots can be compared across periods.
+- No GL journal posting or tax filing UI is introduced.
+
+**Tests to write:** Unit tests for landed cost allocation and valuation snapshots; API tests for period close checks and export batches; Playwright tests for finance export flow.
+
+**Out of scope:** General ledger, invoices, tax filing, payment processing, or direct accounting API sync.
+
+## Build Prompt 60 - EDI, ASN, Supplier Portal, and Customer Document Portal Readiness
+
+**Goal:** Prepare for larger trading partners by adding optional EDI/ASN intake, supplier collaboration, and customer document access without disrupting internal workflows.
+
+**Depends on:** 37, 38, 42, 45, 50, 57, 58
+
+**Context to load:** Read `SPEC.md`, `ARCHITECTURE.md`, `BUILD_PROMPTS.md`, and current purchasing, wholesale, documents, Shopify, and traceability modules before coding.
+
+**Scope (build this):**
+- Add inbound ASN/pre-receipt records that can be converted into purchase receipts.
+- Add EDI document staging models for purchase orders, order acknowledgements, ASNs, invoices-as-export-metadata, shipment notices, and customer order imports.
+- Add partner mapping configuration for item cross-references, units, locations, carriers, and document identifiers.
+- Add supplier portal draft architecture for document upload, ASN submission, and supplier corrective-action responses.
+- Add customer document portal draft architecture for COA, lot release packet, SDS, and shipment documents.
+- Add import validation, quarantine staging, and approval before partner documents affect live records.
+
+**Data/Models touched:** edi_partners, edi_document_batches, edi_documents, asn_headers, asn_lines, partner_item_mappings, supplier_portal_users, customer_portal_access, generated_documents, receipts, purchase_orders, shipments.
+
+**APIs/Integrations:** File upload/import endpoints; no live EDI VAN/API provider in this prompt.
+
+**UI/Screens:** EDI staging center, ASN review, partner mapping editor, supplier document intake, customer document access preview.
+
+**Acceptance criteria:**
+- ASN/pre-receipt data can be imported, validated, reviewed, and converted to receipt drafts.
+- Partner item and unit mappings prevent accidental mismatches.
+- Supplier/customer portal access is permission-scoped and auditable.
+- Imported partner documents never mutate live records until approved.
+- Customer documents expose only approved external-facing content.
+
+**Tests to write:** Parser/validation tests for staged partner documents; API tests for ASN conversion and partner mapping; Playwright tests for importing ASN data and approving a receipt draft.
+
+**Out of scope:** Live EDI provider integration, public portal deployment, payment/invoice settlement, or supplier self-service user provisioning automation.
+
+## Build Prompt 61 - Forecasting, S&OP, Demand Planning, and Scenario Simulation
+
+**Goal:** Extend planning beyond MRP into demand forecasts, supply scenarios, seasonal planning, and management review.
+
+**Depends on:** 19, 35, 40, 52, 58, 59
+
+**Context to load:** Read `SPEC.md`, `ARCHITECTURE.md`, `BUILD_PROMPTS.md`, and current MRP, sales, Shopify, wholesale, purchasing, production, and dashboard modules before coding.
+
+**Scope (build this):**
+- Add demand forecast records by SKU, product family, customer/reseller, Shopify channel, region, week/month, and scenario.
+- Add forecast drivers for historical sales, open orders, minimum stock, promotions, seasonality, reseller commitments, and manual overrides.
+- Add S&OP scenario snapshots that combine demand, inventory, purchase supply, production capacity, QC lead time, expiry/shelf life, and cash/cost metadata.
+- Add scenario comparison for shortages, capacity overload, expiring stock, purchase spend, and service-level risk.
+- Add forecast-to-MRP handoff with approval.
+- Add management review dashboard for now/next/later decisions.
+
+**Data/Models touched:** demand_forecasts, forecast_lines, forecast_drivers, planning_scenarios, scenario_supply_demand_lines, scenario_capacity_lines, scenario_risk_items, mrp_snapshots, sales_orders, purchase_orders, production_orders.
+
+**APIs/Integrations:** Internal API only.
+
+**UI/Screens:** Forecast editor, scenario planner, S&OP dashboard, forecast-to-MRP approval, scenario comparison report.
+
+**Acceptance criteria:**
+- Planner can create multiple scenarios without altering live orders.
+- Forecasts can be approved into MRP demand.
+- Scenario comparison shows shortages, capacity, expiry, purchasing, and service risks.
+- Manual forecast overrides are audited with reason.
+- Forecast views remain understandable for non-technical managers.
+
+**Tests to write:** Unit tests for forecast aggregation and scenario risk scoring; API tests for forecast approval; Playwright tests for scenario creation and comparison.
+
+**Out of scope:** Machine-learning forecasting service, automatic supplier ordering, or financial budgeting suite.

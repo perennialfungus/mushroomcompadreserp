@@ -3,7 +3,19 @@ import { DomainConflictError, DomainValidationError } from "./errors.js";
 export const generatedDocumentStatuses = ["draft", "final", "void"] as const;
 export type GeneratedDocumentStatus = (typeof generatedDocumentStatuses)[number];
 
-export const documentTemplateTypes = ["finished_good_coa", "raw_material_coa", "lot_release_packet"] as const;
+export const documentTemplateTypes = [
+  "finished_good_coa",
+  "raw_material_coa",
+  "lot_release_packet",
+  "sds",
+  "allergen_statement",
+  "haccp_plan",
+  "sanitation_sop",
+  "training_record",
+  "supplier_compliance_document",
+  "internal_audit_checklist",
+  "audit_packet"
+] as const;
 export type DocumentTemplateType = (typeof documentTemplateTypes)[number];
 
 export type DocumentTemplateField = {

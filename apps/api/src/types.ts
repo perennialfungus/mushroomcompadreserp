@@ -4,21 +4,46 @@ import type {
   BatchActualCost,
   CostVarianceReport,
   FormulaCostRollup,
+  FinanceExportBatch,
+  FinanceExportRecord,
   InventoryMovementInput,
+  InventoryValuationComparison,
+  InventoryValuationCost,
+  InventoryValuationSnapshot,
+  LandedCostAllocationResult,
+  LandedCostComponent,
+  LandedCostReceiptLine,
   FormulaRevisionComparison,
   FormulaScaleResult,
   GeneratedProductPackage,
+  ConfiguratorRuleTestResult,
   MarginSimulation,
   MrpPlan,
   MrpSuggestion,
+  AggregatedForecastLine,
+  DemandForecast,
+  ForecastDriver,
+  ForecastLine,
+  PlanningScenario,
+  ScenarioComparison,
+  ScenarioRiskItem,
   OperationalReport,
+  ExportFormat,
+  GenericInquiry,
+  GenericInquiryResult,
   ProductionCostUsage,
   ProductionOrderEstimatedCost,
   QcEvidenceRequirement,
   QcPassFailRule,
   ReportFilters,
   ReportId,
+  ReportDatasetDefinition,
+  ReportExportRecord,
   ReportPreset,
+  ReportSchedule,
+  ReconciliationResult,
+  ExportMappingTemplate,
+  PeriodCloseRun,
   ProductConfigurationInput,
   ProductTemplate,
   SkuRule,
@@ -36,6 +61,9 @@ import type {
   ChangeRequestType,
   ChangeReviewerCategory,
   ChangeRiskLevel,
+  ComplianceDocumentType,
+  ComplianceGateResult,
+  ComplianceRequirementType,
   DocumentTemplateDefinition,
   DocumentTemplateType,
   GeneratedDocumentStatus,
@@ -56,11 +84,62 @@ import type {
   AlertRuleType,
   AlertSubscription,
   BomMaterialIssueMethod,
+  BomComparison,
+  BomComponentReplacementDefinition,
+  BomExplosion,
+  BomOperationCostDefinition,
+  BomOperationCostType,
+  BomOperationOutputDefinition,
+  BomOutputType,
   BomProductionPlan,
+  BomReadinessResult,
+  BomReplacementRule,
   BomRuntimeBasis,
   BomScrapAction,
+  OperationControlPointPurpose,
+  ProductionDispositionType,
   DashboardWidget,
-  OperationalDashboardRole
+  OperationalDashboardRole,
+  ColorRuleSubject,
+  PinKind,
+  SavedGridView,
+  SavedViewScope,
+  WorkspaceDensity,
+  WorkspacePreferences,
+  WorkflowGuide,
+  WorkflowDefinition,
+  WorkflowResolution,
+  WorkflowRecordContext,
+  WorkflowTransitionResult,
+  ApprovalRequest as DomainApprovalRequest,
+  WorkflowRunMode,
+  WorkflowRunStatus,
+  AccessPreview,
+  AttributeDefinition,
+  AttributeSetDefinition,
+  AttributeValueRecord as DomainAttributeValueRecord,
+  ConfigurationValidationResult,
+  DocumentTypeDefinition,
+  FieldBehaviorRuleDefinition,
+  AccessScopeRule,
+  EffectivePermissionGrant,
+  FieldPermissionRule,
+  NumberingGeneration,
+  NumberingSequenceDefinition,
+  PermissionCatalogEntry,
+  PermissionLevel,
+  PermissionSet,
+  ReasonCodeDefinition,
+  ResolvedFieldBehavior,
+  UserPermissionOverride
+} from "@mushroom-compadres/domain";
+import type {
+  ContainerType,
+  PickStrategy,
+  PutAwaySuggestion,
+  PickSuggestionResult,
+  StorageZoneType,
+  WmsScanMode
 } from "@mushroom-compadres/domain";
 import type {
   ShopifyMappingError,
@@ -71,6 +150,26 @@ import type {
   ShopifySyncDashboard,
   ShopifySyncJobResult
 } from "@mushroom-compadres/shopify";
+
+export type {
+  AccessPreview,
+  AttributeDefinition,
+  AttributeSetDefinition,
+  ConfigurationValidationResult,
+  DocumentTypeDefinition,
+  AccessScopeRule,
+  EffectivePermissionGrant,
+  FieldPermissionRule,
+  FieldBehaviorRuleDefinition,
+  NumberingGeneration,
+  NumberingSequenceDefinition,
+  PermissionCatalogEntry,
+  PermissionLevel,
+  PermissionSet,
+  ReasonCodeDefinition,
+  ResolvedFieldBehavior,
+  UserPermissionOverride
+} from "@mushroom-compadres/domain";
 
 export const ROLE_CODES = [
   "owner_admin",
@@ -311,6 +410,27 @@ export type ProductConfigurationResult = {
   package: GeneratedProductPackage;
 };
 
+export type ProductConfiguratorRuleTestRun = {
+  templateId: string;
+  templateVersion: string;
+  approvalStatus: string;
+  results: ConfiguratorRuleTestResult[];
+};
+
+export type ConfiguratorRuleInput = {
+  templateId: string;
+  name: string;
+  groupCode: string;
+  optionCode: string;
+  skuSuffix?: string | null;
+  labelField?: string | null;
+  qcTest?: string | null;
+  priceDelta?: number | null;
+  expectedCostDelta?: number | null;
+  status?: "draft" | "pending_approval" | "approved" | "active" | "retired";
+  changeRequestId?: string | null;
+};
+
 export type ProductInput = Omit<ProductRecord, "id" | "organizationId">;
 export type ProductVariantInput = Omit<ProductVariantRecord, "id" | "organizationId">;
 export type MaterialInput = Omit<MaterialRecord, "id" | "organizationId">;
@@ -367,6 +487,7 @@ export type UserContext = {
     roleCode: RoleCode;
     locationId: string | null;
   }>;
+  effectivePermissions?: EffectivePermissionGrant[];
 };
 
 export type LoadedUserContext = {
@@ -400,6 +521,92 @@ export type AuditEventRecord = {
 export type AuditEventInsert = Omit<AuditEventRecord, "id" | "occurredAt"> & {
   id?: string;
   occurredAt?: Date;
+};
+
+export type RolePermissionSetAssignmentRecord = {
+  id: string;
+  roleId: string;
+  permissionSetId: string;
+};
+
+export type PermissionMatrixRecord = {
+  catalog: PermissionCatalogEntry[];
+  permissionSets: PermissionSet[];
+  rolePermissionSets: RolePermissionSetAssignmentRecord[];
+  userOverrides: UserPermissionOverride[];
+  fieldRules: FieldPermissionRule[];
+  accessScopeRules: AccessScopeRule[];
+  effectiveByRole: Record<string, EffectivePermissionGrant[]>;
+  conflictWarnings: Array<{
+    subjectType: "role" | "user";
+    subjectId: string;
+    permissionCode: string;
+    message: string;
+  }>;
+};
+
+export type UserPermissionOverrideInput = {
+  userId: string;
+  permissionCode: string;
+  level: PermissionLevel;
+  reason: string;
+  scope?: UserPermissionOverride["scope"];
+};
+
+export type PermissionPreviewInput = {
+  permissionCode: string;
+  requiredLevel: PermissionLevel;
+  locationId?: string | null;
+  scope?: Partial<Record<"supplier" | "work_center" | "product_family" | "item_class" | "document_category", string>>;
+};
+
+export type ConfigurationRecordMeta = {
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type DocumentTypeRecord = DocumentTypeDefinition & ConfigurationRecordMeta;
+export type NumberingSequenceRecord = NumberingSequenceDefinition & ConfigurationRecordMeta;
+export type ReasonCodeRecord = ReasonCodeDefinition & ConfigurationRecordMeta;
+export type AttributeDefinitionRecord = AttributeDefinition & ConfigurationRecordMeta;
+export type AttributeSetRecord = AttributeSetDefinition & ConfigurationRecordMeta;
+export type AttributeValueRecord = DomainAttributeValueRecord & ConfigurationRecordMeta;
+export type FieldBehaviorRuleRecord = FieldBehaviorRuleDefinition & ConfigurationRecordMeta;
+
+export type ConfigurationSnapshotRecord = {
+  documentTypes: DocumentTypeRecord[];
+  numberingSequences: NumberingSequenceRecord[];
+  reasonCodes: ReasonCodeRecord[];
+  attributeDefinitions: AttributeDefinitionRecord[];
+  attributeSets: AttributeSetRecord[];
+  attributeValues: AttributeValueRecord[];
+  fieldBehaviorRules: FieldBehaviorRuleRecord[];
+};
+
+export type DocumentTypeInput = Omit<DocumentTypeDefinition, "id" | "organizationId">;
+export type NumberingSequenceInput = Omit<NumberingSequenceDefinition, "id" | "organizationId" | "lastScopeKey"> & {
+  lastScopeKey?: string | null;
+};
+export type ReasonCodeInput = Omit<ReasonCodeDefinition, "id" | "organizationId">;
+export type AttributeDefinitionInput = Omit<AttributeDefinition, "id" | "organizationId">;
+export type AttributeSetInput = Omit<AttributeSetDefinition, "id" | "organizationId">;
+export type FieldBehaviorRuleInput = Omit<FieldBehaviorRuleDefinition, "id" | "organizationId">;
+
+export type ConfigurationValidationInput = {
+  targetEntity: string;
+  documentTypeId?: string | null;
+  workflowState?: string | null;
+  values: Record<string, unknown>;
+  attributeValues?: Record<string, unknown>;
+  appliesTo?: Partial<Record<AttributeSetDefinition["appliesTo"], string>>;
+};
+
+export type DocumentNumberPreviewInput = {
+  documentTypeId: string;
+  locationId?: string | null;
+  commit?: boolean;
+  now?: Date;
 };
 
 export type MockRecallRunStatus = "draft" | "in_progress" | "completed" | "cancelled";
@@ -602,6 +809,104 @@ export type DashboardWidgetRecord = DashboardWidget & {
   version: number;
 };
 
+export type WorkflowGuideRecord = WorkflowGuide & {
+  organizationId: string;
+  status: "active" | "retired";
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type WorkflowRunRecord = {
+  id: string;
+  organizationId: string;
+  workflowId: string;
+  userId: string;
+  mode: WorkflowRunMode;
+  status: WorkflowRunStatus;
+  currentStepId: string | null;
+  practiceSeedJson: Record<string, unknown>;
+  rollbackSummary: string | null;
+  startedAt: Date;
+  completedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type WorkflowRunEventRecord = {
+  id: string;
+  organizationId: string;
+  runId: string;
+  workflowId: string;
+  stepId: string | null;
+  eventType: "started" | "step_viewed" | "step_confirmed" | "help_opened" | "completed" | "cancelled" | "rolled_back";
+  message: string;
+  metadataJson: Record<string, unknown>;
+  occurredAt: Date;
+};
+
+export type WorkflowRunDetailRecord = {
+  run: WorkflowRunRecord;
+  guide: WorkflowGuideRecord;
+  events: WorkflowRunEventRecord[];
+};
+
+export type WorkflowDefinitionRecord = WorkflowDefinition & {
+  organizationId: string;
+};
+
+export type WorkflowApprovalRequestRecord = DomainApprovalRequest & {
+  requestedAt: Date;
+  updatedAt: Date;
+};
+
+export type WorkflowActionAvailabilityRecord = WorkflowResolution & {
+  approvalEscalations: Array<{
+    requestId: string;
+    ruleId: string;
+    escalateToRoleCode: string;
+    alertSeverity: "info" | "warning" | "critical";
+    message: string;
+  }>;
+  blockedActionEscalations: Array<{
+    actionId: string;
+    ruleId: string;
+    escalateToRoleCode: string;
+    alertSeverity: "info" | "warning" | "critical";
+    message: string;
+  }>;
+};
+
+export type WorkflowTransitionCommand = {
+  record: WorkflowRecordContext;
+  actionId: string;
+  dialogValues?: Record<string, unknown>;
+  metadata?: {
+    actorUserId: string;
+    reason: string;
+    occurredAt?: string;
+    requestId?: string;
+  };
+};
+
+export type WorkflowTransitionRecord = WorkflowTransitionResult & {
+  approvalRequests: WorkflowApprovalRequestRecord[];
+};
+
+export type WorkflowRunStartInput = {
+  workflowId: string;
+  mode: WorkflowRunMode;
+  practiceSeedJson?: Record<string, unknown>;
+};
+
+export type WorkflowRunEventInput = {
+  stepId?: string | null;
+  eventType: WorkflowRunEventRecord["eventType"];
+  message?: string;
+  metadataJson?: Record<string, unknown>;
+};
+
 export type AlertRuleRecord = AlertRuleDefinition & {
   organizationId: string;
   createdAt: Date;
@@ -672,6 +977,106 @@ export type DashboardWidgetUpdateInput = {
 
 export type AlertSnoozeInput = {
   snoozedUntil: Date;
+};
+
+export type UserPreferenceRecord = WorkspacePreferences & {
+  id: string;
+  organizationId: string;
+  userId: string;
+  savedFilters: Record<string, unknown>;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type UserPreferenceUpdateInput = Partial<{
+  density: WorkspaceDensity;
+  pinnedScreens: string[];
+  pinnedRecords: string[];
+  favoriteReports: string[];
+  savedFilters: Record<string, unknown>;
+  dashboardWidgetOrder: string[];
+  colorCodingEnabled: boolean;
+}>;
+
+export type PinnedItemRecord = {
+  id: string;
+  organizationId: string;
+  userId: string;
+  pinKind: PinKind;
+  targetType: string;
+  targetId: string;
+  label: string;
+  href: string;
+  metadataJson: Record<string, unknown>;
+  sortOrder: number;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type PinnedItemInput = {
+  pinKind: PinKind;
+  targetType: string;
+  targetId: string;
+  label: string;
+  href: string;
+  metadataJson?: Record<string, unknown>;
+  sortOrder?: number;
+};
+
+export type ColorRuleRecord = {
+  id: string;
+  organizationId: string;
+  userId: string | null;
+  subjectType: ColorRuleSubject;
+  field: string;
+  operator: "equals" | "contains" | "in";
+  value: string;
+  label: string;
+  backgroundColor: string;
+  textColor: string;
+  priority: number;
+  enabled: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type ColorRuleInput = Omit<ColorRuleRecord, "id" | "organizationId" | "userId" | "createdAt" | "updatedAt" | "version">;
+
+export type SavedViewRecord = SavedGridView & {
+  organizationId: string;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type SavedViewInput = {
+  gridKey: string;
+  name: string;
+  scope?: SavedViewScope;
+  sharedRoleCodes?: string[];
+  filters?: Record<string, unknown>;
+  sort?: SavedGridView["sort"];
+  grouping?: string[];
+  columns?: SavedGridView["columns"];
+  colorRuleIds?: string[];
+  isDefault?: boolean;
+};
+
+export type WorkspaceSnapshotRecord = {
+  preferences: UserPreferenceRecord;
+  pinnedItems: PinnedItemRecord[];
+  savedViews: SavedViewRecord[];
+  colorRules: ColorRuleRecord[];
+  navigation: Array<{
+    id: string;
+    label: string;
+    href: string;
+    requiredRoles: string[];
+  }>;
+  previewRoleCode: string | null;
 };
 
 export type BacklogItemRecord = {
@@ -782,6 +1187,7 @@ export type LotSourceType =
   | "harvest"
   | "drying_run"
   | "processing_batch"
+  | "production_order"
   | "receipt"
   | "purchase_order"
   | "manual";
@@ -1244,9 +1650,19 @@ export type EquipmentEventType =
   | "ebr_use_blocked"
   | "routing_use_blocked"
   | "override_recorded"
-  | "weigh_captured";
+  | "weigh_captured"
+  | "manual_reading"
+  | "mock_plc_reading"
+  | "downtime_recorded"
+  | "cleaning_recorded"
+  | "setup_recorded"
+  | "inspection_recorded";
 export type EquipmentScheduleStatus = "scheduled" | "completed" | "overdue" | "cancelled";
 export type EquipmentServiceType = "calibration" | "preventive_maintenance" | "repair" | "cleaning" | "service";
+export type EquipmentSanitationStatus = "clean" | "dirty" | "expired" | "unknown" | "not_required";
+export type ProcessParameterType = "temperature" | "humidity" | "pressure" | "rpm" | "time" | "ph" | "brix" | "moisture" | "custom";
+export type ProcessReadingSource = "manual" | "mock_plc" | "adapter";
+export type ProcessReadingLimitStatus = "in_limit" | "warning" | "out_of_limit";
 export type RoutingTemplateStatus = "draft" | "active" | "retired";
 export type ProductionOperationRunStatus = "pending" | "ready" | "in_progress" | "paused" | "completed" | "cancelled";
 export type ProductionOperationRunAction = "start" | "pause" | "resume" | "complete" | "cancel";
@@ -1423,6 +1839,118 @@ export type EbrTemplateDetailRecord = {
 };
 
 export type EbrPacketRecord = ReturnType<typeof buildEbrPacket>;
+
+export type WeighDispenseSessionStatus = "open" | "completed" | "cancelled";
+export type WeighDispenseLineStatus = "pending" | "complete" | "exception";
+
+export type WeighDispenseSessionRecord = {
+  id: string;
+  organizationId: string;
+  sessionCode: string;
+  status: WeighDispenseSessionStatus;
+  productionOrderId: string | null;
+  processingBatchId: string | null;
+  ebrExecutionId: string | null;
+  bomId: string | null;
+  formulaRevisionId: string | null;
+  locationId: string;
+  startedBy: string;
+  startedAt: Date;
+  completedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type WeighDispenseLineRecord = {
+  id: string;
+  sessionId: string;
+  sequence: number;
+  sourceType: "formula_line" | "bom_line" | "bom_operation_material";
+  sourceId: string;
+  componentType: "product_variant" | "material" | "packaging_component" | "wip";
+  componentId: string;
+  componentName: string;
+  targetQuantity: number;
+  targetUom: string;
+  potencyAdjustedTargetQuantity: number | null;
+  potencyBasis: number | null;
+  potencyAssay: number | null;
+  potencyQcResultId: string | null;
+  tolerancePercent: number;
+  toleranceQuantity: number | null;
+  minQuantity: number | null;
+  maxQuantity: number | null;
+  isCritical: boolean;
+  requiresPotencyAdjustment: boolean;
+  status: WeighDispenseLineStatus;
+  lotId: string | null;
+  locationId: string | null;
+  containerId: string | null;
+  scaleAdapterId: string | null;
+  equipmentId: string | null;
+  calibrationStatus: string | null;
+  tareQuantity: number | null;
+  grossQuantity: number | null;
+  netQuantity: number | null;
+  varianceQuantity: number | null;
+  variancePercent: number | null;
+  withinTolerance: boolean | null;
+  overrideReason: string | null;
+  overrideBy: string | null;
+  overrideAt: Date | null;
+  verifiedBy: string | null;
+  verifiedAt: Date | null;
+  stockMovementId: string | null;
+  ebrStepResultId: string | null;
+  completedBy: string | null;
+  completedAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type WeighDispenseSessionDetailRecord = {
+  session: WeighDispenseSessionRecord;
+  lines: WeighDispenseLineRecord[];
+  history: WeighDispenseLineRecord[];
+};
+
+export type WeighDispenseSessionInput = {
+  sessionCode: string;
+  productionOrderId?: string | null;
+  processingBatchId?: string | null;
+  ebrExecutionId?: string | null;
+  bomId?: string | null;
+  formulaRevisionId?: string | null;
+  locationId: string;
+  targetOutputQuantity?: number | null;
+  targetOutputUom?: string | null;
+  defaultTolerancePercent?: number;
+};
+
+export type WeighDispenseLineCompletionInput = {
+  lotId: string;
+  locationId: string;
+  containerId?: string | null;
+  scannedMaterialId?: string | null;
+  scannedLotId?: string | null;
+  scannedLocationId?: string | null;
+  scannedContainerId?: string | null;
+  scannedBarcode?: string | null;
+  equipmentId?: string | null;
+  scaleAdapterId?: "manual" | "mock-scale" | null;
+  tareQuantity: number;
+  grossQuantity: number;
+  netQuantity?: number | null;
+  uom: string;
+  overrideReason?: string | null;
+  verifierUserId?: string | null;
+  verificationMeaning?: string | null;
+  ebrExecutionId?: string | null;
+  ebrStepId?: string | null;
+  clientTransactionId: string;
+};
 
 export type GrowBatchStatus = "planned" | "inoculated" | "fruiting" | "harvested" | "closed";
 export type HarvestStatus = "draft" | "recorded" | "qc_pending" | "released" | "held" | "rejected";
@@ -1811,6 +2339,207 @@ export type DocumentApprovalInput = {
   reason: string;
 };
 
+export type ControlledDocumentStatus = "draft" | "current" | "expired" | "retired";
+export type SanitationCheckStatus = "pending" | "pass" | "fail";
+export type AllergenControlStatus = "pending" | "pass" | "fail";
+export type TrainingRequirementStatus = "active" | "retired";
+export type TrainingRecordStatus = "current" | "expired" | "revoked";
+export type AuditPacketStatus = "generated" | "void";
+
+export type ControlledDocumentRecord = {
+  id: string;
+  organizationId: string;
+  documentType: ComplianceDocumentType;
+  documentNumber: string;
+  title: string;
+  subjectType: string;
+  subjectId: string | null;
+  filePath: string;
+  fileName: string;
+  contentType: string;
+  status: ControlledDocumentStatus;
+  internalOnly: boolean;
+  issuedAt: Date | null;
+  expiresAt: Date | null;
+  ownerUserId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type ComplianceRequirementRecord = {
+  id: string;
+  organizationId: string;
+  requirementType: ComplianceRequirementType;
+  action: string;
+  label: string;
+  requiredDocumentType: ComplianceDocumentType | null;
+  trainingRequirementId: string | null;
+  scopeJson: Record<string, unknown>;
+  active: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type SanitationCheckRecord = {
+  id: string;
+  organizationId: string;
+  checklistCode: string;
+  equipmentId: string | null;
+  equipmentCode: string | null;
+  roomId: string | null;
+  roomName: string | null;
+  productFamily: string | null;
+  productionOrderId: string | null;
+  status: SanitationCheckStatus;
+  performedBy: string;
+  completedAt: Date | null;
+  expiresAt: Date | null;
+  notes: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type AllergenControlRecord = {
+  id: string;
+  organizationId: string;
+  controlCode: string;
+  productFamily: string | null;
+  ingredientClass: string | null;
+  productionOrderId: string | null;
+  status: AllergenControlStatus;
+  verifiedBy: string | null;
+  verifiedAt: Date | null;
+  notes: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type TrainingRequirementRecord = {
+  id: string;
+  organizationId: string;
+  code: string;
+  title: string;
+  roleCode: RoleCode | null;
+  equipmentId: string | null;
+  workflowId: string | null;
+  sopDocumentId: string | null;
+  controlledAction: string | null;
+  status: TrainingRequirementStatus;
+  retrainCadenceDays: number | null;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type TrainingRecordRecord = {
+  id: string;
+  organizationId: string;
+  requirementId: string;
+  userId: string;
+  userName: string;
+  status: TrainingRecordStatus;
+  completedAt: Date | null;
+  expiresAt: Date | null;
+  evidenceDocumentId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type AuditPacketRecord = {
+  id: string;
+  organizationId: string;
+  packetNumber: string;
+  targetType: "lot" | "batch" | "supplier" | "customer_shipment" | "recall";
+  targetId: string;
+  status: AuditPacketStatus;
+  customerFacing: boolean;
+  includeInternalData: boolean;
+  generatedDocumentId: string | null;
+  packetJson: Record<string, unknown>;
+  generatedBy: string;
+  generatedAt: Date;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type ComplianceDashboardRecord = {
+  documents: ControlledDocumentRecord[];
+  requirements: ComplianceRequirementRecord[];
+  sanitationChecks: SanitationCheckRecord[];
+  allergenControls: AllergenControlRecord[];
+  trainingRequirements: TrainingRequirementRecord[];
+  trainingRecords: TrainingRecordRecord[];
+  auditPackets: AuditPacketRecord[];
+  readiness: {
+    controlledDocumentsCurrent: number;
+    controlledDocumentsTotal: number;
+    expiringDocuments: number;
+    trainingCurrent: number;
+    trainingTotal: number;
+    trainingGaps: number;
+    sanitationReady: number;
+    sanitationTotal: number;
+    allergenReady: number;
+    allergenTotal: number;
+  };
+  alerts: Array<{
+    id: string;
+    severity: "info" | "warning" | "critical";
+    title: string;
+    message: string;
+    sourceType: string;
+    sourceId: string;
+    dueAt: Date | null;
+  }>;
+};
+
+export type SanitationCheckInput = {
+  checklistCode?: string | null;
+  equipmentId?: string | null;
+  roomId?: string | null;
+  productFamily?: string | null;
+  productionOrderId?: string | null;
+  status: SanitationCheckStatus;
+  completedAt?: Date | null;
+  expiresAt?: Date | null;
+  notes?: string | null;
+};
+
+export type TrainingRecordInput = {
+  requirementId: string;
+  userId: string;
+  completedAt?: Date | null;
+  expiresAt?: Date | null;
+  evidenceDocumentId?: string | null;
+};
+
+export type ComplianceGateEvaluationInput = {
+  action: string;
+  actorUserId?: string | null;
+  roleCodes?: string[];
+  equipmentId?: string | null;
+  roomId?: string | null;
+  productFamily?: string | null;
+  ingredientClass?: string | null;
+  productionOrderId?: string | null;
+  workflowId?: string | null;
+  sopId?: string | null;
+  supplierId?: string | null;
+};
+
+export type AuditPacketInputRecord = {
+  targetType: AuditPacketRecord["targetType"];
+  targetId: string;
+  customerFacing?: boolean;
+  includeInternalData?: boolean;
+};
+
 export type QualityEventType =
   | "deviation"
   | "nonconformance"
@@ -2189,6 +2918,218 @@ export type SupplierQualityDashboardRecord = {
   }>;
 };
 
+export type EdiDocumentType =
+  | "purchase_order"
+  | "order_acknowledgement"
+  | "asn"
+  | "invoice_export_metadata"
+  | "shipment_notice"
+  | "customer_order_import";
+export type EdiDocumentStatus = "quarantined" | "validated" | "approved" | "converted" | "rejected";
+export type PartnerMappingType = "item" | "unit" | "location" | "carrier" | "document_identifier";
+
+export type EdiPartnerRecord = {
+  id: string;
+  organizationId: string;
+  partnerCode: string;
+  name: string;
+  partnerType: "supplier" | "customer" | "carrier" | "marketplace";
+  supplierId: string | null;
+  customerId: string | null;
+  status: "draft" | "active" | "inactive";
+  defaultDocumentFormat: "csv" | "json" | "x12" | "edifact";
+  settingsJson: Record<string, unknown>;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type EdiPartnerInput = {
+  partnerCode: string;
+  name: string;
+  partnerType: EdiPartnerRecord["partnerType"];
+  supplierId?: string | null;
+  customerId?: string | null;
+  status?: EdiPartnerRecord["status"];
+  defaultDocumentFormat?: EdiPartnerRecord["defaultDocumentFormat"];
+  settingsJson?: Record<string, unknown>;
+};
+
+export type PartnerItemMappingRecord = {
+  id: string;
+  organizationId: string;
+  partnerId: string;
+  mappingType: PartnerMappingType;
+  externalCode: string;
+  externalDescription: string | null;
+  internalType: string;
+  internalId: string;
+  internalCode: string | null;
+  active: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type PartnerItemMappingInput = {
+  partnerId: string;
+  mappingType: PartnerMappingType;
+  externalCode: string;
+  externalDescription?: string | null;
+  internalType: string;
+  internalId: string;
+  internalCode?: string | null;
+  active?: boolean;
+};
+
+export type EdiDocumentBatchRecord = {
+  id: string;
+  organizationId: string;
+  partnerId: string;
+  batchNumber: string;
+  sourceFileName: string;
+  documentType: EdiDocumentType;
+  status: EdiDocumentStatus;
+  importedBy: string;
+  importedAt: Date;
+  approvedBy: string | null;
+  approvedAt: Date | null;
+  metadataJson: Record<string, unknown>;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type EdiDocumentRecord = {
+  id: string;
+  organizationId: string;
+  partnerId: string;
+  batchId: string;
+  documentType: EdiDocumentType;
+  documentNumber: string;
+  status: EdiDocumentStatus;
+  quarantineReason: string | null;
+  validationIssues: Array<{ level: "error" | "warning"; code: string; message: string; lineNumber?: number | null; field?: string | null }>;
+  payloadJson: Record<string, unknown>;
+  relatedEntityType: string | null;
+  relatedEntityId: string | null;
+  approvedBy: string | null;
+  approvedAt: Date | null;
+  convertedEntityType: string | null;
+  convertedEntityId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type AsnHeaderRecord = {
+  id: string;
+  organizationId: string;
+  partnerId: string;
+  ediDocumentId: string;
+  asnNumber: string;
+  supplierId: string;
+  purchaseOrderId: string | null;
+  poNumber: string | null;
+  status: EdiDocumentStatus;
+  shipDate: Date | null;
+  expectedAt: Date | null;
+  carrier: string | null;
+  trackingNumber: string | null;
+  packingSlipNumber: string | null;
+  validationIssues: EdiDocumentRecord["validationIssues"];
+  approvedBy: string | null;
+  approvedAt: Date | null;
+  convertedReceiptId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type AsnLineRecord = {
+  id: string;
+  organizationId: string;
+  asnHeaderId: string;
+  lineNumber: number;
+  purchaseOrderLineId: string | null;
+  externalItemCode: string;
+  supplierSku: string | null;
+  itemMappingId: string | null;
+  unitMappingId: string | null;
+  itemType: InventoryItemType | null;
+  itemId: string | null;
+  quantity: number;
+  uom: string;
+  mappedUom: string | null;
+  lotCode: string;
+  supplierLotNumber: string | null;
+  expiryDate: Date | null;
+  validationIssues: EdiDocumentRecord["validationIssues"];
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type SupplierPortalUserRecord = {
+  id: string;
+  organizationId: string;
+  supplierId: string;
+  email: string;
+  displayName: string;
+  status: "invited" | "active" | "disabled";
+  permissions: Array<"upload_documents" | "submit_asn" | "respond_capa">;
+  lastAccessAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type CustomerPortalAccessRecord = {
+  id: string;
+  organizationId: string;
+  customerId: string;
+  salesOrderId: string | null;
+  shipmentId: string | null;
+  accessTokenLabel: string;
+  status: "draft" | "active" | "revoked" | "expired";
+  allowedDocumentTypes: Array<GeneratedDocumentType | "sds" | "shipment_document">;
+  expiresAt: Date | null;
+  createdBy: string;
+  lastAccessAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type EdiStagingCenterRecord = {
+  partners: EdiPartnerRecord[];
+  mappings: PartnerItemMappingRecord[];
+  batches: EdiDocumentBatchRecord[];
+  documents: EdiDocumentRecord[];
+  asns: Array<AsnHeaderRecord & { lines: AsnLineRecord[]; partner: EdiPartnerRecord | null; purchaseOrder: PurchaseOrderRecord | null }>;
+  supplierPortalUsers: SupplierPortalUserRecord[];
+  customerPortalAccess: CustomerPortalAccessRecord[];
+};
+
+export type ImportAsnInput = {
+  partnerId: string;
+  fileName: string;
+  contents: string;
+  format?: "csv" | "json";
+};
+
+export type AsnConversionInput = {
+  receiptNumber: string;
+  locationId: string;
+  clientTransactionId: string;
+  dispositionReason?: string | null;
+};
+
+export type CustomerDocumentPortalPreviewRecord = {
+  access: CustomerPortalAccessRecord;
+  documents: GeneratedDocumentRecord[];
+};
+
 export type PurchaseOrderLineRecord = {
   id: string;
   purchaseOrderId: string;
@@ -2263,6 +3204,12 @@ export type ReceiptRecord = {
   supplierId: string;
   receivedAt: Date;
   locationId: string;
+  billOfLadingNumber: string | null;
+  carrier: string | null;
+  packingSlipNumber: string | null;
+  receivedByUserId: string | null;
+  receivingNotes: string | null;
+  supplierDocumentIds: string[];
   status: ReceiptStatus;
   createdAt: Date;
   updatedAt: Date;
@@ -2275,10 +3222,29 @@ export type ReceiptLineRecord = {
   purchaseOrderLineId: string | null;
   lotId: string;
   quantity: number;
+  receivedQuantity: number;
+  damagedQuantity: number;
+  acceptedQuantity: number;
+  quarantinedQuantity: number;
+  rejectedQuantity: number;
   uom: string;
   expiryDate: Date | null;
+  manufactureDate: Date | null;
   supplierLotNumber: string | null;
+  internalLotNumber: string | null;
+  containerCount: number | null;
+  disposition: "accepted" | "quarantine" | "rejected" | "partial";
+  dispositionReason: string | null;
   stockMovementId: string | null;
+  acceptedStockMovementId: string | null;
+  quarantineStockMovementId: string | null;
+  lotHoldId: string | null;
+  qcTaskIds: string[];
+  receivingLabel: {
+    labelCode: string;
+    status: "released" | "quarantine" | "rejected" | "partial";
+    fields: Record<string, string | number | null>;
+  } | null;
   correctedQuantity: number;
   createdAt: Date;
   updatedAt: Date;
@@ -2291,7 +3257,17 @@ export type ReceiptLineInput = {
   itemId?: string;
   lotCode: string;
   supplierLotNumber?: string | null;
+  internalLotNumber?: string | null;
+  manufactureDate?: Date | null;
+  containerCount?: number | null;
   quantity: number;
+  receivedQuantity?: number | null;
+  damagedQuantity?: number | null;
+  acceptedQuantity?: number | null;
+  quarantinedQuantity?: number | null;
+  rejectedQuantity?: number | null;
+  disposition?: "accepted" | "quarantine" | "rejected" | "partial" | null;
+  dispositionReason?: string | null;
   uom: string;
   expiryDate?: Date | null;
   coaAttachment?: {
@@ -2307,6 +3283,12 @@ export type ReceiptInput = {
   supplierId: string;
   receivedAt?: Date;
   locationId: string;
+  billOfLadingNumber?: string | null;
+  carrier?: string | null;
+  packingSlipNumber?: string | null;
+  receivedByUserId?: string | null;
+  receivingNotes?: string | null;
+  supplierDocumentIds?: string[];
   clientTransactionId: string;
   lines: ReceiptLineInput[];
 };
@@ -2370,6 +3352,104 @@ export type MrpSuggestionConversionResult =
       suggestionType: "production_order";
       productionOrder: ProductionOrderRecord;
     };
+
+export type DemandForecastRecord = DemandForecast & {
+  organizationId: string;
+  createdBy: string;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+  lines: ForecastLineRecord[];
+  drivers: ForecastDriverRecord[];
+  aggregatedLines: AggregatedForecastLine[];
+};
+
+export type ForecastLineRecord = ForecastLine & {
+  organizationId: string;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type ForecastDriverRecord = ForecastDriver & {
+  organizationId: string;
+  createdAt: Date;
+};
+
+export type DemandForecastInput = {
+  name: string;
+  scenarioId?: string;
+  bucket: DemandForecast["bucket"];
+  horizonStart: Date;
+  horizonEnd: Date;
+  notes?: string | null;
+  lines: Array<Omit<ForecastLine, "id" | "forecastId" | "scenarioId"> & { scenarioId?: string }>;
+  drivers?: Array<Omit<ForecastDriver, "id" | "forecastLineId"> & { forecastLineClientIndex: number }>;
+};
+
+export type ForecastApprovalInput = {
+  approvalNote: string;
+};
+
+export type PlanningScenarioRecord = PlanningScenario & {
+  organizationId: string;
+  createdBy: string;
+  updatedAt: Date;
+  version: number;
+  supplyDemandLines: ScenarioSupplyDemandLineRecord[];
+  capacityLines: ScenarioCapacityLineRecord[];
+  riskItems: ScenarioRiskItem[];
+};
+
+export type ScenarioSupplyDemandLineRecord = {
+  id: string;
+  scenarioId: string;
+  itemType: string;
+  itemId: string;
+  sku: string | null;
+  name: string;
+  periodStart: Date | null;
+  demandQuantity: number;
+  supplyQuantity: number;
+  shortageQuantity: number;
+  uom: string;
+  sourceIds: string[];
+};
+
+export type ScenarioCapacityLineRecord = {
+  id: string;
+  scenarioId: string;
+  resourceType: string;
+  resourceId: string;
+  resourceName: string;
+  bucketStart: Date;
+  availableMinutes: number;
+  scheduledMinutes: number;
+  overloadMinutes: number;
+  loadPercent: number;
+};
+
+export type PlanningScenarioInput = {
+  name: string;
+  forecastId?: string | null;
+  horizonStart: Date;
+  horizonEnd: Date;
+  notes?: string | null;
+  serviceLevelTarget?: number;
+};
+
+export type SopDashboardRecord = {
+  generatedAt: Date;
+  forecasts: DemandForecastRecord[];
+  scenarios: PlanningScenarioRecord[];
+  comparisons: ScenarioComparison[];
+  managementReview: Array<{
+    horizon: "now" | "next" | "later";
+    decisionCount: number;
+    criticalCount: number;
+    topRisks: ScenarioRiskItem[];
+  }>;
+};
 
 export type ShopifySyncEventRecord = {
   id: string;
@@ -2460,6 +3540,8 @@ export type ProductionOrderInput = {
   uom?: string | null;
   priority?: number;
   notes?: string | null;
+  autoGenerateLots?: boolean;
+  lotExpirationDays?: number | null;
 };
 
 export type WorkCenterRecord = {
@@ -2492,6 +3574,7 @@ export type EquipmentRecord = {
   nextCalibrationDueAt: Date | null;
   lastMaintenanceAt: Date | null;
   nextMaintenanceDueAt: Date | null;
+  metadataJson: Record<string, unknown>;
   createdAt: Date;
   updatedAt: Date;
   version: number;
@@ -2541,6 +3624,64 @@ export type EquipmentEventRecord = {
   details: Record<string, unknown>;
   actorUserId: string | null;
   occurredAt: Date;
+  createdAt: Date;
+};
+
+export type EquipmentReadingRecord = {
+  id: string;
+  organizationId: string;
+  equipmentId: string;
+  productionOrderId: string | null;
+  processingBatchId: string | null;
+  ebrExecutionId: string | null;
+  ebrStepResultId: string | null;
+  routingOperationId: string | null;
+  parameterType: ProcessParameterType;
+  parameterName: string | null;
+  value: number;
+  unit: string;
+  source: ProcessReadingSource;
+  actorUserId: string | null;
+  recordedAt: Date;
+  minValue: number | null;
+  maxValue: number | null;
+  warningMinValue: number | null;
+  warningMaxValue: number | null;
+  limitStatus: ProcessReadingLimitStatus;
+  qualityEventId: string | null;
+  rawPayload: Record<string, unknown>;
+  createdAt: Date;
+};
+
+export type EquipmentPreUseCheckRecord = {
+  id: string;
+  organizationId: string;
+  equipmentId: string;
+  templateId: string;
+  routingOperationId: string | null;
+  productionOrderId: string | null;
+  ebrExecutionId: string | null;
+  status: "pending" | "completed" | "failed";
+  checkedItems: Array<{ itemId: string; label: string; passed: boolean; required: boolean }>;
+  performedBy: string;
+  completedAt: Date;
+  notes: string | null;
+  createdAt: Date;
+};
+
+export type EquipmentCleaningLogRecord = {
+  id: string;
+  organizationId: string;
+  equipmentId: string;
+  cleaningType: "pre_use" | "post_use" | "changeover" | "sanitation" | "deep_clean";
+  status: EquipmentSanitationStatus;
+  cleanedBy: string;
+  cleanedAt: Date;
+  expiresAt: Date | null;
+  productionOrderId: string | null;
+  ebrExecutionId: string | null;
+  procedureId: string | null;
+  notes: string | null;
   createdAt: Date;
 };
 
@@ -2612,6 +3753,11 @@ export type ProductionOperationRunRecord = {
   laborRoleId: string | null;
   ebrExecutionId: string | null;
   status: ProductionOperationRunStatus;
+  allowNonsequentialReporting: boolean;
+  supervisorApprovalStatus: "not_required" | "pending" | "approved" | "rejected";
+  supervisorApprovedBy: string | null;
+  supervisorApprovedAt: Date | null;
+  skippedOperationIds: string[];
   scheduledStartAt: Date | null;
   scheduledEndAt: Date | null;
   startedAt: Date | null;
@@ -2633,10 +3779,17 @@ export type LaborTimeEntryRecord = {
   operationRunId: string;
   userId: string;
   laborRoleId: string | null;
+  entryType: "direct" | "indirect";
+  crewName: string | null;
+  crewSize: number;
+  indirectCode: string | null;
   startedAt: Date;
   endedAt: Date | null;
   durationMinutes: number;
   sourceAction: ProductionOperationRunAction;
+  approvalStatus: "not_required" | "pending" | "approved" | "rejected";
+  approvedBy: string | null;
+  approvedAt: Date | null;
 };
 
 export type MachineTimeEntryRecord = {
@@ -2648,6 +3801,92 @@ export type MachineTimeEntryRecord = {
   endedAt: Date | null;
   durationMinutes: number;
   sourceAction: ProductionOperationRunAction;
+};
+
+export type OperationControlPointRecord = {
+  id: string;
+  organizationId: string;
+  operationRunId: string;
+  sequence: number;
+  purpose: OperationControlPointPurpose;
+  required: boolean;
+  completedAt: Date | null;
+  completedBy: string | null;
+  notes: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type CrewTimeEntryRecord = {
+  id: string;
+  organizationId: string;
+  operationRunId: string;
+  crewName: string;
+  laborRoleId: string | null;
+  crewSize: number;
+  startedAt: Date;
+  endedAt: Date | null;
+  durationMinutes: number;
+  approvalStatus: "not_required" | "pending" | "approved" | "rejected";
+  approvedBy: string | null;
+  approvedAt: Date | null;
+};
+
+export type DowntimeEventRecord = {
+  id: string;
+  organizationId: string;
+  operationRunId: string;
+  reasonCode: string;
+  startedAt: Date;
+  endedAt: Date | null;
+  durationMinutes: number;
+  notes: string | null;
+  approvalStatus: "not_required" | "pending" | "approved" | "rejected";
+  approvedBy: string | null;
+  approvedAt: Date | null;
+};
+
+export type ScrapEventRecord = {
+  id: string;
+  organizationId: string;
+  operationRunId: string;
+  productionOrderId: string;
+  dispositionType: Exclude<ProductionDispositionType, "material_issue" | "backflush" | "output">;
+  itemType: InventoryItemType;
+  itemId: string;
+  lotId: string | null;
+  locationId: string;
+  quantity: number;
+  uom: string;
+  reasonCode: string;
+  stockMovementId: string | null;
+  qualityEventId: string | null;
+  requiresSupervisorApproval: boolean;
+  approvalStatus: "not_required" | "pending" | "approved" | "rejected";
+  approvedBy: string | null;
+  approvedAt: Date | null;
+  notes: string | null;
+  occurredAt: Date;
+  recordedBy: string;
+};
+
+export type ReworkOrderRecord = {
+  id: string;
+  organizationId: string;
+  reworkOrderNumber: string;
+  originalLotId: string | null;
+  qualityEventId: string | null;
+  productionOrderId: string;
+  sourceOperationRunId: string;
+  status: "open" | "in_progress" | "completed" | "cancelled";
+  quantity: number;
+  uom: string;
+  reasonCode: string;
+  notes: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
 };
 
 export type WorkCenterInput = {
@@ -2671,6 +3910,7 @@ export type EquipmentInput = {
   maintenanceIntervalDays?: number | null;
   nextCalibrationDueAt?: Date | null;
   nextMaintenanceDueAt?: Date | null;
+  metadataJson?: Record<string, unknown>;
 };
 
 export type EquipmentCalibrationInput = {
@@ -2695,17 +3935,75 @@ export type EquipmentMaintenanceInput = {
   notes?: string | null;
 };
 
+export type EquipmentReadingInput = {
+  equipmentId: string;
+  productionOrderId?: string | null;
+  processingBatchId?: string | null;
+  ebrExecutionId?: string | null;
+  ebrStepResultId?: string | null;
+  routingOperationId?: string | null;
+  parameterType: ProcessParameterType;
+  parameterName?: string | null;
+  value: number;
+  unit: string;
+  source?: ProcessReadingSource;
+  recordedAt?: Date | null;
+  minValue?: number | null;
+  maxValue?: number | null;
+  warningMinValue?: number | null;
+  warningMaxValue?: number | null;
+  createDeviationOnOutOfLimit?: boolean;
+  createQualityEventOnOutOfLimit?: boolean;
+  rawPayload?: Record<string, unknown>;
+};
+
+export type EquipmentPreUseCheckInput = {
+  equipmentId: string;
+  templateId: string;
+  routingOperationId?: string | null;
+  productionOrderId?: string | null;
+  ebrExecutionId?: string | null;
+  checkedItems: Array<{ itemId: string; label: string; passed: boolean; required?: boolean }>;
+  completedAt?: Date | null;
+  notes?: string | null;
+};
+
+export type EquipmentCleaningLogInput = {
+  equipmentId: string;
+  cleaningType: EquipmentCleaningLogRecord["cleaningType"];
+  status?: EquipmentSanitationStatus;
+  cleanedAt?: Date | null;
+  expiresAt?: Date | null;
+  productionOrderId?: string | null;
+  ebrExecutionId?: string | null;
+  procedureId?: string | null;
+  notes?: string | null;
+};
+
+export type EquipmentDowntimeInput = {
+  equipmentId: string;
+  reasonCode: string;
+  startedAt: Date;
+  endedAt?: Date | null;
+  productionOrderId?: string | null;
+  routingOperationId?: string | null;
+  notes?: string | null;
+};
+
 export type EquipmentDashboardRecord = {
   equipment: EquipmentRecord[];
   calibrations: EquipmentCalibrationRecord[];
   maintenance: EquipmentMaintenanceRecord[];
   events: EquipmentEventRecord[];
+  readings: EquipmentReadingRecord[];
+  preUseChecks: EquipmentPreUseCheckRecord[];
+  cleaningLogs: EquipmentCleaningLogRecord[];
   alerts: Array<{
     id: string;
     equipmentId: string;
     equipmentCode: string;
     equipmentName: string;
-    alertType: "calibration_due" | "calibration_overdue" | "maintenance_due" | "maintenance_overdue" | "status_unavailable";
+    alertType: "calibration_due" | "calibration_overdue" | "maintenance_due" | "maintenance_overdue" | "status_unavailable" | "sanitation_not_clean";
     severity: "info" | "warning" | "critical";
     dueAt: Date | null;
     message: string;
@@ -2768,8 +4066,15 @@ export type OperationRunDetailRecord = {
   workCenter: WorkCenterRecord | null;
   equipment: EquipmentRecord | null;
   laborRole: LaborRoleRecord | null;
+  controlPoints: OperationControlPointRecord[];
   laborTimeEntries: LaborTimeEntryRecord[];
   machineTimeEntries: MachineTimeEntryRecord[];
+  crewTimeEntries: CrewTimeEntryRecord[];
+  downtimeEvents: DowntimeEventRecord[];
+  scrapEvents: ScrapEventRecord[];
+  reworkOrders: ReworkOrderRecord[];
+  generatedMovements: StockMovementRecord[];
+  reportingWarnings: string[];
 };
 
 export type OperationRunTransitionInput = {
@@ -2779,6 +4084,69 @@ export type OperationRunTransitionInput = {
   scrapQuantity?: number | null;
   reworkQuantity?: number | null;
   notes?: string | null;
+  completeControlPointPurposes?: OperationControlPointPurpose[];
+  allowNonsequentialReporting?: boolean;
+  supervisorApprovalComment?: string | null;
+};
+
+export type ProductionLaborCaptureInput = {
+  operationRunId: string;
+  startedAt?: Date | null;
+  endedAt?: Date | null;
+  laborRoleId?: string | null;
+  entryType?: "direct" | "indirect";
+  crewName?: string | null;
+  crewSize?: number;
+  indirectCode?: string | null;
+  downtimeReasonCode?: string | null;
+  notes?: string | null;
+  requiresSupervisorApproval?: boolean;
+};
+
+export type ProductionDispositionInputRecord = {
+  operationRunId: string;
+  dispositionType: Exclude<ProductionDispositionType, "material_issue" | "backflush" | "output">;
+  itemType: InventoryItemType;
+  itemId: string;
+  lotId?: string | null;
+  locationId?: string | null;
+  quantity: number;
+  uom: string;
+  reasonCode: string;
+  qualityEventId?: string | null;
+  notes?: string | null;
+  occurredAt?: Date | null;
+};
+
+export type SupervisorApprovalInputRecord = {
+  subjectType: "operation_run" | "labor_time_entry" | "crew_time_entry" | "downtime_event" | "scrap_event" | "rework_order";
+  subjectId: string;
+  decision: "approved" | "rejected";
+  comment?: string | null;
+};
+
+export type ProductionWipSummaryRecord = {
+  productionOrderId: string;
+  orderNumber: string;
+  planned: Record<string, number>;
+  actual: Record<string, number>;
+  variance: Record<string, number>;
+  yieldPercent: number | null;
+  generatedAt: Date;
+};
+
+export type ProductionControlDashboardRecord = {
+  runs: OperationRunDetailRecord[];
+  wipSummaries: ProductionWipSummaryRecord[];
+  supervisorQueue: Array<{
+    subjectType: SupervisorApprovalInputRecord["subjectType"];
+    subjectId: string;
+    productionOrderId: string;
+    operationRunId: string;
+    label: string;
+    reason: string;
+    requestedAt: Date;
+  }>;
 };
 
 export type WorkCenterProgressRecord = {
@@ -2800,6 +4168,10 @@ export type BillOfMaterialsRecord = {
   formulaRevisionId: string | null;
   versionCode: string;
   status: BomStatus;
+  bomKind: "standard" | "phantom" | "planning" | "alternate";
+  activeRevisionLocked: boolean;
+  alternateGroupCode: string | null;
+  planningPercent: number;
   yieldQuantity: number;
   yieldUom: string;
   effectiveFrom: Date | null;
@@ -2884,6 +4256,74 @@ export type BomOperationMaterialRecord = {
   version: number;
 };
 
+export type BomOperationOutputRecord = {
+  id: string;
+  bomOperationId: string;
+  outputType: BomOutputType;
+  itemType: InventoryItemType;
+  itemId: string;
+  quantity: number;
+  uom: string;
+  scrapReasonCode: string | null;
+  traceInventory: boolean;
+  costCreditPercent: number;
+  reworkRequired: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type BomSubstituteRecord = {
+  id: string;
+  bomOperationMaterialId: string;
+  replacementType: BomReplacementRule;
+  componentType: BomComponentType;
+  componentId: string;
+  quantity: number;
+  uom: string;
+  conversionFactor: number | null;
+  effectiveFrom: Date | null;
+  effectiveTo: Date | null;
+  priority: number;
+  approved: boolean;
+  approvalReference: string | null;
+  notes: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type BomAlternateRecord = {
+  id: string;
+  bomId: string;
+  alternateBomId: string;
+  alternateType: "manufacturing" | "planning";
+  priority: number;
+  effectiveFrom: Date | null;
+  effectiveTo: Date | null;
+  approved: boolean;
+  notes: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type BomOperationCostRecord = {
+  id: string;
+  bomOperationId: string;
+  costType: BomOperationCostType;
+  costCode: string;
+  description: string;
+  quantity: number;
+  uom: string;
+  unitCost: number;
+  currency: string;
+  backflush: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
 export type BomOperationEquipmentRecord = {
   id: string;
   bomOperationId: string;
@@ -2905,10 +4345,14 @@ export type BillOfMaterialsInput = {
   formulaRevisionId?: string | null;
   versionCode: string;
   status?: BomStatus;
+  bomKind?: BillOfMaterialsRecord["bomKind"];
+  alternateGroupCode?: string | null;
+  planningPercent?: number;
   yieldQuantity: number;
   yieldUom: string;
   effectiveFrom?: Date | null;
   effectiveTo?: Date | null;
+  changeRequestId?: string | null;
 };
 
 export type BomLineInput = {
@@ -2919,6 +4363,7 @@ export type BomLineInput = {
   uom: string;
   wastePercent?: number;
   isCritical?: boolean;
+  changeRequestId?: string | null;
 };
 
 export type BomOperationInput = {
@@ -2941,6 +4386,7 @@ export type BomOperationInput = {
   controlPoint?: boolean;
   scrapAction?: BomScrapAction;
   instructions?: string | null;
+  changeRequestId?: string | null;
 };
 
 export type BomOperationStepInput = {
@@ -2950,6 +4396,7 @@ export type BomOperationStepInput = {
   isCritical?: boolean;
   requiresSignature?: boolean;
   requiresQcEntry?: boolean;
+  changeRequestId?: string | null;
 };
 
 export type BomOperationMaterialInput = {
@@ -2964,6 +4411,48 @@ export type BomOperationMaterialInput = {
   effectiveTo?: Date | null;
   isCritical?: boolean;
   lotTraceRequired?: boolean;
+  changeRequestId?: string | null;
+};
+
+export type BomOperationOutputInput = {
+  outputType: BomOutputType;
+  itemType: InventoryItemType;
+  itemId: string;
+  quantity: number;
+  uom: string;
+  scrapReasonCode?: string | null;
+  traceInventory?: boolean;
+  costCreditPercent?: number;
+  reworkRequired?: boolean;
+  changeRequestId?: string | null;
+};
+
+export type BomSubstituteInput = {
+  replacementType: BomReplacementRule;
+  componentType: BomComponentType;
+  componentId: string;
+  quantity: number;
+  uom: string;
+  conversionFactor?: number | null;
+  effectiveFrom?: Date | null;
+  effectiveTo?: Date | null;
+  priority?: number;
+  approved?: boolean;
+  approvalReference?: string | null;
+  notes?: string | null;
+  changeRequestId?: string | null;
+};
+
+export type BomOperationCostInput = {
+  costType: BomOperationCostType;
+  costCode: string;
+  description: string;
+  quantity: number;
+  uom: string;
+  unitCost: number;
+  currency?: string;
+  backflush?: boolean;
+  changeRequestId?: string | null;
 };
 
 export type BomOperationEquipmentInput = {
@@ -2975,6 +4464,7 @@ export type BomOperationEquipmentInput = {
   runTimeMinutes?: number | null;
   cleaningTimeMinutes?: number;
   notes?: string | null;
+  changeRequestId?: string | null;
 };
 
 export type FormulaFamilyRecord = {
@@ -3186,9 +4676,13 @@ export type BatchCompletionInput = {
     itemId: string;
     itemName: string;
     itemSku: string;
+    outputType?: BomOutputType;
     quantity: number;
     uom: string;
     expiresAt?: Date | null;
+    scrapReasonCode?: string | null;
+    traceInventory?: boolean;
+    reworkRequired?: boolean;
     metadataJson?: Record<string, unknown>;
   }>;
 };
@@ -3216,6 +4710,12 @@ export type BillOfMaterialsDetailRecord = {
     laborRole: LaborRoleRecord | null;
     steps: BomOperationStepRecord[];
     materials: BomOperationMaterialRecord[];
+    outputs: BomOperationOutputRecord[];
+    substitutes: Array<{
+      materialId: string;
+      substitute: BomSubstituteRecord;
+    }>;
+    costs: BomOperationCostRecord[];
     equipment: Array<{
       requirement: BomOperationEquipmentRecord;
       equipment: EquipmentRecord | null;
@@ -3223,6 +4723,8 @@ export type BillOfMaterialsDetailRecord = {
     runtime: BomProductionPlan["operationRuntimes"][number];
   }>;
   productionPlan: BomProductionPlan;
+  alternates: BomAlternateRecord[];
+  readiness: BomReadinessResult;
 };
 
 export type DefinitionRevisionStatus = "draft" | "active" | "retired";
@@ -3388,6 +4890,63 @@ export type CostingDashboardRecord = {
   marginSimulation: MarginSimulation;
 };
 
+export type LandedCostAllocationInput = {
+  landedCostNumber?: string;
+  supplierId?: string | null;
+  sourceDocumentNumber?: string | null;
+  components: LandedCostComponent[];
+  receiptLines: LandedCostReceiptLine[];
+};
+
+export type LandedCostAllocationRecord = LandedCostAllocationResult & {
+  id: string;
+  organizationId: string;
+  landedCostNumber: string;
+  supplierId: string | null;
+  sourceDocumentNumber: string | null;
+  status: "allocated";
+  allocatedAt: Date;
+};
+
+export type InventoryValuationSnapshotInput = {
+  snapshotNumber?: string;
+  period: string;
+  asOf?: Date | null;
+  currency?: string;
+  valuationMethod?: string;
+  balances?: InventoryBalanceRecord[];
+  costs?: InventoryValuationCost[];
+};
+
+export type InventoryValuationSnapshotRecord = InventoryValuationSnapshot & {
+  status: "final";
+};
+
+export type PeriodCloseInputRecord = {
+  period: string;
+};
+
+export type PeriodCloseRunRecord = PeriodCloseRun;
+
+export type FinanceExportBatchInput = {
+  format?: "csv" | "json";
+  mappingTemplateId?: string | null;
+  sourceTypes?: FinanceExportRecord["sourceType"][];
+  repeatedFromBatchId?: string | null;
+};
+
+export type FinanceExportBatchRecord = FinanceExportBatch;
+
+export type FinanceDashboardRecord = {
+  landedCosts: LandedCostAllocationRecord[];
+  valuationSnapshots: InventoryValuationSnapshotRecord[];
+  latestValuationComparison: InventoryValuationComparison | null;
+  latestPeriodClose: PeriodCloseRunRecord;
+  exportBatches: FinanceExportBatchRecord[];
+  mappingTemplates: ExportMappingTemplate[];
+  reconciliations: ReconciliationResult[];
+};
+
 export type StockMovementListFilters = {
   itemId?: string;
   lotId?: string;
@@ -3478,6 +5037,216 @@ export type StockCountPostResult = {
   conflicts: StockCountConflictRecord[];
   movements: StockMovementRecord[];
   idempotent: boolean;
+};
+
+export type WmsContainerStatus = "open" | "sealed" | "staged" | "shipped" | "archived";
+export type WmsTaskStatus = "open" | "in_progress" | "complete" | "exception";
+export type WmsPackSessionStatus = "open" | "verified" | "packed" | "shipped" | "exception";
+export type WmsWaveStatus = "draft" | "released" | "picking" | "staged" | "complete";
+
+export type WarehouseZoneRecord = {
+  id: string;
+  organizationId: string;
+  code: string;
+  name: string;
+  zoneType: StorageZoneType;
+  temperatureMinC: number | null;
+  temperatureMaxC: number | null;
+  quarantine: boolean;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type StorageRuleRecord = {
+  id: string;
+  organizationId: string;
+  priority: number;
+  itemClass: string | null;
+  itemType: InventoryItemType | null;
+  itemId: string | null;
+  lotStatus: "pending" | "released" | "hold" | "rejected" | "expired" | "quarantine" | null;
+  zoneType: StorageZoneType | null;
+  requireQuarantine: boolean | null;
+  expiryWindowDays: number | null;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type StagingLocationRecord = {
+  id: string;
+  organizationId: string;
+  locationId: string;
+  locationName: string;
+  zoneId: string;
+  stagingCode: string;
+  status: "available" | "reserved" | "occupied" | "closed";
+  currentWaveId: string | null;
+  capacityCartons: number;
+};
+
+export type WmsContainerRecord = {
+  id: string;
+  organizationId: string;
+  containerCode: string;
+  containerType: ContainerType;
+  parentContainerId: string | null;
+  locationId: string;
+  locationName?: string | null;
+  zoneId: string | null;
+  status: WmsContainerStatus;
+  tareWeight: number | null;
+  weightUom: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type WmsContainerLineRecord = {
+  id: string;
+  organizationId: string;
+  containerId: string;
+  itemType: InventoryItemType;
+  itemId: string;
+  itemName?: string | null;
+  itemSku?: string | null;
+  lotId: string | null;
+  lotCode?: string | null;
+  qcStatus?: LotQcStatus | "quarantine" | null;
+  expiresAt?: Date | null;
+  quantity: number;
+  uom: string;
+  receivedAt: Date | null;
+};
+
+export type PutAwayTaskRecord = {
+  id: string;
+  organizationId: string;
+  taskNumber: string;
+  containerId: string | null;
+  containerCode?: string | null;
+  itemType: InventoryItemType;
+  itemId: string;
+  lotId: string | null;
+  lotCode?: string | null;
+  fromLocationId: string;
+  toLocationId: string | null;
+  suggestedLocationId: string | null;
+  status: WmsTaskStatus;
+  quantity: number;
+  uom: string;
+  priority: number;
+  suggestions: PutAwaySuggestion[];
+  exceptionReason: string | null;
+  createdAt: Date;
+  completedAt: Date | null;
+};
+
+export type PickTaskRecord = {
+  id: string;
+  organizationId: string;
+  taskNumber: string;
+  waveId: string | null;
+  salesOrderLineId: string | null;
+  salesOrderNumber?: string | null;
+  toteContainerId: string | null;
+  toteCode?: string | null;
+  itemType: InventoryItemType;
+  itemId: string;
+  lotId: string | null;
+  lotCode?: string | null;
+  fromLocationId: string;
+  fromLocationName?: string | null;
+  stagingLocationId: string | null;
+  sequence: number;
+  quantity: number;
+  uom: string;
+  status: WmsTaskStatus;
+  strategy: PickStrategy;
+  suggestionReason: string;
+  overrideReason: string | null;
+  completedAt: Date | null;
+};
+
+export type WaveBatchRecord = {
+  id: string;
+  organizationId: string;
+  waveNumber: string;
+  status: WmsWaveStatus;
+  orderIds: string[];
+  stagingLocationId: string | null;
+  toteContainerIds: string[];
+  pickStrategy: PickStrategy;
+  pickPathSummary: string;
+  releasedAt: Date | null;
+  completedAt: Date | null;
+  createdAt: Date;
+};
+
+export type PackSessionRecord = {
+  id: string;
+  organizationId: string;
+  sessionNumber: string;
+  salesOrderId: string | null;
+  shipmentId: string | null;
+  stagingLocationId: string | null;
+  cartonContainerId: string | null;
+  status: WmsPackSessionStatus;
+  verifiedLineCount: number;
+  exceptionReason: string | null;
+  startedAt: Date;
+  packedAt: Date | null;
+  shippedAt: Date | null;
+};
+
+export type WmsDashboardRecord = {
+  scanModes: WmsScanMode[];
+  containers: WmsContainerRecord[];
+  containerLines: WmsContainerLineRecord[];
+  warehouseZones: WarehouseZoneRecord[];
+  storageRules: StorageRuleRecord[];
+  stagingLocations: StagingLocationRecord[];
+  putawayTasks: PutAwayTaskRecord[];
+  waveBatches: WaveBatchRecord[];
+  pickTasks: PickTaskRecord[];
+  packSessions: PackSessionRecord[];
+  pickSuggestion: PickSuggestionResult | null;
+};
+
+export type WmsScanCommandInputRecord = {
+  mode: WmsScanMode;
+  code: string;
+  quantity?: number | null;
+  uom?: string | null;
+  fromLocationId?: string | null;
+  toLocationId?: string | null;
+  containerId?: string | null;
+  lotId?: string | null;
+  itemType?: InventoryItemType | null;
+  itemId?: string | null;
+  reason?: string | null;
+  overrideReason?: string | null;
+  clientTransactionId?: string | null;
+};
+
+export type WmsScanCommandResultRecord = {
+  mode: WmsScanMode;
+  code: string;
+  message: string;
+  container: WmsContainerRecord | null;
+  containerLines: WmsContainerLineRecord[];
+  putawayTask: PutAwayTaskRecord | null;
+  pickTask: PickTaskRecord | null;
+  packSession: PackSessionRecord | null;
+  movement: StockMovementRecord | null;
+  countResult: StockCountPostResult | null;
+  lookup: {
+    balances: InventoryBalanceRecord[];
+    locations: LocationRecord[];
+    lots: LotRecord[];
+  };
+  warnings: string[];
 };
 
 export type LotCreateInput = {
@@ -3575,7 +5344,7 @@ export type QcResultInput = {
 
 export type QcReviewInput = {
   status: "approved" | "rejected";
-  reviewComments?: string | null;
+  reviewComments?: string | null | undefined;
 };
 
 export type QcSpecificationDetailRecord = QcSpecificationRecord & {
@@ -3597,6 +5366,319 @@ export type LotReleaseChecklistRecord = {
   blockedTaskIds: string[];
   overrideUsed: boolean;
   message: string | null;
+};
+
+export type LimsInspectionType = "incoming" | "in_process" | "finished_good" | "retained" | "retest" | "stability";
+export type SampleSourceType = "receipt" | "lot" | "processing_batch" | "production_order" | "supplier" | "stability_pull" | "retained_sample";
+export type SampleStatus = "planned" | "collected" | "in_lab" | "awaiting_review" | "approved" | "failed" | "invalidated";
+export type SampleTestStatus = "pending" | "in_progress" | "awaiting_review" | "approved" | "failed" | "invalidated";
+export type RetainedSampleStatus = "available" | "partially_pulled" | "depleted" | "disposed" | "expired";
+export type StabilityStudyStatus = "planned" | "active" | "completed" | "cancelled";
+export type StabilityPullPointStatus = "scheduled" | "due" | "pulled" | "tested" | "missed" | "cancelled";
+
+export type LabInstrumentRecord = {
+  id: string;
+  organizationId: string;
+  instrumentCode: string;
+  name: string;
+  instrumentType: string;
+  locationId: string | null;
+  calibrationDueAt: Date | null;
+  status: string;
+  metadataJson: Record<string, unknown>;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type SamplingPlanRecord = {
+  id: string;
+  organizationId: string;
+  planCode: string;
+  name: string;
+  supplierId: string | null;
+  itemClass: string | null;
+  itemType: InventoryItemType | null;
+  itemId: string | null;
+  materialId: string | null;
+  productVariantId: string | null;
+  riskLevel: IncomingInspectionRiskLevel | null;
+  inspectionType: LimsInspectionType;
+  batchSizeMin: number | null;
+  batchSizeMax: number | null;
+  containerCountMin: number | null;
+  containerCountMax: number | null;
+  sampleSize: number;
+  containerSampleCount: number;
+  priority: number;
+  active: boolean;
+  instructions: string;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type SamplingPlanInput = {
+  planCode: string;
+  name: string;
+  supplierId?: string | null | undefined;
+  itemClass?: string | null | undefined;
+  itemType?: InventoryItemType | null | undefined;
+  itemId?: string | null | undefined;
+  materialId?: string | null | undefined;
+  productVariantId?: string | null | undefined;
+  riskLevel?: IncomingInspectionRiskLevel | null | undefined;
+  inspectionType: LimsInspectionType;
+  batchSizeMin?: number | null | undefined;
+  batchSizeMax?: number | null | undefined;
+  containerCountMin?: number | null | undefined;
+  containerCountMax?: number | null | undefined;
+  sampleSize?: number | undefined;
+  containerSampleCount?: number | undefined;
+  priority?: number | undefined;
+  active?: boolean | undefined;
+  instructions?: string | null | undefined;
+};
+
+export type SampleRecord = {
+  id: string;
+  organizationId: string;
+  sampleNumber: string;
+  sourceType: SampleSourceType;
+  sourceId: string;
+  inspectionType: LimsInspectionType;
+  samplingPlanId: string | null;
+  lotId: string | null;
+  receiptId: string | null;
+  supplierId: string | null;
+  processingBatchId: string | null;
+  productionOrderId: string | null;
+  stabilityStudyId: string | null;
+  retainedSampleId: string | null;
+  itemType: InventoryItemType | null;
+  itemId: string | null;
+  status: SampleStatus;
+  sampleSize: number;
+  uom: string;
+  containerCount: number | null;
+  storageLocationId: string | null;
+  dueAt: Date | null;
+  collectedAt: Date | null;
+  collectedBy: string | null;
+  notes: string | null;
+  metadataJson: Record<string, unknown>;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type SampleTestRecord = {
+  id: string;
+  organizationId: string;
+  sampleId: string;
+  qcTaskId: string | null;
+  testMethodId: string;
+  instrumentId: string | null;
+  status: SampleTestStatus;
+  expectedMin: number | null;
+  expectedMax: number | null;
+  unit: string | null;
+  passFailRule: QcPassFailRule;
+  retestRule: { retestAllowed?: boolean; maxRetests?: number | null; autoCreateQualityEventOnFail?: boolean; autoHoldOnFail?: boolean };
+  evidenceRequirement: QcEvidenceRequirement;
+  dueAt: Date | null;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type LabResultRecord = {
+  id: string;
+  organizationId: string;
+  sampleId: string;
+  sampleTestId: string;
+  qcResultId: string | null;
+  testMethodId: string;
+  retestOfResultId: string | null;
+  resultNumber: string;
+  valueNumber: number | null;
+  valueText: string | null;
+  valueBoolean: boolean | null;
+  unit: string | null;
+  evaluatedStatus: "pass" | "fail";
+  reviewStatus: QcResultStatus;
+  reason: string | null;
+  comments: string | null;
+  evidence: QcResultAttachment[];
+  enteredBy: string;
+  enteredAt: Date;
+  reviewedBy: string | null;
+  reviewedAt: Date | null;
+  invalidatedBy: string | null;
+  invalidatedAt: Date | null;
+  invalidationReason: string | null;
+  qualityEventId: string | null;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type RetainedSampleRecord = {
+  id: string;
+  organizationId: string;
+  retainedSampleNumber: string;
+  lotId: string;
+  sampleId: string | null;
+  storageLocationId: string | null;
+  initialQuantity: number;
+  remainingQuantity: number;
+  uom: string;
+  expiresAt: Date | null;
+  status: RetainedSampleStatus;
+  metadataJson: Record<string, unknown>;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type RetainedSamplePullRecord = {
+  id: string;
+  organizationId: string;
+  retainedSampleId: string;
+  sampleId: string | null;
+  quantity: number;
+  uom: string;
+  purpose: string;
+  pulledBy: string;
+  pulledAt: Date;
+  disposition: string | null;
+  evidence: QcResultAttachment[];
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type StabilityStudyRecord = {
+  id: string;
+  organizationId: string;
+  studyNumber: string;
+  lotId: string;
+  productVariantId: string | null;
+  protocolName: string;
+  storageCondition: string;
+  status: StabilityStudyStatus;
+  startDate: Date;
+  endDate: Date | null;
+  testPanelJson: { testMethodIds: string[]; intervalsDays: number[]; windowDays?: number };
+  ownerUserId: string | null;
+  metadataJson: Record<string, unknown>;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type StabilityPullPointRecord = {
+  id: string;
+  organizationId: string;
+  stabilityStudyId: string;
+  sampleId: string | null;
+  sequence: number;
+  intervalDays: number;
+  scheduledPullAt: Date;
+  windowStartAt: Date;
+  windowEndAt: Date;
+  status: StabilityPullPointStatus;
+  pulledAt: Date | null;
+  pulledBy: string | null;
+  alertTaskId: string | null;
+  metadataJson: Record<string, unknown>;
+  createdAt: Date;
+  updatedAt: Date;
+  version: number;
+};
+
+export type SampleDetailRecord = SampleRecord & {
+  lot: LotRecord | null;
+  supplier: SupplierRecord | null;
+  tests: Array<SampleTestRecord & { testMethod: QcTestMethodRecord | null; results: LabResultRecord[] }>;
+};
+
+export type GenerateSamplesInput = {
+  sourceType: SampleSourceType;
+  sourceId: string;
+  inspectionType: LimsInspectionType;
+  supplierId?: string | null | undefined;
+  lotId?: string | null | undefined;
+  itemType?: InventoryItemType | null | undefined;
+  itemId?: string | null | undefined;
+  productVariantId?: string | null | undefined;
+  materialId?: string | null | undefined;
+  riskLevel?: IncomingInspectionRiskLevel | null | undefined;
+  batchSize?: number | null | undefined;
+  containerCount?: number | null | undefined;
+  testMethodIds?: string[] | undefined;
+  dueAt?: Date | null | undefined;
+  notes?: string | null | undefined;
+};
+
+export type LabResultInput = {
+  sampleTestId: string;
+  retestOfResultId?: string | null | undefined;
+  valueNumber?: number | null | undefined;
+  valueText?: string | null | undefined;
+  valueBoolean?: boolean | null | undefined;
+  unit?: string | null | undefined;
+  reason?: string | null | undefined;
+  comments?: string | null | undefined;
+  evidence?: QcResultAttachment[] | undefined;
+};
+
+export type RetainedSampleInput = {
+  lotId: string;
+  sampleId?: string | null | undefined;
+  storageLocationId?: string | null | undefined;
+  initialQuantity: number;
+  uom: string;
+  expiresAt?: Date | null | undefined;
+};
+
+export type RetainedSamplePullInput = {
+  quantity: number;
+  purpose: string;
+  disposition?: string | null | undefined;
+  evidence?: QcResultAttachment[] | undefined;
+  createSample?: boolean | undefined;
+};
+
+export type StabilityStudyInput = {
+  lotId: string;
+  productVariantId?: string | null | undefined;
+  protocolName: string;
+  storageCondition: string;
+  startDate: Date;
+  intervalsDays: number[];
+  testMethodIds: string[];
+  windowDays?: number | undefined;
+};
+
+export type QcTrendSummaryRecord = {
+  groupKey: string;
+  resultCount: number;
+  failureCount: number;
+  passRate: number;
+  averageValue: number | null;
+};
+
+export type LimsDashboardRecord = {
+  openSamples: number;
+  awaitingReview: number;
+  failedResults: number;
+  retainedAvailable: number;
+  stabilityDue: number;
+  sampleQueue: SampleDetailRecord[];
+  retainedSamples: Array<RetainedSampleRecord & { lot: LotRecord | null; pulls: RetainedSamplePullRecord[] }>;
+  stabilityStudies: Array<StabilityStudyRecord & { lot: LotRecord | null; pullPoints: StabilityPullPointRecord[] }>;
+  trends: QcTrendSummaryRecord[];
 };
 
 export type CoaAttachmentCreateInput = {
@@ -3642,6 +5724,57 @@ export type ApiDataStore = {
   ): Promise<AdminUserRecord | null>;
   listRoles(organizationId: string): Promise<RoleRecord[]>;
   listLocations(organizationId: string): Promise<LocationRecord[]>;
+  getEffectivePermissionsForUser(organizationId: string, userId: string): Promise<EffectivePermissionGrant[]>;
+  listPermissionMatrix(organizationId: string): Promise<PermissionMatrixRecord>;
+  updateRolePermissionSets(
+    userContext: UserContext,
+    roleId: string,
+    permissionSetIds: string[],
+    requestId: string
+  ): Promise<PermissionMatrixRecord>;
+  upsertUserPermissionOverride(
+    userContext: UserContext,
+    input: UserPermissionOverrideInput,
+    requestId: string
+  ): Promise<PermissionMatrixRecord>;
+  previewUserAccess(
+    organizationId: string,
+    subjectUserId: string,
+    input: PermissionPreviewInput
+  ): Promise<AccessPreview | null>;
+  listPermissionChangeHistory(organizationId: string): Promise<AuditEventRecord[]>;
+  getConfigurationSnapshot(organizationId: string): Promise<ConfigurationSnapshotRecord>;
+  upsertDocumentType(userContext: UserContext, input: DocumentTypeInput, requestId: string): Promise<DocumentTypeRecord>;
+  upsertNumberingSequence(
+    userContext: UserContext,
+    input: NumberingSequenceInput,
+    requestId: string
+  ): Promise<NumberingSequenceRecord>;
+  upsertReasonCode(userContext: UserContext, input: ReasonCodeInput, requestId: string): Promise<ReasonCodeRecord>;
+  upsertAttributeDefinition(
+    userContext: UserContext,
+    input: AttributeDefinitionInput,
+    requestId: string
+  ): Promise<AttributeDefinitionRecord>;
+  upsertAttributeSet(userContext: UserContext, input: AttributeSetInput, requestId: string): Promise<AttributeSetRecord>;
+  upsertFieldBehaviorRule(
+    userContext: UserContext,
+    input: FieldBehaviorRuleInput,
+    requestId: string
+  ): Promise<FieldBehaviorRuleRecord>;
+  generateConfiguredDocumentNumber(
+    userContext: UserContext,
+    input: DocumentNumberPreviewInput,
+    requestId: string
+  ): Promise<NumberingGeneration & { documentType: DocumentTypeRecord; sequence: NumberingSequenceRecord }>;
+  resolveConfiguredFieldBehavior(
+    userContext: UserContext,
+    input: Pick<ConfigurationValidationInput, "targetEntity" | "documentTypeId" | "workflowState">
+  ): Promise<ResolvedFieldBehavior[]>;
+  validateConfiguredRecord(
+    userContext: UserContext,
+    input: ConfigurationValidationInput
+  ): Promise<ConfigurationValidationResult>;
   listMasterData(organizationId: string): Promise<MasterDataSnapshot>;
   listImportTemplates(): Promise<ImportTemplateDescriptor[]>;
   createImportBatch(userContext: UserContext, input: CreateImportBatchInput, requestId: string): Promise<ImportBatchDetailRecord>;
@@ -3663,6 +5796,8 @@ export type ApiDataStore = {
     organizationId: string,
     input: ProductConfigurationInput
   ): Promise<ProductConfigurationResult>;
+  runProductConfiguratorRuleTests(organizationId: string, templateId?: string | null): Promise<ProductConfiguratorRuleTestRun[]>;
+  upsertConfiguratorRule(organizationId: string, input: ConfiguratorRuleInput): Promise<ProductTemplateRecord>;
   getProduct(organizationId: string, productId: string): Promise<ProductRecord | null>;
   getProductVariant(organizationId: string, variantId: string): Promise<ProductVariantRecord | null>;
   getMaterial(organizationId: string, materialId: string): Promise<MaterialRecord | null>;
@@ -3719,6 +5854,12 @@ export type ApiDataStore = {
     input: StockCountPostInput,
     requestId: string
   ): Promise<StockCountPostResult>;
+  getWmsDashboard(organizationId: string): Promise<WmsDashboardRecord>;
+  executeWmsScanCommand(
+    userContext: UserContext,
+    input: WmsScanCommandInputRecord,
+    requestId: string
+  ): Promise<WmsScanCommandResultRecord>;
   createProduct(organizationId: string, input: ProductInput): Promise<ProductRecord>;
   updateProduct(organizationId: string, productId: string, input: Partial<ProductInput>): Promise<ProductRecord | null>;
   createProductVariant(organizationId: string, input: ProductVariantInput): Promise<ProductVariantRecord>;
@@ -3764,6 +5905,29 @@ export type ApiDataStore = {
   ): Promise<IncomingInspectionPlanRecord>;
   listSupplierScorecards(organizationId: string): Promise<SupplierQualityDashboardRecord["scorecards"]>;
   getSupplierQualityDashboard(organizationId: string): Promise<SupplierQualityDashboardRecord>;
+  listEdiStagingCenter(organizationId: string): Promise<EdiStagingCenterRecord>;
+  createEdiPartner(userContext: UserContext, input: EdiPartnerInput, requestId: string): Promise<EdiPartnerRecord>;
+  upsertPartnerItemMapping(
+    userContext: UserContext,
+    input: PartnerItemMappingInput,
+    requestId: string
+  ): Promise<PartnerItemMappingRecord>;
+  importAsnDocument(userContext: UserContext, input: ImportAsnInput, requestId: string): Promise<{
+    batch: EdiDocumentBatchRecord;
+    document: EdiDocumentRecord;
+    asn: AsnHeaderRecord & { lines: AsnLineRecord[] };
+  }>;
+  approveAsnDocument(userContext: UserContext, asnHeaderId: string, requestId: string): Promise<AsnHeaderRecord | null>;
+  convertAsnToReceipt(
+    userContext: UserContext,
+    asnHeaderId: string,
+    input: AsnConversionInput,
+    requestId: string
+  ): Promise<ReceiptDetailRecord>;
+  listCustomerDocumentPortalPreview(
+    userContext: UserContext,
+    accessId?: string | null
+  ): Promise<CustomerDocumentPortalPreviewRecord[]>;
   listPurchaseOrders(organizationId: string): Promise<PurchaseOrderDetailRecord[]>;
   getPurchaseOrder(organizationId: string, purchaseOrderId: string): Promise<PurchaseOrderDetailRecord | null>;
   createPurchaseOrder(organizationId: string, input: PurchaseOrderInput): Promise<PurchaseOrderRecord>;
@@ -3797,6 +5961,25 @@ export type ApiDataStore = {
     requestId: string
   ): Promise<ReceiptCorrectionResult>;
   runMrp(organizationId: string, filters: MrpRunFilters): Promise<MrpPlan>;
+  listDemandForecasts(organizationId: string): Promise<DemandForecastRecord[]>;
+  createDemandForecast(
+    userContext: UserContext,
+    input: DemandForecastInput,
+    requestId: string
+  ): Promise<DemandForecastRecord>;
+  approveDemandForecast(
+    userContext: UserContext,
+    forecastId: string,
+    input: ForecastApprovalInput,
+    requestId: string
+  ): Promise<DemandForecastRecord | null>;
+  listPlanningScenarios(organizationId: string): Promise<PlanningScenarioRecord[]>;
+  createPlanningScenario(
+    userContext: UserContext,
+    input: PlanningScenarioInput,
+    requestId: string
+  ): Promise<PlanningScenarioRecord>;
+  getSopDashboard(organizationId: string): Promise<SopDashboardRecord>;
   convertMrpSuggestion(
     organizationId: string,
     input: MrpSuggestionConversionInput
@@ -3840,6 +6023,54 @@ export type ApiDataStore = {
     requestId: string
   ): Promise<QcTaskDetailRecord | null>;
   getLotReleaseChecklist(organizationId: string, lotId: string): Promise<LotReleaseChecklistRecord | null>;
+  getLimsDashboard(organizationId: string): Promise<LimsDashboardRecord>;
+  listSamples(organizationId: string): Promise<SampleDetailRecord[]>;
+  getSample(organizationId: string, sampleId: string): Promise<SampleDetailRecord | null>;
+  createSamplingPlan(organizationId: string, input: SamplingPlanInput): Promise<SamplingPlanRecord>;
+  listSamplingPlans(organizationId: string): Promise<SamplingPlanRecord[]>;
+  generateSamplesFromPlan(
+    userContext: UserContext,
+    input: GenerateSamplesInput,
+    requestId: string
+  ): Promise<{ samples: SampleDetailRecord[]; plan: SamplingPlanRecord | null }>;
+  enterLabResult(
+    userContext: UserContext,
+    input: LabResultInput,
+    requestId: string
+  ): Promise<{ sample: SampleDetailRecord; labResult: LabResultRecord; qualityEvent: QualityEventRecord | null }>;
+  reviewLabResult(
+    userContext: UserContext,
+    labResultId: string,
+    input: QcReviewInput,
+    requestId: string
+  ): Promise<SampleDetailRecord | null>;
+  invalidateLabResult(
+    userContext: UserContext,
+    labResultId: string,
+    input: { reason: string },
+    requestId: string
+  ): Promise<SampleDetailRecord | null>;
+  createRetainedSample(
+    userContext: UserContext,
+    input: RetainedSampleInput,
+    requestId: string
+  ): Promise<RetainedSampleRecord>;
+  pullRetainedSample(
+    userContext: UserContext,
+    retainedSampleId: string,
+    input: RetainedSamplePullInput,
+    requestId: string
+  ): Promise<{ retainedSample: RetainedSampleRecord; pull: RetainedSamplePullRecord; sample: SampleDetailRecord | null }>;
+  createStabilityStudy(
+    userContext: UserContext,
+    input: StabilityStudyInput,
+    requestId: string
+  ): Promise<StabilityStudyRecord & { pullPoints: StabilityPullPointRecord[] }>;
+  pullStabilityPoint(
+    userContext: UserContext,
+    pullPointId: string,
+    requestId: string
+  ): Promise<{ pullPoint: StabilityPullPointRecord; sample: SampleDetailRecord } | null>;
   listDocumentTemplates(organizationId: string): Promise<DocumentTemplateRecord[]>;
   createDocumentTemplate(
     userContext: UserContext,
@@ -3882,6 +6113,27 @@ export type ApiDataStore = {
     documentId: string,
     requestId: string
   ): Promise<{ document: GeneratedDocumentRecord; downloadUrl: string } | null>;
+  getComplianceDashboard(organizationId: string): Promise<ComplianceDashboardRecord>;
+  recordSanitationCheck(
+    userContext: UserContext,
+    input: SanitationCheckInput,
+    requestId: string
+  ): Promise<ComplianceDashboardRecord>;
+  recordTrainingCompletion(
+    userContext: UserContext,
+    input: TrainingRecordInput,
+    requestId: string
+  ): Promise<ComplianceDashboardRecord>;
+  evaluateComplianceGate(
+    userContext: UserContext,
+    input: ComplianceGateEvaluationInput,
+    requestId: string
+  ): Promise<ComplianceGateResult>;
+  generateAuditPacket(
+    userContext: UserContext,
+    input: AuditPacketInputRecord,
+    requestId: string
+  ): Promise<{ packet: AuditPacketRecord; document: GeneratedDocumentRecord }>;
   listQualityEvents(organizationId: string): Promise<Array<QualityEventRecord & { links: QualityEventLinkRecord[] }>>;
   getQualityDashboard(organizationId: string): Promise<QualityDashboardRecord>;
   createQualityEvent(
@@ -3944,6 +6196,26 @@ export type ApiDataStore = {
     input: EquipmentMaintenanceInput,
     requestId: string
   ): Promise<EquipmentDashboardRecord>;
+  recordEquipmentReading(
+    userContext: UserContext,
+    input: EquipmentReadingInput,
+    requestId: string
+  ): Promise<EquipmentDashboardRecord>;
+  completeEquipmentPreUseCheck(
+    userContext: UserContext,
+    input: EquipmentPreUseCheckInput,
+    requestId: string
+  ): Promise<EquipmentDashboardRecord>;
+  recordEquipmentCleaning(
+    userContext: UserContext,
+    input: EquipmentCleaningLogInput,
+    requestId: string
+  ): Promise<EquipmentDashboardRecord>;
+  recordEquipmentDowntime(
+    userContext: UserContext,
+    input: EquipmentDowntimeInput,
+    requestId: string
+  ): Promise<EquipmentDashboardRecord>;
   createLaborRole(organizationId: string, input: LaborRoleInput): Promise<LaborRoleRecord>;
   createOperationCode(organizationId: string, input: OperationCodeInput): Promise<OperationCodeRecord>;
   listRoutingTemplates(organizationId: string): Promise<RoutingTemplateDetailRecord[]>;
@@ -3960,12 +6232,28 @@ export type ApiDataStore = {
     requestId: string
   ): Promise<ProductionOrderDetailRecord>;
   listProductionOperationRuns(organizationId: string): Promise<OperationRunDetailRecord[]>;
+  getProductionControlDashboard(organizationId: string): Promise<ProductionControlDashboardRecord>;
   transitionProductionOperationRun(
     userContext: UserContext,
     operationRunId: string,
     input: OperationRunTransitionInput,
     requestId: string
   ): Promise<OperationRunDetailRecord>;
+  recordProductionLabor(
+    userContext: UserContext,
+    input: ProductionLaborCaptureInput,
+    requestId: string
+  ): Promise<OperationRunDetailRecord>;
+  recordProductionDisposition(
+    userContext: UserContext,
+    input: ProductionDispositionInputRecord,
+    requestId: string
+  ): Promise<OperationRunDetailRecord>;
+  approveProductionException(
+    userContext: UserContext,
+    input: SupervisorApprovalInputRecord,
+    requestId: string
+  ): Promise<ProductionControlDashboardRecord>;
   getProductionProgressByWorkCenter(organizationId: string): Promise<WorkCenterProgressRecord[]>;
   listBillOfMaterials(organizationId: string): Promise<BillOfMaterialsDetailRecord[]>;
   createBillOfMaterials(organizationId: string, input: BillOfMaterialsInput): Promise<BillOfMaterialsRecord>;
@@ -3974,6 +6262,17 @@ export type ApiDataStore = {
     bomId: string,
     input: Partial<BillOfMaterialsInput>
   ): Promise<BillOfMaterialsRecord | null>;
+  copyBillOfMaterialsRevision(
+    organizationId: string,
+    bomId: string,
+    input: { versionCode: string; effectiveFrom?: Date | null; changeRequestId?: string | null }
+  ): Promise<BillOfMaterialsDetailRecord | null>;
+  compareBillOfMaterials(organizationId: string, fromBomId: string, toBomId: string): Promise<BomComparison>;
+  explodeBillOfMaterials(
+    organizationId: string,
+    input: { productVariantId: string; quantity: number; asOf?: Date | null }
+  ): Promise<BomExplosion>;
+  getBillOfMaterialsReadiness(organizationId: string, bomId: string, asOf?: Date | null): Promise<BomReadinessResult | null>;
   createBomLine(bomId: string, input: BomLineInput): Promise<BomLineRecord>;
   updateBomLine(bomId: string, lineId: string, input: Partial<BomLineInput>): Promise<BomLineRecord | null>;
   deleteBomLine(bomId: string, lineId: string): Promise<boolean>;
@@ -3983,6 +6282,9 @@ export type ApiDataStore = {
     bomOperationId: string,
     input: BomOperationMaterialInput
   ): Promise<BomOperationMaterialRecord>;
+  createBomOperationOutput(bomOperationId: string, input: BomOperationOutputInput): Promise<BomOperationOutputRecord>;
+  createBomSubstitute(bomOperationMaterialId: string, input: BomSubstituteInput): Promise<BomSubstituteRecord>;
+  createBomOperationCost(bomOperationId: string, input: BomOperationCostInput): Promise<BomOperationCostRecord>;
   createBomOperationEquipment(
     bomOperationId: string,
     input: BomOperationEquipmentInput
@@ -4049,6 +6351,25 @@ export type ApiDataStore = {
   getBatchActualCost(organizationId: string, processingBatchId: string): Promise<BatchActualCostRecord | null>;
   listCostVariances(organizationId: string): Promise<CostVarianceRecord[]>;
   getMarginSimulation(organizationId: string): Promise<MarginSimulation>;
+  getFinanceDashboard(organizationId: string): Promise<FinanceDashboardRecord>;
+  allocateLandedCost(
+    userContext: UserContext,
+    input: LandedCostAllocationInput,
+    requestId: string
+  ): Promise<LandedCostAllocationRecord>;
+  createInventoryValuationSnapshot(
+    userContext: UserContext,
+    input: InventoryValuationSnapshotInput,
+    requestId: string
+  ): Promise<InventoryValuationSnapshotRecord>;
+  runPeriodClose(userContext: UserContext, input: PeriodCloseInputRecord, requestId: string): Promise<PeriodCloseRunRecord>;
+  createFinanceExportBatch(
+    userContext: UserContext,
+    input: FinanceExportBatchInput,
+    requestId: string
+  ): Promise<FinanceExportBatchRecord>;
+  listExportMappingTemplates(organizationId: string): Promise<ExportMappingTemplate[]>;
+  listFinanceReconciliations(organizationId: string): Promise<ReconciliationResult[]>;
   listEbrTemplates(organizationId: string): Promise<EbrTemplateDetailRecord[]>;
   createEbrTemplate(organizationId: string, input: EbrTemplateInput): Promise<EbrTemplateRecord>;
   createEbrTemplateStep(templateId: string, input: EbrTemplateStepInput): Promise<EbrTemplateStepRecord>;
@@ -4074,6 +6395,19 @@ export type ApiDataStore = {
     requestId: string
   ): Promise<EbrExecutionDetailRecord>;
   exportEbrPacket(organizationId: string, executionId: string): Promise<EbrPacketRecord | null>;
+  listWeighDispenseSessions(organizationId: string): Promise<WeighDispenseSessionDetailRecord[]>;
+  createWeighDispenseSession(
+    userContext: UserContext,
+    input: WeighDispenseSessionInput,
+    requestId: string
+  ): Promise<WeighDispenseSessionDetailRecord>;
+  completeWeighDispenseLine(
+    userContext: UserContext,
+    sessionId: string,
+    lineId: string,
+    input: WeighDispenseLineCompletionInput,
+    requestId: string
+  ): Promise<WeighDispenseSessionDetailRecord>;
   searchTraceability(organizationId: string, query: string): Promise<TraceSearchResult[]>;
   getTraceabilityGraph(
     organizationId: string,
@@ -4209,6 +6543,64 @@ export type ApiDataStore = {
     userContext: UserContext,
     input: DashboardWidgetUpdateInput[]
   ): Promise<DashboardWidgetRecord[]>;
+  getWorkspaceSnapshot(userContext: UserContext, previewRoleCode?: string | null): Promise<WorkspaceSnapshotRecord>;
+  updateUserPreferences(
+    userContext: UserContext,
+    input: UserPreferenceUpdateInput,
+    requestId: string
+  ): Promise<UserPreferenceRecord>;
+  pinWorkspaceItem(
+    userContext: UserContext,
+    input: PinnedItemInput,
+    requestId: string
+  ): Promise<PinnedItemRecord>;
+  unpinWorkspaceItem(userContext: UserContext, pinId: string, requestId: string): Promise<boolean>;
+  saveGridView(
+    userContext: UserContext,
+    input: SavedViewInput,
+    requestId: string
+  ): Promise<SavedViewRecord>;
+  deleteGridView(userContext: UserContext, savedViewId: string, requestId: string): Promise<boolean>;
+  saveColorRule(
+    userContext: UserContext,
+    input: ColorRuleInput,
+    requestId: string
+  ): Promise<ColorRuleRecord>;
+  deleteColorRule(userContext: UserContext, colorRuleId: string, requestId: string): Promise<boolean>;
+  listWorkflowGuides(userContext: UserContext): Promise<WorkflowGuideRecord[]>;
+  getWorkflowGuide(userContext: UserContext, workflowId: string): Promise<WorkflowGuideRecord | null>;
+  listWorkflowDefinitions(userContext: UserContext): Promise<WorkflowDefinitionRecord[]>;
+  getWorkflowDefinition(userContext: UserContext, workflowDefinitionId: string): Promise<WorkflowDefinitionRecord | null>;
+  resolveWorkflowActions(
+    userContext: UserContext,
+    workflowDefinitionId: string,
+    record: WorkflowRecordContext
+  ): Promise<WorkflowActionAvailabilityRecord | null>;
+  requestWorkflowTransition(
+    userContext: UserContext,
+    workflowDefinitionId: string,
+    input: WorkflowTransitionCommand,
+    requestId: string
+  ): Promise<WorkflowTransitionRecord | null>;
+  listApprovalInbox(userContext: UserContext): Promise<WorkflowApprovalRequestRecord[]>;
+  startWorkflowRun(
+    userContext: UserContext,
+    input: WorkflowRunStartInput,
+    requestId: string
+  ): Promise<WorkflowRunDetailRecord>;
+  getWorkflowRun(userContext: UserContext, runId: string): Promise<WorkflowRunDetailRecord | null>;
+  listWorkflowRuns(userContext: UserContext): Promise<WorkflowRunDetailRecord[]>;
+  recordWorkflowRunEvent(
+    userContext: UserContext,
+    runId: string,
+    input: WorkflowRunEventInput,
+    requestId: string
+  ): Promise<WorkflowRunDetailRecord | null>;
+  completeWorkflowRun(
+    userContext: UserContext,
+    runId: string,
+    requestId: string
+  ): Promise<WorkflowRunDetailRecord | null>;
   getFeedbackInsights(organizationId: string): Promise<FeedbackInsightsRecord>;
   listBacklogItems(organizationId: string): Promise<BacklogItemRecord[]>;
   createBacklogItem(userContext: UserContext, input: BacklogItemInput): Promise<BacklogItemRecord>;
@@ -4251,6 +6643,26 @@ export type ApiDataStore = {
     reportId: ReportId,
     filters?: ReportFilters
   ): Promise<OperationalReport>;
+  listReportDatasets(userContext: UserContext): Promise<ReportDatasetDefinition[]>;
+  listGenericInquiries(userContext: UserContext): Promise<GenericInquiry[]>;
+  saveGenericInquiry(
+    userContext: UserContext,
+    input: Omit<GenericInquiry, "id" | "organizationId" | "ownerUserId" | "createdAt" | "updatedAt">
+  ): Promise<GenericInquiry>;
+  getGenericInquiry(userContext: UserContext, inquiryId: string): Promise<GenericInquiry | null>;
+  runGenericInquiry(userContext: UserContext, inquiryId: string): Promise<GenericInquiryResult | null>;
+  exportGenericInquiry(
+    userContext: UserContext,
+    inquiryId: string,
+    format: ExportFormat,
+    scheduleId?: string | null
+  ): Promise<ReportExportRecord | null>;
+  listReportSchedules(userContext: UserContext): Promise<ReportSchedule[]>;
+  saveReportSchedule(
+    userContext: UserContext,
+    input: Omit<ReportSchedule, "id" | "organizationId" | "createdBy" | "createdAt" | "updatedAt">
+  ): Promise<ReportSchedule>;
+  listReportExports(userContext: UserContext): Promise<ReportExportRecord[]>;
   listReportPresets(organizationId: string, userId: string): Promise<ReportPreset[]>;
   saveReportPreset(
     organizationId: string,

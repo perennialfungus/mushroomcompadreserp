@@ -13,6 +13,10 @@ export type AlertRuleType =
   | "blocked_shopify_sync"
   | "low_stock"
   | "supplier_document_expiry"
+  | "quarantined_stock_aging"
+  | "missing_coa"
+  | "missing_expiry"
+  | "receipt_quantity_mismatch"
   | "open_capa_due"
   | "overloaded_work_center"
   | "sku_readiness_gap";
@@ -171,6 +175,23 @@ export type SkuReadinessAlertSource = {
   readinessGaps: Array<{ code: string; message: string; severity: "warning" | "blocker" }>;
 };
 
+export type ReceivingAlertSource = {
+  id: string;
+  receiptId: string;
+  receiptNumber: string;
+  lotId: string;
+  lotCode: string;
+  itemName: string;
+  receivedAt: Date;
+  expiryDate: Date | null;
+  hasCoa: boolean;
+  receivedQuantity: number;
+  dispositionedQuantity: number;
+  quarantinedQuantity: number;
+  uom: string;
+  holdStatus: "active" | "released" | "rejected" | "reworked" | "disposed" | null;
+};
+
 export type AlertEvaluationInput = {
   organizationId: string;
   asOf?: Date;
@@ -185,6 +206,7 @@ export type AlertEvaluationInput = {
   capas?: CapaAlertSource[];
   workCenters?: WorkCenterAlertSource[];
   skuReadiness?: SkuReadinessAlertSource[];
+  receiving?: ReceivingAlertSource[];
 };
 
 export type AlertEvaluationResult = {
@@ -251,6 +273,44 @@ export const defaultAlertRules: AlertRuleDefinition[] = [
     enabled: true,
     roles: ["owner_admin", "purchasing", "qc"],
     thresholdDays: 30
+  },
+  {
+    id: "rule-quarantined-stock-aging",
+    type: "quarantined_stock_aging",
+    name: "Quarantined stock aging",
+    description: "Incoming quarantined stock has been held longer than the configured threshold.",
+    severity: "warning",
+    enabled: true,
+    roles: ["owner_admin", "purchasing", "qc"],
+    thresholdDays: 2
+  },
+  {
+    id: "rule-missing-coa",
+    type: "missing_coa",
+    name: "Missing COA",
+    description: "Received controlled material is missing supplier COA evidence.",
+    severity: "warning",
+    enabled: true,
+    roles: ["owner_admin", "purchasing", "qc"],
+    thresholdDays: 0
+  },
+  {
+    id: "rule-missing-expiry",
+    type: "missing_expiry",
+    name: "Missing expiry",
+    description: "Received lot is missing an expiry date.",
+    severity: "warning",
+    enabled: true,
+    roles: ["owner_admin", "purchasing", "qc"]
+  },
+  {
+    id: "rule-receipt-quantity-mismatch",
+    type: "receipt_quantity_mismatch",
+    name: "Receipt quantity mismatch",
+    description: "Receipt line disposition quantities do not match the received quantity.",
+    severity: "critical",
+    enabled: true,
+    roles: ["owner_admin", "purchasing"]
   },
   {
     id: "rule-open-capa-due",
@@ -483,6 +543,64 @@ function evaluateRule(rule: AlertRuleDefinition, input: AlertEvaluationInput, as
             sourceLabel: `${document.supplierName} ${document.documentType}`,
             actionHref: `/purchasing?supplierId=${encodeURIComponent(document.supplierId)}`,
             dueAt: document.expiresAt
+          })
+        );
+    case "quarantined_stock_aging":
+      return (input.receiving ?? [])
+        .filter((line) => line.holdStatus === "active" && line.quarantinedQuantity > 0)
+        .filter((line) => line.receivedAt.getTime() <= asOf.getTime() - days(rule.thresholdDays ?? 2))
+        .map((line) =>
+          candidate(rule, {
+            title: `${line.lotCode} is aging in quarantine`,
+            message: `${line.itemName} lot ${line.lotCode} has ${line.quarantinedQuantity} ${line.uom} held from receipt ${line.receiptNumber}.`,
+            sourceType: "receipt_line",
+            sourceId: line.id,
+            sourceLabel: line.lotCode,
+            actionHref: `/purchasing?receiptId=${encodeURIComponent(line.receiptId)}`,
+            dueAt: new Date(line.receivedAt.getTime() + days(rule.thresholdDays ?? 2))
+          })
+        );
+    case "missing_coa":
+      return (input.receiving ?? [])
+        .filter((line) => !line.hasCoa)
+        .filter((line) => line.holdStatus === "active" || line.quarantinedQuantity > 0)
+        .map((line) =>
+          candidate(rule, {
+            title: `${line.lotCode} is missing COA`,
+            message: `Receipt ${line.receiptNumber} has no COA attached for ${line.itemName} lot ${line.lotCode}.`,
+            sourceType: "receipt_line",
+            sourceId: line.id,
+            sourceLabel: line.lotCode,
+            actionHref: `/purchasing?receiptId=${encodeURIComponent(line.receiptId)}`,
+            dueAt: line.receivedAt
+          })
+        );
+    case "missing_expiry":
+      return (input.receiving ?? [])
+        .filter((line) => !line.expiryDate)
+        .map((line) =>
+          candidate(rule, {
+            title: `${line.lotCode} is missing expiry`,
+            message: `Receipt ${line.receiptNumber} is missing an expiry date for ${line.itemName} lot ${line.lotCode}.`,
+            sourceType: "receipt_line",
+            sourceId: line.id,
+            sourceLabel: line.lotCode,
+            actionHref: `/purchasing?receiptId=${encodeURIComponent(line.receiptId)}`,
+            dueAt: null
+          })
+        );
+    case "receipt_quantity_mismatch":
+      return (input.receiving ?? [])
+        .filter((line) => line.dispositionedQuantity !== line.receivedQuantity)
+        .map((line) =>
+          candidate(rule, {
+            title: `${line.receiptNumber} quantity mismatch`,
+            message: `${line.lotCode} received ${line.receivedQuantity} ${line.uom} but dispositioned ${line.dispositionedQuantity} ${line.uom}.`,
+            sourceType: "receipt_line",
+            sourceId: line.id,
+            sourceLabel: line.receiptNumber,
+            actionHref: `/purchasing?receiptId=${encodeURIComponent(line.receiptId)}`,
+            dueAt: line.receivedAt
           })
         );
     case "open_capa_due":

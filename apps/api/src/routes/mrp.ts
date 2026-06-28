@@ -99,6 +99,87 @@ export async function mrpRoutes(app: FastifyInstance, options: MrpRoutesOptions)
       }
     }
   );
+
+  app.post(
+    "/api/mrp/schedule/regenerate",
+    {
+      preHandler: [options.requireUserContext, canManageMrp],
+      schema: { tags: ["mrp"], summary: "Regenerate the finite production schedule", security: bearerSecurity }
+    },
+    async (request, reply) => {
+      const parsed = z.object({
+        horizonEnd: z.string().datetime({ offset: true }).optional(),
+        locationIds: z.array(z.string()).optional(),
+        bucket: z.enum(["day", "week"]).optional()
+      }).safeParse(request.body ?? {});
+      if (!parsed.success) {
+        return reply.code(400).send({ error: "bad_request", message: "Invalid schedule regeneration request" });
+      }
+      const userContext = (request as AuthenticatedRequest).userContext;
+      const horizonEnd = parsed.data.horizonEnd ? new Date(parsed.data.horizonEnd) : defaultHorizonEnd();
+      const plan = await options.dataStore.runMrp(userContext.organizationId, {
+        horizonEnd,
+        bucketGranularity: parsed.data.bucket ?? "day",
+        ...(parsed.data.locationIds ? { locationIds: parsed.data.locationIds } : {})
+      });
+      await options.dataStore.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: "schedule.regenerated",
+        subjectType: "schedule_run",
+        subjectId: plan.scheduleRun.id,
+        beforeJson: null,
+        afterJson: serializeScheduleRun(plan.scheduleRun),
+        requestId: request.id
+      });
+      return reply.code(201).send({ plan: serializeMrpPlan(plan) });
+    }
+  );
+
+  app.post(
+    "/api/mrp/schedule/resequence",
+    {
+      preHandler: [options.requireUserContext, canManageMrp],
+      schema: { tags: ["mrp"], summary: "Resequence an operation on the dispatch board", security: bearerSecurity }
+    },
+    async (request, reply) => {
+      const parsed = z.object({
+        operationId: z.string().trim().min(1),
+        afterOperationId: z.string().trim().min(1).nullable().optional(),
+        reason: z.string().trim().min(1).optional(),
+        horizonEnd: z.string().datetime({ offset: true }).optional()
+      }).safeParse(request.body ?? {});
+      if (!parsed.success) {
+        return reply.code(400).send({ error: "bad_request", message: "Invalid schedule resequence request" });
+      }
+      const userContext = (request as AuthenticatedRequest).userContext;
+      const horizonEnd = parsed.data.horizonEnd ? new Date(parsed.data.horizonEnd) : defaultHorizonEnd();
+      const plan = await options.dataStore.runMrp(userContext.organizationId, { horizonEnd });
+      const operation = plan.scheduleOperations.find((candidate) => candidate.id === parsed.data.operationId);
+      if (!operation) {
+        return reply.code(404).send({ error: "not_found", message: "Operation not found" });
+      }
+      if (operation.status === "completed") {
+        return reply.code(409).send({ error: "conflict", message: "Completed work cannot be silently altered" });
+      }
+      await options.dataStore.insertAuditEvent({
+        organizationId: userContext.organizationId,
+        actorUserId: userContext.userId,
+        eventType: "schedule.resequenced",
+        subjectType: "schedule_operation",
+        subjectId: operation.id,
+        beforeJson: serializeScheduleOperation(operation),
+        afterJson: {
+          operationId: operation.id,
+          afterOperationId: parsed.data.afterOperationId ?? null,
+          reason: parsed.data.reason ?? "Planner resequenced dispatch board",
+          recalculatedWarnings: operation.warnings.map((warning) => warning.message)
+        },
+        requestId: request.id
+      });
+      return { plan: serializeMrpPlan(plan) };
+    }
+  );
 }
 
 function defaultHorizonEnd(): Date {
@@ -136,6 +217,27 @@ function serializeMrpPlan(plan: Awaited<ReturnType<ApiDataStore["runMrp"]>>) {
       suggestedStartAt: suggestion.suggestedStartAt.toISOString(),
       suggestedEndAt: suggestion.suggestedEndAt.toISOString()
     })),
+    scheduleRun: serializeScheduleRun(plan.scheduleRun),
+    scheduleOperations: plan.scheduleOperations.map(serializeScheduleOperation),
+    roughCutCapacity: plan.roughCutCapacity.map((line) => ({
+      ...line,
+      bucketStart: line.bucketStart.toISOString(),
+      bucketEnd: line.bucketEnd.toISOString()
+    })),
+    dispatchBoard: plan.dispatchBoard.map((line) => ({
+      ...serializeScheduleOperation(line),
+      dispatchRank: line.dispatchRank,
+      readyAt: line.readyAt ? line.readyAt.toISOString() : null,
+      constraintSummary: line.constraintSummary
+    })),
+    materialConstraints: plan.materialConstraints.map((constraint) => ({
+      ...constraint,
+      constrainedStartAt: constraint.constrainedStartAt ? constraint.constrainedStartAt.toISOString() : null
+    })),
+    scheduleAudits: plan.scheduleAudits.map((audit) => ({
+      ...audit,
+      occurredAt: audit.occurredAt.toISOString()
+    })),
     capableToPromise: plan.capableToPromise.map((ctp) => ({
       ...ctp,
       requestedAt: ctp.requestedAt ? ctp.requestedAt.toISOString() : null,
@@ -154,6 +256,29 @@ function serializeMrpPlan(plan: Awaited<ReturnType<ApiDataStore["runMrp"]>>) {
       createdAt: snapshot.createdAt.toISOString(),
       horizonEnd: snapshot.horizonEnd.toISOString()
     }))
+  };
+}
+
+function serializeScheduleRun(run: Awaited<ReturnType<ApiDataStore["runMrp"]>>["scheduleRun"]) {
+  return {
+    ...run,
+    generatedAt: run.generatedAt.toISOString(),
+    horizonStart: run.horizonStart.toISOString(),
+    horizonEnd: run.horizonEnd.toISOString()
+  };
+}
+
+function serializeScheduleOperation(operation: Awaited<ReturnType<ApiDataStore["runMrp"]>>["scheduleOperations"][number]) {
+  return {
+    ...operation,
+    scheduledStartAt: operation.scheduledStartAt ? operation.scheduledStartAt.toISOString() : null,
+    scheduledEndAt: operation.scheduledEndAt ? operation.scheduledEndAt.toISOString() : null,
+    dueAt: operation.dueAt ? operation.dueAt.toISOString() : null,
+    constraintDate: operation.constraintDate ? operation.constraintDate.toISOString() : null,
+    materialConstraintAt: operation.materialConstraintAt ? operation.materialConstraintAt.toISOString() : null,
+    finiteStartAt: operation.finiteStartAt ? operation.finiteStartAt.toISOString() : null,
+    finiteEndAt: operation.finiteEndAt ? operation.finiteEndAt.toISOString() : null,
+    constrainedByMaterialUntil: operation.constrainedByMaterialUntil ? operation.constrainedByMaterialUntil.toISOString() : null
   };
 }
 

@@ -4,6 +4,8 @@ import {
   evaluateEquipmentReadiness,
   ManualScaleAdapter,
   MockScaleAdapter,
+  assertPreUseCheckComplete,
+  evaluateProcessReading,
   validateManualWeighCapture
 } from "./equipment.js";
 import { DomainConflictError, DomainValidationError } from "./errors.js";
@@ -54,6 +56,31 @@ describe("equipment readiness", () => {
       })
     ).toThrow(DomainValidationError);
   });
+
+  it("blocks critical use when sanitation or pre-use checks are incomplete", () => {
+    const result = evaluateEquipmentReadiness({
+      equipmentId: "filler-01",
+      equipmentStatus: "available",
+      calibrationRequired: false,
+      maintenanceDueAt: new Date("2026-08-01T00:00:00.000Z"),
+      sanitationStatus: "dirty",
+      preUseCheck: {
+        required: true,
+        completed: false,
+        missingItems: ["Line clearance complete"]
+      },
+      criticalUse: true,
+      now: new Date("2026-06-27T00:00:00.000Z")
+    });
+
+    expect(result.usable).toBe(false);
+    expect(result.blockReasons).toEqual(
+      expect.arrayContaining([
+        "Equipment sanitation status is dirty.",
+        "Required pre-use checks are incomplete: Line clearance complete."
+      ])
+    );
+  });
 });
 
 describe("manual weigh capture", () => {
@@ -100,5 +127,52 @@ describe("manual weigh capture", () => {
 
     expect(manual).toMatchObject({ actualQuantity: 9.9, unit: "g" });
     expect(mock).toMatchObject({ actualQuantity: 10, unit: "g" });
+  });
+});
+
+describe("equipment historian readings", () => {
+  it("evaluates warning and out-of-limit process readings", () => {
+    const warning = evaluateProcessReading({
+      equipmentId: "filler-01",
+      parameterType: "temperature",
+      value: 24,
+      unit: "C",
+      actorUserId: "user-production",
+      source: "manual",
+      recordedAt: new Date("2026-06-27T08:00:00.000Z"),
+      limits: { minValue: 18, maxValue: 25, warningMaxValue: 23 }
+    });
+    const outOfLimit = evaluateProcessReading({
+      equipmentId: "filler-01",
+      parameterType: "temperature",
+      value: 27,
+      unit: "C",
+      actorUserId: "user-production",
+      source: "manual",
+      recordedAt: new Date("2026-06-27T08:00:00.000Z"),
+      limits: { minValue: 18, maxValue: 25 }
+    });
+
+    expect(warning).toMatchObject({ status: "warning", qualityEventRequired: false });
+    expect(outOfLimit).toMatchObject({ status: "out_of_limit", qualityEventRequired: true });
+  });
+
+  it("requires all required pre-use check items", () => {
+    expect(() =>
+      assertPreUseCheckComplete({
+        template: {
+          id: "preuse-filler",
+          equipmentType: "bottling",
+          requiredForCriticalOperation: true,
+          items: [
+            { id: "line-clear", label: "Line clearance complete", required: true },
+            { id: "guards", label: "Guards inspected", required: true }
+          ]
+        },
+        checkedItemIds: ["line-clear"],
+        actorUserId: "user-production",
+        completedAt: new Date("2026-06-27T08:00:00.000Z")
+      })
+    ).toThrow(DomainConflictError);
   });
 });

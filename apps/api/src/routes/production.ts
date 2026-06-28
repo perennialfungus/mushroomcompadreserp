@@ -47,7 +47,9 @@ const productionOrderSchema = z.object({
   plannedQuantity: z.number().finite().positive().nullable().optional(),
   uom: z.string().trim().min(1).max(24).nullable().optional(),
   priority: z.number().int().min(0).optional(),
-  notes: z.string().trim().max(2000).nullable().optional()
+  notes: z.string().trim().max(2000).nullable().optional(),
+  autoGenerateLots: z.boolean().optional(),
+  lotExpirationDays: z.number().int().positive().max(3650).nullable().optional()
 });
 
 const bomSchema = z.object({
@@ -55,10 +57,20 @@ const bomSchema = z.object({
   formulaRevisionId: z.string().trim().min(1).nullable().optional(),
   versionCode: z.string().trim().min(1).max(40),
   status: z.enum(["draft", "active", "retired"]).optional(),
+  bomKind: z.enum(["standard", "phantom", "planning", "alternate"]).optional(),
+  alternateGroupCode: z.string().trim().max(80).nullable().optional(),
+  planningPercent: z.number().finite().min(0).max(100).optional(),
   yieldQuantity: z.number().finite().positive(),
   yieldUom: z.string().trim().min(1).max(24),
   effectiveFrom: isoDate,
-  effectiveTo: isoDate
+  effectiveTo: isoDate,
+  changeRequestId: z.string().trim().min(1).nullable().optional()
+});
+
+const bomCopySchema = z.object({
+  versionCode: z.string().trim().min(1).max(40),
+  effectiveFrom: isoDate,
+  changeRequestId: z.string().trim().min(1).nullable().optional()
 });
 
 const bomLineSchema = z.object({
@@ -77,7 +89,8 @@ const bomLineSchema = z.object({
   quantity: z.number().finite().positive(),
   uom: z.string().trim().min(1).max(24),
   wastePercent: z.number().finite().min(0).max(100).optional(),
-  isCritical: z.boolean().optional()
+  isCritical: z.boolean().optional(),
+  changeRequestId: z.string().trim().min(1).nullable().optional()
 });
 
 const bomOperationSchema = z.object({
@@ -99,7 +112,8 @@ const bomOperationSchema = z.object({
   backflushLabor: z.boolean().optional(),
   controlPoint: z.boolean().optional(),
   scrapAction: z.enum(["write_off", "quarantine", "rework"]).optional(),
-  instructions: z.string().trim().max(2000).nullable().optional()
+  instructions: z.string().trim().max(2000).nullable().optional(),
+  changeRequestId: z.string().trim().min(1).nullable().optional()
 });
 
 const bomOperationStepSchema = z.object({
@@ -108,7 +122,8 @@ const bomOperationStepSchema = z.object({
   instructions: z.string().trim().min(1).max(2000),
   isCritical: z.boolean().optional(),
   requiresSignature: z.boolean().optional(),
-  requiresQcEntry: z.boolean().optional()
+  requiresQcEntry: z.boolean().optional(),
+  changeRequestId: z.string().trim().min(1).nullable().optional()
 });
 
 const bomOperationMaterialSchema = z.object({
@@ -131,7 +146,49 @@ const bomOperationMaterialSchema = z.object({
   effectiveFrom: isoDate,
   effectiveTo: isoDate,
   isCritical: z.boolean().optional(),
-  lotTraceRequired: z.boolean().optional()
+  lotTraceRequired: z.boolean().optional(),
+  changeRequestId: z.string().trim().min(1).nullable().optional()
+});
+
+const bomOperationOutputSchema = z.object({
+  outputType: z.enum(["primary", "co_product", "by_product", "scrap", "yield_loss", "rework"]),
+  itemType: z.enum(["product_variant", "material", "packaging_component", "wip", "harvest"]),
+  itemId: z.string().trim().min(1),
+  quantity: z.number().finite().positive(),
+  uom: z.string().trim().min(1).max(24),
+  scrapReasonCode: z.string().trim().max(80).nullable().optional(),
+  traceInventory: z.boolean().optional(),
+  costCreditPercent: z.number().finite().min(0).max(100).optional(),
+  reworkRequired: z.boolean().optional(),
+  changeRequestId: z.string().trim().min(1).nullable().optional()
+});
+
+const bomSubstituteSchema = z.object({
+  replacementType: z.enum(["substitute", "alternate", "approved_replacement"]),
+  componentType: z.enum(["product_variant", "material", "packaging_component"]),
+  componentId: z.string().trim().min(1),
+  quantity: z.number().finite().positive(),
+  uom: z.string().trim().min(1).max(24),
+  conversionFactor: z.number().finite().positive().nullable().optional(),
+  effectiveFrom: isoDate,
+  effectiveTo: isoDate,
+  priority: z.number().int().positive().optional(),
+  approved: z.boolean().optional(),
+  approvalReference: z.string().trim().max(120).nullable().optional(),
+  notes: z.string().trim().max(1000).nullable().optional(),
+  changeRequestId: z.string().trim().min(1).nullable().optional()
+});
+
+const bomOperationCostSchema = z.object({
+  costType: z.enum(["overhead", "tool", "machine", "outside_processing", "queue", "move", "finish", "setup"]),
+  costCode: z.string().trim().min(1).max(80),
+  description: z.string().trim().min(1).max(240),
+  quantity: z.number().finite().min(0),
+  uom: z.string().trim().min(1).max(24),
+  unitCost: z.number().finite().min(0),
+  currency: z.string().trim().length(3).optional(),
+  backflush: z.boolean().optional(),
+  changeRequestId: z.string().trim().min(1).nullable().optional()
 });
 
 const bomOperationEquipmentSchema = z.object({
@@ -142,7 +199,8 @@ const bomOperationEquipmentSchema = z.object({
   runUnits: z.number().finite().positive().nullable().optional(),
   runTimeMinutes: z.number().finite().min(0).nullable().optional(),
   cleaningTimeMinutes: z.number().finite().min(0).optional(),
-  notes: z.string().trim().max(1000).nullable().optional()
+  notes: z.string().trim().max(1000).nullable().optional(),
+  changeRequestId: z.string().trim().min(1).nullable().optional()
 });
 
 const formulaLineTypeSchema = z.enum([
@@ -236,9 +294,13 @@ const completionSchema = z.object({
       itemId: z.string().trim().min(1),
       itemName: z.string().trim().min(1).max(180),
       itemSku: z.string().trim().min(1).max(80),
+      outputType: z.enum(["primary", "co_product", "by_product", "scrap", "yield_loss", "rework"]).optional(),
       quantity: z.number().finite().positive(),
       uom: z.string().trim().min(1).max(24),
       expiresAt: isoDate,
+      scrapReasonCode: z.string().trim().max(80).nullable().optional(),
+      traceInventory: z.boolean().optional(),
+      reworkRequired: z.boolean().optional(),
       metadataJson: metadataSchema.optional()
     })
   ).min(1)
@@ -296,6 +358,79 @@ export async function productionRoutes(app: FastifyInstance, options: Production
     }
   );
 
+  app.get(
+    "/api/production/boms/explosion",
+    {
+      preHandler: [options.requireUserContext, canReadProduction],
+      schema: { tags: ["production"], summary: "Explode a multi-level BOM", security: bearerSecurity }
+    },
+    async (request, reply) => {
+      const query = request.query as { productVariantId?: string; quantity?: string; asOf?: string };
+      const quantity = Number(query.quantity);
+      if (!query.productVariantId || !Number.isFinite(quantity) || quantity <= 0) {
+        return reply.code(400).send({ error: "bad_request", message: "Invalid BOM explosion request" });
+      }
+      try {
+        const userContext = (request as AuthenticatedRequest).userContext;
+        const explosion = await options.dataStore.explodeBillOfMaterials(userContext.organizationId, {
+          productVariantId: query.productVariantId,
+          quantity,
+          asOf: query.asOf ? new Date(query.asOf) : null
+        });
+        return { explosion: serializeBomExplosion(explosion) };
+      } catch (error) {
+        return productionError(reply, error);
+      }
+    }
+  );
+
+  app.get(
+    "/api/production/boms/compare",
+    {
+      preHandler: [options.requireUserContext, canReadProduction],
+      schema: { tags: ["production"], summary: "Compare BOM revisions", security: bearerSecurity }
+    },
+    async (request, reply) => {
+      const query = request.query as { fromBomId?: string; toBomId?: string };
+      if (!query.fromBomId || !query.toBomId) {
+        return reply.code(400).send({ error: "bad_request", message: "Both BOM ids are required" });
+      }
+      try {
+        const userContext = (request as AuthenticatedRequest).userContext;
+        const comparison = await options.dataStore.compareBillOfMaterials(
+          userContext.organizationId,
+          query.fromBomId,
+          query.toBomId
+        );
+        return { comparison };
+      } catch (error) {
+        return productionError(reply, error);
+      }
+    }
+  );
+
+  app.get(
+    "/api/production/boms/:bomId/readiness",
+    {
+      preHandler: [options.requireUserContext, canReadProduction],
+      schema: { tags: ["production"], summary: "Check BOM readiness", security: bearerSecurity }
+    },
+    async (request, reply) => {
+      const params = request.params as { bomId: string };
+      const query = request.query as { asOf?: string };
+      const userContext = (request as AuthenticatedRequest).userContext;
+      const readiness = await options.dataStore.getBillOfMaterialsReadiness(
+        userContext.organizationId,
+        params.bomId,
+        query.asOf ? new Date(query.asOf) : null
+      );
+      if (!readiness) {
+        return reply.code(404).send({ error: "not_found", message: "BOM not found" });
+      }
+      return { readiness };
+    }
+  );
+
   app.post(
     "/api/production/boms",
     {
@@ -312,6 +447,35 @@ export async function productionRoutes(app: FastifyInstance, options: Production
         const input = stripUndefined(parseDateFields(parsed.data)) as Parameters<ApiDataStore["createBillOfMaterials"]>[1];
         const bom = await options.dataStore.createBillOfMaterials(userContext.organizationId, input);
         return reply.code(201).send({ bom: serializeBom(bom) });
+      } catch (error) {
+        return productionError(reply, error);
+      }
+    }
+  );
+
+  app.post(
+    "/api/production/boms/:bomId/copy",
+    {
+      preHandler: [options.requireUserContext, canManageProduction],
+      schema: { tags: ["production"], summary: "Copy a BOM revision", security: bearerSecurity }
+    },
+    async (request, reply) => {
+      const parsed = bomCopySchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: "bad_request", message: "Invalid BOM copy request" });
+      }
+      try {
+        const userContext = (request as AuthenticatedRequest).userContext;
+        const params = request.params as { bomId: string };
+        const detail = await options.dataStore.copyBillOfMaterialsRevision(
+          userContext.organizationId,
+          params.bomId,
+          stripUndefined(parseDateFields(parsed.data)) as Parameters<ApiDataStore["copyBillOfMaterialsRevision"]>[2]
+        );
+        if (!detail) {
+          return reply.code(404).send({ error: "not_found", message: "BOM not found" });
+        }
+        return reply.code(201).send({ bom: serializeBomDetail(detail) });
       } catch (error) {
         return productionError(reply, error);
       }
@@ -408,6 +572,78 @@ export async function productionRoutes(app: FastifyInstance, options: Production
           stripUndefined(parseDateFields(parsed.data)) as Parameters<ApiDataStore["createBomOperationMaterial"]>[1]
         );
         return reply.code(201).send({ material: serializeBomOperationMaterial(material) });
+      } catch (error) {
+        return productionError(reply, error);
+      }
+    }
+  );
+
+  app.post(
+    "/api/production/boms/operations/:operationId/outputs",
+    {
+      preHandler: [options.requireUserContext, canManageProduction],
+      schema: { tags: ["production"], summary: "Create a BOM operation output", security: bearerSecurity }
+    },
+    async (request, reply) => {
+      const parsed = bomOperationOutputSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: "bad_request", message: "Invalid BOM operation output" });
+      }
+      try {
+        const params = request.params as { operationId: string };
+        const output = await options.dataStore.createBomOperationOutput(
+          params.operationId,
+          stripUndefined(parsed.data) as Parameters<ApiDataStore["createBomOperationOutput"]>[1]
+        );
+        return reply.code(201).send({ output: serializeBomOperationOutput(output) });
+      } catch (error) {
+        return productionError(reply, error);
+      }
+    }
+  );
+
+  app.post(
+    "/api/production/boms/materials/:materialId/substitutes",
+    {
+      preHandler: [options.requireUserContext, canManageProduction],
+      schema: { tags: ["production"], summary: "Create a BOM material substitute or replacement", security: bearerSecurity }
+    },
+    async (request, reply) => {
+      const parsed = bomSubstituteSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: "bad_request", message: "Invalid BOM substitute" });
+      }
+      try {
+        const params = request.params as { materialId: string };
+        const substitute = await options.dataStore.createBomSubstitute(
+          params.materialId,
+          stripUndefined(parseDateFields(parsed.data)) as Parameters<ApiDataStore["createBomSubstitute"]>[1]
+        );
+        return reply.code(201).send({ substitute: serializeBomSubstitute(substitute) });
+      } catch (error) {
+        return productionError(reply, error);
+      }
+    }
+  );
+
+  app.post(
+    "/api/production/boms/operations/:operationId/costs",
+    {
+      preHandler: [options.requireUserContext, canManageProduction],
+      schema: { tags: ["production"], summary: "Create a BOM operation cost", security: bearerSecurity }
+    },
+    async (request, reply) => {
+      const parsed = bomOperationCostSchema.safeParse(request.body);
+      if (!parsed.success) {
+        return reply.code(400).send({ error: "bad_request", message: "Invalid BOM operation cost" });
+      }
+      try {
+        const params = request.params as { operationId: string };
+        const cost = await options.dataStore.createBomOperationCost(
+          params.operationId,
+          stripUndefined(parsed.data) as Parameters<ApiDataStore["createBomOperationCost"]>[1]
+        );
+        return reply.code(201).send({ cost: serializeBomOperationCost(cost) });
       } catch (error) {
         return productionError(reply, error);
       }
@@ -774,6 +1010,32 @@ function serializeBomOperationMaterial(material: Awaited<ReturnType<ApiDataStore
   };
 }
 
+function serializeBomOperationOutput(output: Awaited<ReturnType<ApiDataStore["createBomOperationOutput"]>>) {
+  return {
+    ...output,
+    createdAt: output.createdAt.toISOString(),
+    updatedAt: output.updatedAt.toISOString()
+  };
+}
+
+function serializeBomSubstitute(substitute: Awaited<ReturnType<ApiDataStore["createBomSubstitute"]>>) {
+  return {
+    ...substitute,
+    effectiveFrom: serializeDate(substitute.effectiveFrom),
+    effectiveTo: serializeDate(substitute.effectiveTo),
+    createdAt: substitute.createdAt.toISOString(),
+    updatedAt: substitute.updatedAt.toISOString()
+  };
+}
+
+function serializeBomOperationCost(cost: Awaited<ReturnType<ApiDataStore["createBomOperationCost"]>>) {
+  return {
+    ...cost,
+    createdAt: cost.createdAt.toISOString(),
+    updatedAt: cost.updatedAt.toISOString()
+  };
+}
+
 function serializeBomOperationEquipment(equipment: Awaited<ReturnType<ApiDataStore["createBomOperationEquipment"]>>) {
   return {
     ...equipment,
@@ -794,12 +1056,33 @@ function serializeBomDetail(detail: Awaited<ReturnType<ApiDataStore["listBillOfM
       laborRole: entry.laborRole,
       steps: entry.steps.map(serializeBomOperationStep),
       materials: entry.materials.map(serializeBomOperationMaterial),
+      outputs: entry.outputs.map(serializeBomOperationOutput),
+      substitutes: entry.substitutes.map((item) => ({
+        materialId: item.materialId,
+        substitute: serializeBomSubstitute(item.substitute)
+      })),
+      costs: entry.costs.map(serializeBomOperationCost),
       equipment: entry.equipment.map((item) => ({
         requirement: serializeBomOperationEquipment(item.requirement),
         equipment: item.equipment
       }))
     })),
-    productionPlan: detail.productionPlan
+    productionPlan: detail.productionPlan,
+    alternates: detail.alternates.map((alternate) => ({
+      ...alternate,
+      effectiveFrom: serializeDate(alternate.effectiveFrom),
+      effectiveTo: serializeDate(alternate.effectiveTo),
+      createdAt: alternate.createdAt.toISOString(),
+      updatedAt: alternate.updatedAt.toISOString()
+    })),
+    readiness: detail.readiness
+  };
+}
+
+function serializeBomExplosion(explosion: Awaited<ReturnType<ApiDataStore["explodeBillOfMaterials"]>>) {
+  return {
+    ...explosion,
+    asOf: explosion.asOf.toISOString()
   };
 }
 

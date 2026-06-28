@@ -30,10 +30,32 @@ test("owner reviews MRP shortages and converts suggestions", async ({ page }) =>
   await expect(page.getByRole("cell", { name: "Bottling line", exact: true })).toBeVisible();
   await expect(page.getByText("Finite-capacity suggestions")).toBeVisible();
 
+  await page.getByRole("tab", { name: "Finite board" }).click();
+  await expect(page.getByRole("heading", { name: "Finite schedule board" })).toBeVisible();
+  await expect(page.getByText(/PO-2026-001 \/ FILL/)).toBeVisible();
+  await expect(page.getByText("Material availability holds this operation")).toBeVisible();
+
+  await page.getByRole("tab", { name: "Dispatch" }).click();
+  await expect(page.getByRole("heading", { name: "Dispatch board" })).toBeVisible();
+  await page.getByRole("button", { name: "Move here" }).first().click();
+  await expect(page.getByText("Operation resequenced")).toBeVisible();
+
+  await page.getByRole("tab", { name: "Rough cut" }).click();
+  await expect(page.getByRole("heading", { name: "Rough-cut capacity" })).toBeVisible();
+  await expect(page.getByText("Production operator")).toBeVisible();
+
+  await page.getByRole("tab", { name: "Materials" }).click();
+  await expect(page.getByRole("heading", { name: "Material constraints" })).toBeVisible();
+  await expect(page.getByText("production can start after replenishment")).toBeVisible();
+
   await page.getByRole("tab", { name: "CTP" }).click();
   await expect(page.getByRole("heading", { name: "Capable-to-promise panel" })).toBeVisible();
   await expect(page.getByText("WS-2002")).toBeVisible();
   await expect(page.getByText("Released on-hand stock contributes first.")).toBeVisible();
+
+  await page.getByRole("tab", { name: "Run history" }).click();
+  await expect(page.getByRole("heading", { name: "Schedule run history" })).toBeVisible();
+  await expect(page.getByText("schedule.regenerated")).toBeVisible();
 
   await page.getByRole("tab", { name: "Scenarios" }).click();
   await expect(page.getByRole("heading", { name: "Planning scenario snapshots" })).toBeVisible();
